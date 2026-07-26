@@ -9,6 +9,7 @@ from telegram import Bot
 
 from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
+from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class SchedulerService:
                 await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
                 await country_jobs.resolve_due()
                 await country_jobs.publish_news(bot)
+                await admin_repo.capture_market_snapshot()
                 self._heartbeat = asyncio.get_running_loop().time()
             except asyncio.CancelledError:
                 raise

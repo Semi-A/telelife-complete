@@ -1,26 +1,6 @@
-<!doctype html>
-<html lang="fa" dir="rtl" class="dark">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}TeleLife Admin{% endblock %}</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
+<!doctype html><html lang="fa" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#06111d"><title>{% block title %}مرکز فرماندهی TeleLife{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', path='/admin.css') }}">
-</head>
-<body class="bg-[#0a0c11] text-slate-200 min-h-screen">
-  <header class="border-b border-[#1f2532] bg-[#0d1016]">
-    <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-      <div class="flex items-baseline gap-3">
-        <span class="text-lg font-extrabold tracking-tight text-white">TeleLife</span>
-        <span class="text-xs text-slate-500">پنل مدیریت</span>
-      </div>
-      <span class="text-xs text-slate-500">فاز ۱</span>
-    </div>
-  </header>
-  <main class="max-w-6xl mx-auto px-5 py-8">
-    {% block content %}{% endblock %}
-  </main>
-</body>
-</html>
+</head><body><div class="noise"></div>{% block content %}{% endblock %}
+<script src="{{ url_for('static', path='/admin.js') }}" defer></script></body></html>
