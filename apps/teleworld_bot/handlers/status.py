@@ -1,10 +1,10 @@
-"""Group activation and status for TeleWorld."""
+"""TeleWorld onboarding, group activation and status commands."""
 
 from __future__ import annotations
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
-from telegram.ext import CommandHandler, ContextTypes
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
 from apps.teleworld_bot.texts import fa
 from packages.core.repositories import group_repo, player_repo
@@ -29,6 +29,44 @@ async def _sync(update: Update) -> tuple[int, str] | None:
     return group.id, group.title
 
 
+def _private_menu(bot_username: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "➕ افزودن TeleWorld به گروه",
+            url=f"https://t.me/{bot_username}?startgroup=true",
+            style="primary",
+        )],
+        [InlineKeyboardButton("📚 مشاهده راهنما", callback_data="tw:help")],
+    ])
+
+
+def _group_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🌍 وضعیت گروه", callback_data="tw:status", style="primary"),
+            InlineKeyboardButton("💼 فهرست شغل‌ها", callback_data="tw:jobs"),
+        ],
+        [InlineKeyboardButton("📚 راهنمای دستورات", callback_data="tw:help")],
+    ])
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Always acknowledge /start and direct users to the correct game context."""
+    message = update.effective_message
+    chat = update.effective_chat
+    if message is None or chat is None:
+        return
+
+    if chat.type in _GROUP_TYPES:
+        await _sync(update)
+        await message.reply_text(fa.START_GROUP, reply_markup=_group_menu())
+        return
+
+    username = context.bot.username or ""
+    markup = _private_menu(username) if username else None
+    await message.reply_text(fa.START_PRIVATE, reply_markup=markup)
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
@@ -44,16 +82,38 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "SELECT count(*) FROM group_members WHERE group_id = $1", group_id
     )
     await message.reply_text(
-        fa.STATUS.format(title=title, members=fmt.number(int(members or 0)))
+        fa.STATUS.format(title=title, members=fmt.number(int(members or 0))),
+        reply_markup=_group_menu(),
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message:
-        await message.reply_text(fa.HELP)
+        await message.reply_text(
+            fa.HELP,
+            reply_markup=_group_menu()
+            if update.effective_chat and update.effective_chat.type in _GROUP_TYPES
+            else None,
+        )
+
+
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    action = (query.data or "").removeprefix("tw:")
+    if action == "status":
+        await status(update, context)
+    elif action == "jobs":
+        await query.message.reply_text(fa.JOBS, reply_markup=_group_menu())
+    elif action == "help":
+        await query.message.reply_text(fa.HELP)
 
 
 def register(application) -> None:  # type: ignore[no-untyped-def]
+    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^tw:"))

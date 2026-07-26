@@ -32,3 +32,14 @@ CHOOSE_JOB_USAGE = "روش استفاده: /choosejob farmer"
 UPGRADE_USAGE = "روش استفاده: /upgrade production یا /upgrade storage"
 INVALID_AMOUNT = "مقدار باید یک عدد صحیح مثبت باشد."
 INVALID_INPUT = "ورودی معتبر نیست: {reason}"
+
+START_PRIVATE = (
+    "🌐 <b>به TeleWorld خوش آمدید</b>\n\n"
+    "TeleWorld بخش گروهی بازی است؛ کشور، اقتصاد، شغل، انتخابات و پروژه‌های ملی "
+    "داخل گروه‌های تلگرام اجرا می‌شوند.\n\n"
+    "ربات را به گروه اضافه کنید و همان‌جا /start یا /status را بزنید."
+)
+START_GROUP = (
+    "🌍 <b>TeleWorld در این گروه فعال شد</b>\n\n"
+    "از منوی زیر شروع کنید. برای ساخت کشور، مدیر گروه می‌تواند از /createcountry استفاده کند."
+)
