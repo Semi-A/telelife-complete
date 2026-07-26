@@ -64,7 +64,7 @@ async def create(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             description=parts[2],
         )
     except ValueError as exc:
-        await ctx.message.reply_text(fa.INVALID_INPUT.format(reason=str(exc)))
+        await ctx.message.reply_text(fa.INVALID_INPUT.format(reason=fa.ERROR_NAMES.get(str(exc), str(exc))))
         return
     await ctx.message.reply_text(fa.COUNTRY_CREATED.format(name=row["name"]))
 

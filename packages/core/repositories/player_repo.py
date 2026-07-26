@@ -79,7 +79,7 @@ async def count_total() -> int:
 async def count_active(days: int = 7) -> int:
     return int(
         await db.fetchval(
-            "SELECT count(*) FROM players WHERE last_seen_at > now() - ($1 || ' days')::interval",
+            "SELECT count(*) FROM players WHERE last_seen_at > now() - ($1::double precision * interval '1 day')",
             str(days),
         )
         or 0

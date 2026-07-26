@@ -113,7 +113,5 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def register(application) -> None:  # type: ignore[no-untyped-def]
-    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CallbackQueryHandler(menu_callback, pattern=r"^tw:"))

@@ -100,7 +100,7 @@ async def effect(
         INSERT INTO country_effects
             (country_id, effect_code, magnitude, starts_at, ends_at,
              source_type, source_key)
-        VALUES ($1, $2, $3, now(), now() + ($5::text || ' hours')::interval,
+        VALUES ($1, $2, $3, now(), now() + ($5::double precision * interval '1 hour'),
                 'country_mission', $4)
         ON CONFLICT DO NOTHING
         """,

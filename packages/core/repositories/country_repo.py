@@ -52,7 +52,7 @@ async def create(
         INSERT INTO countries
             (group_id, name, government_type, description,
              protection_until, created_by_player_id)
-        VALUES ($1, $2, $3, $4, now() + ($5::text || ' days')::interval, $6)
+        VALUES ($1, $2, $3, $4, now() + ($5::double precision * interval '1 day'), $6)
         RETURNING *
         """,
         group_id,

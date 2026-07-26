@@ -27,8 +27,8 @@ async def prune_missions() -> int:
 
 async def prune_xp_events() -> int:
     result = await db.execute(
-        "DELETE FROM xp_events WHERE created_at < now() - ($1 || ' days')::interval",
-        str(XP_EVENT_RETENTION_DAYS),
+        "DELETE FROM xp_events WHERE created_at < now() - ($1::double precision * interval '1 day')",
+        XP_EVENT_RETENTION_DAYS,
     )
     return int(result.rsplit(" ", 1)[-1] or 0)
 
