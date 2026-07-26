@@ -17,11 +17,8 @@ MISSIONS_UNLOCK_LEVEL = 2
 
 
 async def _announce_level_up(ctx: Ctx, result: xp.XPResult) -> None:
-    if not result.leveled_up:
-        return
-    await ctx.message.reply_text(
-        render.level_up(result), reply_markup=kb.level_up_panel(ctx.telegram_id)
-    )
+    # Level state is rendered inside the persistent panel; no extra message.
+    return
 
 
 async def _render_profile(ctx: Ctx, context: ContextTypes.DEFAULT_TYPE, *, edit: bool) -> None:

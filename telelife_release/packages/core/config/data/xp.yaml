@@ -4,6 +4,7 @@ sources:
   mission_complete: 50
   profile_view:     2
   group_activity:   5
+  onboarding_step:  35
 
 anti_farm:
   # Hard ceiling per player per day across ALL sources.
@@ -15,4 +16,4 @@ anti_farm:
 
 level_up:
   happiness_bonus: 5
-  reward_toman_per_level: 15000
+  reward_toman_per_level: 15000  onboarding_step:   35
