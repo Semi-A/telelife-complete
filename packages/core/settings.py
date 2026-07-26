@@ -73,8 +73,12 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_process_requirements(self) -> Settings:
         # A single supervised process always starts both bots and the admin panel.
-        self.token_for(Service.TELELIFE)
-        self.token_for(Service.TELEWORLD)
+        telelife_token = self.token_for(Service.TELELIFE)
+        teleworld_token = self.token_for(Service.TELEWORLD)
+        if telelife_token == teleworld_token:
+            raise ValueError(
+                "TELELIFE_BOT_TOKEN and TELEWORLD_BOT_TOKEN must belong to two different bots"
+            )
         if not self.admin_username or not self.admin_password:
             raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
         if len(self.admin_password) < 12:

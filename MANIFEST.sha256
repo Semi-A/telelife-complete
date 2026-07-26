@@ -107,7 +107,7 @@ b4f180c45e44184f28321d70a8c07f1c23d263ef52e685848f69682c7522f459  ./packages/cor
 8348ab79a98f1eae5bbcb7e523d237e2d6651b637e64f06b5a444850ab3e8de4  ./packages/core/services/progression.py
 5b16792977d44cca420c6ef699e3330219c4bcfa846577d2b988ee5c035bbc32  ./packages/core/services/unlocks.py
 020e7bf3da008bc80480e88e3c5c80cc3b426ec6a51f28c24d75c0a72b8a6c0c  ./packages/core/services/xp.py
-6a3f31d1bb8359803c935d2df6c0a45ba5d7eafe120b37aef040a6f13863f6d2  ./packages/core/settings.py
+146ffba7ee206950593ca116894738fcc9a3f0b9cd0935e365d1d735799cab8e  ./packages/core/settings.py
 d911cfded5d4c968a85f85a555e568491973c6b7162f9c0d156c5352bd07dd61  ./packages/core/supervisor.py
 579592563ab95269f3daf1824509c47104b461279790c84dd28025d3046e6f48  ./packages/core/ui/__init__.py
 95ee70d3f5e460b7900ffc0561edb8e8d096ee1bf6ef7c7e000cab69e4528a9a  ./packages/core/ui/buttons.py
@@ -136,5 +136,6 @@ d3c90488e2a9bbf79fdc1b967b7f2ba22d5710e2b989ca5fae3a90acad034add  ./tests/test_m
 ea4086e1975d0c134d375cd39d1e10716404d35d7e427633de2778d040ede7ee  ./tests/test_progression.py
 250b85b25cadba72f6d38d192bd7aa6be442c85f757185764098e2ccd1679d96  ./tests/test_project_integrity.py
 cec54259e250fe6bebefd613be96a023770d2b2978d1cb46bb7d3b902251d1a8  ./tests/test_supervisor.py
+717ac763326088a75e5a621c4a14556c2efb70dce7216fe488782b04eda2d2cf  ./tests/test_token_isolation.py
 0376eb02da1c6630d24bdbd67a3cce259ff6d2044994471e75a499ad73d14f30  ./tests/test_unlocks.py
 36a8d8c9d8596ca5a1f2850397da9ae4e11fdc52ba49d0d3b75940b5c2353606  ./tests/test_xp.py
