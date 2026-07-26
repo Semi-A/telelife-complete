@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 137
+تعداد کل فایل‌ها: 150
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -15,7 +15,8 @@ telelife_complete/
 │   │   │   ├── __init__.py
 │   │   │   └── country_admin.py
 │   │   ├── static/
-│   │   │   └── admin.css
+│   │   │   ├── admin.css
+│   │   │   └── admin.js
 │   │   ├── templates/
 │   │   │   ├── partials/
 │   │   │   │   └── stats.html
@@ -53,6 +54,7 @@ telelife_complete/
 │   │   ├── handlers/
 │   │   │   ├── __init__.py
 │   │   │   ├── country.py
+│   │   │   ├── onboarding.py
 │   │   │   ├── politics.py
 │   │   │   ├── production.py
 │   │   │   └── status.py
@@ -60,6 +62,7 @@ telelife_complete/
 │   │   │   ├── __init__.py
 │   │   │   └── fa.py
 │   │   ├── __init__.py
+│   │   ├── keyboards.py
 │   │   └── main.py
 │   └── __init__.py
 ├── docs/
@@ -72,7 +75,8 @@ telelife_complete/
 ├── migrations/
 │   ├── 0001_core_schema.sql
 │   ├── 0002_progression.sql
-│   └── 0003_country_layer.sql
+│   ├── 0003_country_layer.sql
+│   └── 0004_admin_command_center.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -144,7 +148,9 @@ telelife_complete/
 │   │   │   └── fmt.py
 │   │   ├── __init__.py
 │   │   ├── logging.py
-│   │   └── settings.py
+│   │   ├── runtime_status.py
+│   │   ├── settings.py
+│   │   └── supervisor.py
 │   └── __init__.py
 ├── tests/
 │   ├── __init__.py
@@ -155,12 +161,19 @@ telelife_complete/
 │   ├── test_daily.py
 │   ├── test_fmt.py
 │   ├── test_glass_buttons.py
+│   ├── test_interval_bindings.py
 │   ├── test_migrator.py
 │   ├── test_missions.py
+│   ├── test_outbox_repo.py
+│   ├── test_panel_edit.py
 │   ├── test_phase5_config.py
 │   ├── test_production_security.py
 │   ├── test_progression.py
 │   ├── test_project_integrity.py
+│   ├── test_supervisor.py
+│   ├── test_teleworld_onboarding.py
+│   ├── test_teleworld_start.py
+│   ├── test_token_isolation.py
 │   ├── test_unlocks.py
 │   └── test_xp.py
 ├── .dockerignore
@@ -191,30 +204,24 @@ _[این فایل باینری/غیرمتنی تشخیص داده شد و محت
 ### `.env.example`
 
 ```
-SERVICE=telelife
 ENVIRONMENT=development
 LOG_LEVEL=INFO
 DEBUG=false
-
-# Paste the Supabase transaction-pooler URL (normally port 6543) and require TLS.
-DATABASE_URL=
+DATABASE_URL=postgresql://postgres.PROJECT_REF:PASSWORD@POOLER_HOST:6543/postgres?sslmode=require
 DB_POOL_MIN=1
-DB_POOL_MAX=5
+DB_POOL_MAX=4
 DB_COMMAND_TIMEOUT=15
 DB_STATEMENT_CACHE_SIZE=0
-
+DB_MAX_INACTIVE_SECONDS=60
 TELELIFE_BOT_TOKEN=
 TELEWORLD_BOT_TOKEN=
 GLOBAL_NEWS_CHAT_ID=
-
 RUN_MODE=polling
-WEBHOOK_BASE_URL=
-WEBHOOK_SECRET=
 PORT=8000
 HOST=0.0.0.0
-
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
+MEMORY_WARNING_MB=450
 ```
 
 ### `.gitignore`
@@ -280,72 +287,52 @@ def require_admin(
 ### `apps\admin\main.py`
 
 ```python
-"""Admin panel - Phase 1 delivers auth + live dashboard skeleton."""
-
+"""Authenticated, lightweight administration command center."""
 from __future__ import annotations
-
-from contextlib import asynccontextmanager
 from pathlib import Path
-
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
 from apps.admin.auth import require_admin
 from apps.admin.routers.country_admin import router as country_admin_router
 from packages.core import db
-from packages.core.db.migrator import migrate
-from packages.core.logging import setup_logging
-from packages.core.repositories import group_repo, player_repo
-from packages.core.settings import Service, get_settings
-from packages.core.utils import fmt
+from packages.core.repositories import admin_repo
+from packages.core.runtime_status import snapshot
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-async def _collect_stats() -> dict[str, object]:
-    return {
-        "players_total": await player_repo.count_total(),
-        "players_active": await player_repo.count_active(7),
-        "groups_total": await group_repo.count_total(),
-        "db_ok": await db.healthcheck(),
-    }
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    settings = get_settings()
-    setup_logging(Service.ADMIN.value, settings.log_level)
-    await db.create_pool(settings)
-    try:
-        await migrate()
-        yield
-    finally:
-        await db.close_pool()
-
-
-app = FastAPI(title="TeleLife Admin", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="TeleLife Admin", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(country_admin_router)
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    response: Response = await call_next(request)
+    response.headers.update({
+        "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+        "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; "
+          "script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
+    })
+    return response
 
 @app.get("/healthz")
-async def healthz() -> dict[str, object]:
-    return {"ok": await db.healthcheck()}
+async def healthz() -> JSONResponse:
+    db_ok = await db.healthcheck(); services = snapshot()
+    admin_ok = services.get("admin", {}).get("status") in {"starting", "healthy"}
+    code = status.HTTP_200_OK if db_ok and admin_ok else status.HTTP_503_SERVICE_UNAVAILABLE
+    return JSONResponse({"ok": db_ok and admin_ok, "database": db_ok, "services": services}, code)
 
+@app.get("/readyz")
+async def readyz() -> JSONResponse:
+    db_ok = await db.healthcheck()
+    return JSONResponse({"ready": db_ok}, status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, _: str = Depends(require_admin)) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request, "dashboard.html", {"stats": await _collect_stats(), "fmt": fmt}
-    )
-
-
-@app.get("/partials/stats", response_class=HTMLResponse)
-async def stats_partial(request: Request, _: str = Depends(require_admin)) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request, "partials/stats.html", {"stats": await _collect_stats(), "fmt": fmt}
-    )
+    row = await admin_repo.dashboard_stats()
+    return templates.TemplateResponse(request, "dashboard.html", {"stats": dict(row) if row else {}})
 ```
 
 ### `apps\admin\routers\__init__.py`
@@ -357,127 +344,244 @@ async def stats_partial(request: Request, _: str = Depends(require_admin)) -> HT
 ### `apps\admin\routers\country_admin.py`
 
 ```python
-"""Authenticated country administration API with audited mutations."""
-
+"""Authenticated command-center APIs with audited mutations."""
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
-
-from fastapi import APIRouter, Depends, Form, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
 from packages.core.services import admin
+from packages.core.settings import get_settings
 
 AdminActor = Annotated[str, Depends(require_admin)]
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
 
+class BanBody(BaseModel):
+    enabled: bool
+    reason: str | None = Field(default=None, max_length=500)
+class XPBody(BaseModel):
+    amount: int = Field(gt=0, le=1_000_000)
+class PriceBody(BaseModel):
+    price: int = Field(gt=0, le=10_000_000_000)
+class CountryAssetBody(BaseModel):
+    asset: Literal["IRT", "oil", "food", "minerals", "energy", "technology"]
+    delta: int = Field(ge=-1_000_000_000, le=1_000_000_000)
+class PresidentBody(BaseModel):
+    player_id: int | None = Field(default=None, gt=0)
+class NewsBody(BaseModel):
+    text: str = Field(min_length=3, max_length=4000)
+    destination: int | None = None
+
+def fail(exc: ValueError) -> HTTPException:
+    messages = {
+        "player_not_found": "بازیکن پیدا نشد.",
+        "country_not_found": "کشور پیدا نشد.",
+        "asset_not_found": "دارایی معتبر نیست.",
+        "insufficient_balance": "موجودی برای این کاهش کافی نیست.",
+        "president_must_be_citizen": "رئیس‌جمهور باید شهروند همین کشور باشد.",
+    }
+    return HTTPException(400, messages.get(str(exc), "عملیات انجام نشد."))
+
+@router.get("/overview")
+async def overview() -> dict[str, object]:
+    row = await admin_repo.dashboard_stats()
+    return dict(row) if row else {}
 
 @router.get("/stats")
 async def stats() -> dict[str, object]:
     row = await admin_repo.stats()
     return dict(row) if row else {}
 
-
 @router.get("/users")
-async def users(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
-    return [dict(row) for row in await admin_repo.users(limit)]
-
+async def users(limit: Annotated[int, Query(ge=1, le=500)] = 100,
+                q: Annotated[str, Query(max_length=100)] = "") -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.users(limit, q)]
 
 @router.get("/countries")
-async def countries(
-    limit: Annotated[int, Query(ge=1, le=500)] = 100,
-) -> list[dict[str, object]]:
+async def countries(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
     return [dict(row) for row in await admin_repo.countries(limit)]
-
 
 @router.get("/audit")
 async def audit(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
     return [dict(row) for row in await admin_repo.audits(limit)]
 
+@router.get("/news")
+async def news(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.news_rows(limit)]
 
+@router.get("/market")
+async def market(hours: Annotated[int, Query(ge=1, le=720)] = 24) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.market_history(hours)]
+
+@router.post("/users/{player_id}/ban")
+async def ban_json(player_id: int, body: BanBody, actor: AdminActor) -> dict[str, bool]:
+    try:
+        return {"applied": await admin.ban(actor, player_id, body.enabled, body.reason, str(uuid4()))}
+    except ValueError as exc:
+        raise fail(exc) from exc
+
+@router.post("/users/{player_id}/xp")
+async def xp_json(player_id: int, body: XPBody, actor: AdminActor) -> dict[str, int]:
+    result = await admin.grant_xp(actor, player_id, body.amount, str(uuid4()))
+    return {"granted": result.granted if result else 0}
+
+@router.post("/market/{asset}")
+async def price(asset: str, body: PriceBody, actor: AdminActor) -> dict[str, bool]:
+    try:
+        return {"applied": await admin.set_market_price(actor, asset, body.price, str(uuid4()))}
+    except ValueError as exc:
+        raise fail(exc) from exc
+
+@router.post("/countries/{country_id}/asset")
+async def country_asset(country_id: int, body: CountryAssetBody,
+                        actor: AdminActor) -> dict[str, int]:
+    try:
+        return {"balance": await admin.adjust_country_asset(
+            actor, country_id, body.asset, body.delta, str(uuid4()))}
+    except ValueError as exc:
+        raise fail(exc) from exc
+
+@router.post("/countries/{country_id}/president")
+async def president(country_id: int, body: PresidentBody,
+                    actor: AdminActor) -> dict[str, bool]:
+    try:
+        return {"applied": await admin.set_president(
+            actor, country_id, body.player_id, str(uuid4()))}
+    except ValueError as exc:
+        raise fail(exc) from exc
+
+@router.post("/news")
+async def enqueue_news(body: NewsBody, actor: AdminActor) -> dict[str, bool]:
+    destination = body.destination or get_settings().global_news_chat_id
+    if destination is None:
+        raise HTTPException(400, "GLOBAL_NEWS_CHAT_ID تنظیم نشده است.")
+    return {"queued": await admin.enqueue_news(
+        actor, body.text, destination, str(uuid4()))}
+
+# Backward-compatible form routes.
 @router.post("/ban/{player_id}")
-async def ban(
-    player_id: int,
-    actor: AdminActor,
-    enabled: Annotated[bool, Form()],
-    reason: Annotated[str | None, Form()] = None,
-) -> dict[str, bool]:
-    return {
-        "applied": await admin.ban(actor, player_id, enabled, reason, str(uuid4()))
-    }
-
+async def ban_form(player_id: int, actor: AdminActor,
+                   enabled: Annotated[bool, Form()],
+                   reason: Annotated[str | None, Form()] = None) -> dict[str, bool]:
+    return {"applied": await admin.ban(actor, player_id, enabled, reason, str(uuid4()))}
 
 @router.post("/grant-xp/{player_id}")
-async def grant(
-    player_id: int,
-    actor: AdminActor,
-    amount: Annotated[int, Form(gt=0, le=1_000_000)],
-) -> dict[str, int]:
+async def grant_form(player_id: int, actor: AdminActor,
+                     amount: Annotated[int, Form(gt=0, le=1_000_000)]) -> dict[str, int]:
     result = await admin.grant_xp(actor, player_id, amount, str(uuid4()))
     return {"granted": result.granted if result else 0}
 
-
 @router.post("/feature/{key}")
-async def feature(
-    key: str,
-    actor: AdminActor,
-    enabled: Annotated[bool, Form()],
-) -> dict[str, bool]:
+async def feature(key: str, actor: AdminActor,
+                  enabled: Annotated[bool, Form()]) -> dict[str, bool]:
     return {"applied": await admin.feature(actor, key, enabled, str(uuid4()))}
 ```
 
 ### `apps\admin\static\admin.css`
 
 ```css
-:root { color-scheme: dark; }
-body { font-family: Vazirmatn, system-ui, sans-serif; }
-.panel { background: #12151c; border: 1px solid #1f2532; }
+@font-face{font-family:TL;src:local("Vazirmatn"),local("Tahoma")}*{box-sizing:border-box}html{scroll-behavior:smooth}:root{color-scheme:dark;--ink:#eaf5ff;--muted:#7e99ad;--dim:#496477;--cyan:#3ee6d0;--blue:#4ba3ff;--violet:#8c7cff;--rose:#ff6685;--bg:#06111d;--panel:rgba(11,29,45,.72);--line:rgba(151,208,239,.13);--shadow:0 24px 80px rgba(0,0,0,.28)}body{margin:0;background:radial-gradient(circle at 72% -20%,#123c55 0,transparent 38%),radial-gradient(circle at 12% 92%,#151f4a 0,transparent 34%),var(--bg);color:var(--ink);font-family:TL,"Segoe UI",sans-serif;min-height:100vh}.noise{position:fixed;inset:0;pointer-events:none;opacity:.12;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E")}.rail{position:fixed;right:0;top:0;bottom:0;width:248px;border-left:1px solid var(--line);background:rgba(4,15,25,.78);backdrop-filter:blur(24px);padding:28px 18px;display:flex;flex-direction:column;z-index:10}.brand{display:flex;align-items:center;gap:12px;color:var(--ink);text-decoration:none;padding:0 10px 32px}.brand-mark{width:43px;height:43px;border:1px solid #5ce6dc66;border-radius:14px;display:grid;place-items:center;background:linear-gradient(145deg,#1d4f63,#0a2535);box-shadow:inset 0 1px #ffffff22,0 10px 30px #00b8ab18;color:var(--cyan);font:800 22px Georgia}.brand b{display:block;font-size:17px;letter-spacing:.4px}.brand small{color:var(--dim);letter-spacing:3px;font-size:8px}nav{display:grid;gap:7px}.nav{appearance:none;border:0;background:transparent;color:var(--muted);display:flex;align-items:center;gap:14px;border-radius:13px;padding:12px 14px;font:600 14px TL;cursor:pointer;text-align:right;transition:.2s}.nav span{font-size:19px;color:#6289a2;width:22px}.nav em{font-style:normal}.nav:hover,.nav.active{color:var(--ink);background:linear-gradient(90deg,rgba(62,230,208,.13),rgba(75,163,255,.04));box-shadow:inset -2px 0 var(--cyan)}.nav.active span{color:var(--cyan)}.rail-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 10px 0;display:grid;grid-template-columns:10px 1fr;align-items:center;gap:3px 9px;color:var(--muted);font-size:12px}.rail-foot small{grid-column:2;color:var(--dim);direction:ltr;text-align:right}.pulse,.live i{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 14px var(--cyan);animation:pulse 2s infinite}@keyframes pulse{50%{opacity:.35;transform:scale(.75)}}.shell{margin-right:248px;min-height:100vh;padding:0 38px 60px}.topbar{height:112px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);margin-bottom:30px}.eyebrow{color:var(--cyan);font-size:10px;letter-spacing:1.6px;margin:0 0 8px;font-weight:700}.topbar h1,.section-lead h2{margin:0;font-size:27px;letter-spacing:-.8px}.top-actions{display:flex;gap:10px}.live,.icon-btn,select{border:1px solid var(--line);background:#0a1d2b99;color:var(--muted);border-radius:11px;height:38px;display:flex;align-items:center;gap:9px;padding:0 13px}.live{font:700 9px monospace;letter-spacing:2px}.live i{width:6px;height:6px}.icon-btn{font-size:20px;cursor:pointer}.view{display:none;animation:rise .35s ease}.view.active{display:block}@keyframes rise{from{opacity:0;transform:translateY(8px)}}.hero-grid{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(260px,.8fr);gap:18px}.hero-card,.signal-card,.panel,.metric-grid article,.country-card,.market-cards article{border:1px solid var(--line);background:linear-gradient(145deg,rgba(14,39,57,.8),rgba(7,21,34,.72));backdrop-filter:blur(18px);box-shadow:var(--shadow);border-radius:20px}.hero-card{min-height:230px;padding:34px;display:flex;align-items:center;justify-content:space-between;overflow:hidden;position:relative}.hero-card:before{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(62,230,208,.06));pointer-events:none}.hero-card strong{display:block;font:300 clamp(38px,6vw,75px) TL;margin:8px 0;letter-spacing:-4px}.hero-card span{color:var(--muted);font-size:12px}.orbit{width:170px;height:170px;border:1px solid #68e8dc28;border-radius:50%;display:grid;place-items:center;position:relative;background:radial-gradient(circle,#39d8ca18,transparent 62%)}.orbit:before,.orbit:after{content:"";position:absolute;border:1px solid #75bfff1c;border-radius:50%;inset:18px}.orbit:after{inset:42px}.orbit b{font:700 24px Georgia;color:var(--cyan);text-shadow:0 0 25px #34e6d1}.orbit i{position:absolute;width:6px;height:6px;background:var(--cyan);border-radius:50%;box-shadow:0 0 12px var(--cyan)}.orbit i:nth-of-type(1){top:13px}.orbit i:nth-of-type(2){bottom:25px;left:17px;background:var(--blue)}.orbit i:nth-of-type(3){right:0;background:var(--violet)}.signal-card{padding:27px}.signal-card>p{font-size:12px;color:var(--muted);margin:0 0 20px}.service-radar{display:grid;gap:11px}.service-radar span{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#061623;border:1px solid var(--line);border-radius:10px;font-size:11px}.service-radar i{font-style:normal;color:var(--cyan)}.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:16px 0}.metric-grid article{padding:21px}.metric-grid span,.metric-grid small{display:block;color:var(--muted);font-size:11px}.metric-grid strong{display:block;font-size:28px;font-weight:500;margin:8px 0}.metric-grid small{color:var(--dim)}.split{display:grid;grid-template-columns:1.55fr 1fr;gap:16px}.panel{padding:24px}.panel-head,.section-lead{display:flex;align-items:center;justify-content:space-between;gap:20px}.panel-head{margin-bottom:18px}.panel-head h2{font-size:17px;margin:0}.text-btn{border:0;background:transparent;color:var(--cyan);cursor:pointer;font:11px TL}.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.quick-grid button{background:#081c2b;border:1px solid var(--line);border-radius:13px;padding:16px;color:var(--ink);font:700 12px TL;text-align:right;cursor:pointer}.quick-grid small{display:block;color:var(--dim);margin-top:7px;font-weight:400}.chart-wrap{height:250px;position:relative;direction:ltr}.chart-wrap.large{height:390px}.chart-wrap svg{width:100%;height:100%;overflow:visible}.chart-wrap .gridline{stroke:#bde4ff12}.chart-wrap .area{fill:url(#areaGradient)}.chart-wrap .line{fill:none;stroke:var(--cyan);stroke-width:2.4;filter:drop-shadow(0 0 7px #3ee6d077)}.chart-wrap .dot{fill:var(--cyan);stroke:#06111d;stroke-width:2}.chart-label{position:absolute;direction:rtl;color:var(--muted);font-size:10px}.empty{height:100%;display:grid;place-items:center;color:var(--dim);font-size:12px;border:1px dashed var(--line);border-radius:14px}.section-lead{margin-bottom:22px}.section-lead p:not(.eyebrow){color:var(--muted);margin:7px 0 0;font-size:12px}.section-lead select{font:12px TL}.market-stage{margin-bottom:16px}.asset-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}.asset-tabs button{border:1px solid var(--line);background:#081b29;color:var(--muted);border-radius:10px;padding:9px 13px;font:11px TL;cursor:pointer}.asset-tabs button.active{background:#0e3c46;color:var(--cyan);border-color:#3ee6d044}.market-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.market-cards article{padding:19px;display:grid;gap:7px}.market-cards strong{font-size:23px;font-weight:500}.market-cards span,.market-cards small{color:var(--muted);font-size:11px}.market-cards button{margin-top:6px}.search{display:flex;align-items:center;border:1px solid var(--line);background:#081b29;border-radius:12px;padding:0 13px;width:min(340px,100%)}input,textarea{width:100%;border:1px solid var(--line);background:#071824;color:var(--ink);border-radius:11px;padding:11px 13px;font:12px TL;outline:none}input:focus,textarea:focus{border-color:#3ee6d066;box-shadow:0 0 0 3px #3ee6d00c}.search input{border:0;background:transparent}.table-panel{padding:0;overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:870px}th{color:var(--dim);font-size:10px;text-align:right;padding:16px;border-bottom:1px solid var(--line);font-weight:600}td{padding:16px;border-bottom:1px solid #bfe5ff0b;color:var(--muted);font-size:11px}td b{color:var(--ink);display:block;font-size:12px;margin-bottom:4px}.badge{display:inline-flex;padding:5px 8px;border-radius:20px;background:#29d6bd16;color:var(--cyan)}.badge.danger{background:#ff668518;color:var(--rose)}.row-actions{display:flex;gap:6px}.small-btn,.primary,.secondary{border:1px solid var(--line);border-radius:9px;background:#0b2433;color:var(--ink);padding:8px 11px;font:10px TL;cursor:pointer}.small-btn.danger{color:var(--rose)}.primary{background:linear-gradient(135deg,#2bc8b7,#268cd3);border:0;color:#02131d;font-weight:800;padding:11px 17px}.secondary{color:var(--muted)}.country-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}.country-card{padding:22px}.country-top{display:flex;justify-content:space-between;align-items:start}.country-card h3{margin:0;font-size:19px}.country-card p{color:var(--muted);font-size:11px}.treasury{font-size:24px;margin:20px 0 5px}.resource-row{display:flex;gap:7px;flex-wrap:wrap;margin:15px 0}.resource-row span{background:#071a28;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:10px;color:var(--muted)}.country-actions{display:flex;gap:7px;flex-wrap:wrap}.news-layout{grid-template-columns:.85fr 1.4fr}.composer{display:grid;gap:15px}.composer label{font-size:11px;color:var(--muted)}.composer label small{color:var(--dim);margin-right:5px}.composer textarea{height:180px;resize:vertical;margin-top:8px}.news-list{display:grid;gap:8px;max-height:440px;overflow:auto}.news-item{padding:12px;border:1px solid var(--line);border-radius:11px;background:#071824;display:grid;grid-template-columns:1fr auto;gap:6px}.news-item p{margin:0;color:var(--ink);font-size:11px}.news-item small{color:var(--dim);font-size:9px}dialog{border:1px solid var(--line);border-radius:20px;background:#081b29;color:var(--ink);box-shadow:0 30px 100px #000b;max-width:430px;width:calc(100% - 30px);padding:0}dialog::backdrop{background:#020a10cc;backdrop-filter:blur(6px)}dialog form{padding:27px;position:relative}dialog h2{margin:0 0 22px}.dialog-close{position:absolute;left:16px;top:14px;background:transparent;border:0;color:var(--muted);font-size:25px;cursor:pointer}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}#dialog-fields{display:grid;gap:11px}#dialog-fields label{color:var(--muted);font-size:11px;display:grid;gap:7px}#toast{position:fixed;left:25px;bottom:25px;z-index:50;background:#0c2836;border:1px solid #3ee6d044;border-radius:12px;padding:12px 18px;color:var(--ink);font-size:11px;box-shadow:var(--shadow);opacity:0;transform:translateY(12px);pointer-events:none;transition:.25s}#toast.show{opacity:1;transform:none}#toast.error{border-color:#ff668566;color:#ff9eb2}@media(max-width:1050px){.rail{width:82px;padding:25px 11px}.brand span:last-child,.nav em,.rail-foot span,.rail-foot small{display:none}.brand{padding:0 8px 28px}.nav{justify-content:center}.shell{margin-right:82px;padding:0 24px 50px}.hero-grid,.split{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.rail{right:0;left:0;top:auto;height:70px;width:auto;border-left:0;border-top:1px solid var(--line);padding:8px 10px;flex-direction:row}.brand,.rail-foot{display:none}.rail nav{display:flex;width:100%;justify-content:space-around}.nav{padding:8px 10px;display:grid;gap:2px;justify-items:center}.nav em{display:block;font-size:8px}.nav.active{box-shadow:inset 0 -2px var(--cyan)}.shell{margin:0;padding:0 15px 92px}.topbar{height:88px}.topbar h1{font-size:21px}.hero-card{padding:24px;min-height:190px}.orbit{width:95px;height:95px}.hero-card strong{font-size:36px;letter-spacing:-2px}.metric-grid{grid-template-columns:1fr 1fr}.metric-grid article{padding:16px}.market-cards,.country-grid{grid-template-columns:1fr}.section-lead{align-items:flex-start;flex-direction:column}.search{width:100%}.chart-wrap.large{height:300px}.panel{padding:18px}}
+```
+
+### `apps\admin\static\admin.js`
+
+```javascript
+"use strict";
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const fa=new Intl.NumberFormat("fa-IR"), money=n=>`${fa.format(Number(n||0))} تومان`;
+const state={market:[],asset:"USD"};
+function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";clearTimeout(el._t);el._t=setTimeout(()=>el.className="",3500)}
+async function api(url,options={}){const res=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
+function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
+function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر"}[name];history.replaceState(null,"",`#${name}`);load(name)}
+$$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+async function overview(){const [o,h]=await Promise.all([api('/api/admin/overview'),api('/healthz')]);$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i>${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';await market(true)}
+function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
+async function market(mini=false){state.market=await api(`/api/admin/market?hours=${$("#market-range")?.value||24}`);if(!state.market.length)return;let selected=state.market.find(x=>x.asset_code===state.asset)||state.market[0];state.asset=selected.asset_code;chart(mini?'#mini-chart':'#market-chart',selected.points?.length?selected.points:[{price:selected.current_price_toman,time:selected.updated_at}]);if(mini)return;$("#market-tabs").innerHTML=state.market.map(x=>`<button class="${x.asset_code===state.asset?'active':''}" data-asset="${esc(x.asset_code)}">${esc(x.title_fa)}</button>`).join('');$("#market-cards").innerHTML=state.market.map(x=>`<article><span>${esc(x.title_fa)} · ${esc(x.asset_code)}</span><strong>${money(x.current_price_toman)}</strong><small>آخرین تغییر: ${date(x.updated_at)}</small><button class="small-btn" data-price="${esc(x.asset_code)}">ثبت قیمت جدید</button></article>`).join('');$$('[data-asset]').forEach(b=>b.onclick=()=>{state.asset=b.dataset.asset;market()});$$('[data-price]').forEach(b=>b.onclick=()=>priceDialog(b.dataset.price))}
+function openDialog(title,kicker,fields,confirm){$("#dialog-title").textContent=title;$("#dialog-kicker").textContent=kicker;$("#dialog-fields").innerHTML=fields;$("#dialog-confirm").onclick=confirm;$("#action-dialog").showModal()}
+function priceDialog(asset){const row=state.market.find(x=>x.asset_code===asset);openDialog(`قیمت ${row?.title_fa||asset}`,"ثبت نقطه بازار",`<label>قیمت جدید به تومان<input id="f-price" type="number" min="1" value="${row?.current_price_toman||1}"></label>`,async()=>{try{await api(`/api/admin/market/${encodeURIComponent(asset)}`,{method:'POST',body:JSON.stringify({price:Number($("#f-price").value)})});$("#action-dialog").close();toast("قیمت ثبت شد");await market()}catch(e){toast(e.message,true)}})}
+async function players(){const q=encodeURIComponent($("#player-search").value.trim()),rows=await api(`/api/admin/users?limit=150&q=${q}`);$("#players-body").innerHTML=rows.map(x=>`<tr><td><b>${esc(x.first_name)}</b>@${esc(x.username||'—')} · #${x.id}<br><small>TG ${x.telegram_id}</small></td><td><b>سطح ${fa.format(x.level)}</b>${fa.format(x.xp)} XP</td><td><b>${money(Number(x.wallet_toman)+Number(x.savings_toman))}</b>${fa.format(x.usd_cents)} سنت</td><td>${date(x.last_seen_at)}</td><td><span class="badge ${x.is_banned?'danger':''}">${x.is_banned?'مسدود':'فعال'}</span></td><td><div class="row-actions"><button class="small-btn" data-xp="${x.id}">XP</button><button class="small-btn ${x.is_banned?'':'danger'}" data-ban="${x.id}" data-banned="${x.is_banned}">${x.is_banned?'رفع مسدودی':'مسدود'}</button></div></td></tr>`).join('')||'<tr><td colspan="6">بازیکنی پیدا نشد.</td></tr>';$$('[data-xp]').forEach(b=>b.onclick=()=>xpDialog(Number(b.dataset.xp)));$$('[data-ban]').forEach(b=>b.onclick=()=>banDialog(Number(b.dataset.ban),b.dataset.banned==='true'))}
+function xpDialog(id){openDialog(`اعطای XP به #${id}`,"پیشرفت بازیکن",'<label>مقدار XP<input id="f-xp" type="number" min="1" max="1000000" value="1000"></label>',async()=>{try{const r=await api(`/api/admin/users/${id}/xp`,{method:'POST',body:JSON.stringify({amount:Number($("#f-xp").value)})});$("#action-dialog").close();toast(`${fa.format(r.granted)} XP اعمال شد`);players()}catch(e){toast(e.message,true)}})}
+function banDialog(id,banned){openDialog(banned?`رفع مسدودی #${id}`:`مسدود کردن #${id}`,"کنترل دسترسی",banned?'': '<label>دلیل مسدودی<input id="f-reason" maxlength="500" placeholder="دلیل روشن و قابل پیگیری"></label>',async()=>{try{await api(`/api/admin/users/${id}/ban`,{method:'POST',body:JSON.stringify({enabled:!banned,reason:$("#f-reason")?.value||null})});$("#action-dialog").close();toast(banned?'دسترسی باز شد':'بازیکن مسدود شد');players()}catch(e){toast(e.message,true)}})}
+const assetFa={IRT:'خزانه',oil:'نفت',food:'غذا',minerals:'معدن',energy:'انرژی',technology:'فناوری'};
+async function countries(){const rows=await api('/api/admin/countries?limit=100');$("#country-grid").innerHTML=rows.map(x=>`<article class="country-card"><div class="country-top"><div><p class="eyebrow">${esc(x.government_type)}</p><h3>${esc(x.name)}</h3></div><span class="badge">${fa.format(x.citizens)} شهروند</span></div><div class="treasury">${money(x.treasury_toman)}</div><p>رئیس‌جمهور: ${esc(x.president_name||'تعیین نشده')} ${x.president_player_id?`(#${x.president_player_id})`:''}</p><div class="resource-row">${Object.entries(x.resources||{}).map(([k,v])=>`<span>${assetFa[k]||esc(k)}: ${fa.format(v)}</span>`).join('')}</div><div class="country-actions"><button class="small-btn" data-country-asset="${x.id}">تنظیم دارایی</button><button class="small-btn" data-president="${x.id}">تعیین رئیس‌جمهور</button></div></article>`).join('')||'<div class="empty">هنوز کشوری ساخته نشده است</div>';$$('[data-country-asset]').forEach(b=>b.onclick=()=>assetDialog(Number(b.dataset.countryAsset)));$$('[data-president]').forEach(b=>b.onclick=()=>presidentDialog(Number(b.dataset.president)))}
+function assetDialog(id){openDialog(`دارایی کشور #${id}`,"تنظیم حسابرسی‌شده",`<label>نوع دارایی<select id="f-asset">${Object.entries(assetFa).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label><label>مقدار تغییر (منفی برای کاهش)<input id="f-delta" type="number" value="1000"></label>`,async()=>{try{await api(`/api/admin/countries/${id}/asset`,{method:'POST',body:JSON.stringify({asset:$("#f-asset").value,delta:Number($("#f-delta").value)})});$("#action-dialog").close();toast("دارایی کشور اصلاح شد");countries()}catch(e){toast(e.message,true)}})}
+function presidentDialog(id){openDialog(`ریاست کشور #${id}`,"مدیریت حاکمیت",'<label>شناسه داخلی بازیکن<input id="f-president" type="number" min="1" placeholder="مثلاً 42"></label><small>برای خالی‌کردن سمت، فیلد را خالی بگذارید. بازیکن انتخابی باید شهروند همین کشور باشد.</small>',async()=>{try{const v=$("#f-president").value;await api(`/api/admin/countries/${id}/president`,{method:'POST',body:JSON.stringify({player_id:v?Number(v):null})});$("#action-dialog").close();toast("ریاست‌جمهوری به‌روزرسانی شد");countries()}catch(e){toast(e.message,true)}})}
+async function news(){const rows=await api('/api/admin/news?limit=100');$("#news-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p>${esc(x.payload?.text||x.payload?.event_code||x.event_type)}</p><small>${esc(x.event_type)} · ${date(x.created_at)}</small></div><span class="badge ${x.last_error_code?'danger':''}">${x.published_at?'منتشر شد':x.last_error_code?'خطا':'در صف'}</span></div>`).join('')||'<div class="empty">صف خبر خالی است</div>'}
+$("#send-news").onclick=async()=>{const text=$("#news-text").value.trim(),d=$("#news-destination").value.trim();if(text.length<3)return toast("متن خبر کوتاه است",true);try{await api('/api/admin/news',{method:'POST',body:JSON.stringify({text,destination:d?Number(d):null})});$("#news-text").value='';toast("خبر وارد صف انتشار شد");news()}catch(e){toast(e.message,true)}};
+let searchTimer;$("#player-search").oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(players,300)};$("#market-range").onchange=()=>market();$("#refresh").onclick=()=>load(location.hash.slice(1)||'overview');
+function load(name){({overview,market,players,countries,news}[name]||overview)().catch(e=>toast(e.message,true))}
+setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
 ```
 
 ### `apps\admin\templates\base.html`
 
 ```html
-<!doctype html>
-<html lang="fa" dir="rtl" class="dark">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}TeleLife Admin{% endblock %}</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/htmx.org@1.9.12"></script>
-<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
+<!doctype html><html lang="fa" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#06111d"><title>{% block title %}مرکز فرماندهی TeleLife{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', path='/admin.css') }}">
-</head>
-<body class="bg-[#0a0c11] text-slate-200 min-h-screen">
-  <header class="border-b border-[#1f2532] bg-[#0d1016]">
-    <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-      <div class="flex items-baseline gap-3">
-        <span class="text-lg font-extrabold tracking-tight text-white">TeleLife</span>
-        <span class="text-xs text-slate-500">پنل مدیریت</span>
-      </div>
-      <span class="text-xs text-slate-500">فاز ۱</span>
-    </div>
-  </header>
-  <main class="max-w-6xl mx-auto px-5 py-8">
-    {% block content %}{% endblock %}
-  </main>
-</body>
-</html>
+</head><body><div class="noise"></div>{% block content %}{% endblock %}
+<script src="{{ url_for('static', path='/admin.js') }}" defer></script></body></html>
 ```
 
 ### `apps\admin\templates\dashboard.html`
 
 ```html
-{% extends "base.html" %}
-{% block content %}
-<h1 class="text-2xl font-extrabold text-white mb-1">داشبورد زنده</h1>
-<p class="text-sm text-slate-500 mb-6">هر ۱۰ ثانیه به‌روزرسانی می‌شود</p>
-
-<div id="stats" hx-get="/partials/stats" hx-trigger="every 10s" hx-swap="innerHTML">
-  {% include "partials/stats.html" %}
-</div>
+{% extends "base.html" %}{% block content %}
+<aside class="rail" aria-label="منوی مدیریت">
+  <a class="brand" href="#overview" aria-label="TeleLife"><span class="brand-mark">T</span><span><b>TeleLife</b><small>COMMAND</small></span></a>
+  <nav>
+    <button class="nav active" data-view="overview"><span>◈</span><em>نمای کلی</em></button>
+    <button class="nav" data-view="market"><span>⌁</span><em>بازار</em></button>
+    <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
+    <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
+    <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
+  </nav>
+  <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
+</aside>
+<main class="shell">
+<header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live"><i></i><span>LIVE</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی">↻</button></div></header>
+<div id="toast" role="status" aria-live="polite"></div>
+<section class="view active" id="view-overview">
+  <div class="hero-grid">
+    <article class="hero-card"><div><p class="eyebrow">حجم اقتصاد بازیکنان</p><strong data-stat="player_liquidity">{{ stats.get('player_liquidity',0) }}</strong><span>تومان نقدینگی ثبت‌شده</span></div><div class="orbit"><b>TL</b><i></i><i></i><i></i></div></article>
+    <article class="signal-card"><p>وضعیت شبکه</p><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
+  </div>
+  <div class="metric-grid">
+    <article><span>بازیکن</span><strong data-stat="players_total">{{ stats.get('players_total',0) }}</strong><small>کل حساب‌ها</small></article>
+    <article><span>فعال</span><strong data-stat="players_active">{{ stats.get('players_active',0) }}</strong><small>هفت روز اخیر</small></article>
+    <article><span>کشور</span><strong data-stat="countries_total">{{ stats.get('countries_total',0) }}</strong><small>جهان فعال</small></article>
+    <article><span>صف خبر</span><strong data-stat="news_pending">{{ stats.get('news_pending',0) }}</strong><small>در انتظار انتشار</small></article>
+  </div>
+  <div class="split">
+    <article class="panel chart-panel"><div class="panel-head"><div><p class="eyebrow">نبض بازار</p><h2>حرکت دارایی‌های اصلی</h2></div><button class="text-btn" data-go="market">مشاهده بازار ←</button></div><div id="mini-chart" class="chart-wrap"><div class="empty">داده بازار در حال بارگذاری است</div></div></article>
+    <article class="panel"><div class="panel-head"><div><p class="eyebrow">کنترل سریع</p><h2>عملیات پرتکرار</h2></div></div><div class="quick-grid"><button data-go="players">اعطای XP<small>مدیریت پیشرفت</small></button><button data-go="countries">تنظیم منابع<small>اقتصاد کشور</small></button><button data-go="news">ارسال خبر<small>صف انتشار</small></button><button data-go="market">قیمت بازار<small>ثبت نقطه جدید</small></button></div></article>
+  </div>
+</section>
+<section class="view" id="view-market">
+  <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>هر تغییر قیمت ثبت و وارد تاریخچه نمودار می‌شود.</p></div><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div>
+  <article class="panel market-stage"><div id="market-tabs" class="asset-tabs"></div><div id="market-chart" class="chart-wrap large"><div class="empty">در حال دریافت قیمت‌ها…</div></div></article>
+  <div id="market-cards" class="market-cards"></div>
+</section>
+<section class="view" id="view-players">
+  <div class="section-lead"><div><p class="eyebrow">مدیریت هویت</p><h2>بازیکنان</h2><p>جست‌وجو، اعطای XP و کنترل دسترسی.</p></div><label class="search"><span>⌕</span><input id="player-search" placeholder="نام، نام کاربری یا شناسه…"></label></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>بازیکن</th><th>سطح / XP</th><th>دارایی</th><th>آخرین حضور</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="players-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-countries">
+  <div class="section-lead"><div><p class="eyebrow">ژئو‌اقتصاد</p><h2>کشورها</h2><p>خزانه، منابع و ریاست‌جمهوری در یک قاب.</p></div></div><div id="country-grid" class="country-grid"></div>
+</section>
+<section class="view" id="view-news">
+  <div class="section-lead"><div><p class="eyebrow">انتشار سراسری</p><h2>اتاق خبر</h2><p>پیام را مستقیم وارد صف مطمئن Outbox کنید.</p></div></div>
+  <div class="split news-layout"><article class="panel composer"><label>متن اطلاعیه<textarea id="news-text" maxlength="4000" placeholder="پیام رسمی شبکه را بنویسید…"></textarea></label><label>Chat ID مقصد <small>خالی = GLOBAL_NEWS_CHAT_ID</small><input id="news-destination" inputmode="numeric" placeholder="-1001234567890"></label><button id="send-news" class="primary">قرار دادن در صف انتشار</button></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">تاریخچه</p><h2>صف پیام‌ها</h2></div></div><div id="news-list" class="news-list"></div></article></div>
+</section>
+</main>
+<dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
 {% endblock %}
 ```
 
@@ -571,8 +675,8 @@ async def prune_missions() -> int:
 
 async def prune_xp_events() -> int:
     result = await db.execute(
-        "DELETE FROM xp_events WHERE created_at < now() - ($1 || ' days')::interval",
-        str(XP_EVENT_RETENTION_DAYS),
+        "DELETE FROM xp_events WHERE created_at < now() - ($1::double precision * interval '1 day')",
+        XP_EVENT_RETENTION_DAYS,
     )
     return int(result.rsplit(" ", 1)[-1] or 0)
 
@@ -609,87 +713,95 @@ async def run() -> dict[str, int]:
 ### `apps\scheduler\main.py`
 
 ```python
-"""Scheduler for minute-resolution and daily idempotent maintenance."""
-
+"""Supervised scheduler with isolated minute and daily background jobs."""
 from __future__ import annotations
 
 import asyncio
 import logging
-import signal
 from datetime import UTC, datetime, timedelta
 
 from telegram import Bot
 
 from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
-from packages.core.db.migrator import migrate
-from packages.core.logging import setup_logging
-from packages.core.settings import Service, get_settings
+from packages.core.repositories import admin_repo
+from packages.core.settings import Settings
 
 logger = logging.getLogger(__name__)
 
 
-async def minute_loop(stop: asyncio.Event, bot: Bot) -> None:
-    while not stop.is_set():
-        try:
-            await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
-            await country_jobs.resolve_due()
-            await country_jobs.publish_news(bot)
-        except Exception:
-            logger.exception("minute jobs failed")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=60)
-        except TimeoutError:
-            continue
-
-
 def seconds_until_daily() -> float:
     now = datetime.now(UTC)
-    target = (now + timedelta(days=1)).replace(
-        hour=0, minute=10, second=0, microsecond=0
-    )
+    target = (now + timedelta(days=1)).replace(hour=0, minute=10, second=0, microsecond=0)
     return max(1.0, (target - now).total_seconds())
 
 
-async def daily_loop(stop: asyncio.Event) -> None:
-    while not stop.is_set():
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=seconds_until_daily())
-            return
-        except TimeoutError:
-            logger.debug("daily maintenance window reached")
-        try:
-            await daily_reset.run()
-            await country_jobs.daily_events()
-        except Exception:
-            logger.exception("daily jobs failed")
-
-
-async def run() -> None:
-    settings = get_settings()
-    setup_logging(Service.SCHEDULER.value, settings.log_level)
-    await db.create_pool(settings)
-    await migrate()
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, stop.set)
-        except NotImplementedError:
-            logger.debug("signal handlers are unavailable on this event loop")
+async def _sleep_or_stop(stop: asyncio.Event, seconds: float) -> bool:
     try:
-        async with Bot(settings.teleworld_bot_token) as bot:
-            await asyncio.gather(minute_loop(stop, bot), daily_loop(stop))
-    finally:
-        await db.close_pool()
+        await asyncio.wait_for(stop.wait(), timeout=seconds)
+        return True
+    except TimeoutError:
+        return False
 
 
-def main() -> None:
-    asyncio.run(run())
+class SchedulerService:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+        self._running = False
+        self._heartbeat = 0.0
 
+    def healthy(self) -> bool:
+        return self._running
 
-if __name__ == "__main__":
-    main()
+    async def minute_loop(self, stop: asyncio.Event, bot: Bot) -> None:
+        while not stop.is_set():
+            try:
+                await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
+                await country_jobs.resolve_due()
+                await country_jobs.publish_news(bot)
+                await admin_repo.capture_market_snapshot()
+                self._heartbeat = asyncio.get_running_loop().time()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("minute jobs failed; next cycle remains scheduled")
+            await _sleep_or_stop(stop, 60)
+
+    async def daily_loop(self, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            if await _sleep_or_stop(stop, seconds_until_daily()):
+                return
+            try:
+                await daily_reset.run()
+                await country_jobs.daily_events()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("daily jobs failed; scheduler remains active")
+
+    async def run(self, stop: asyncio.Event) -> None:
+        self._running = True
+        try:
+            async with Bot(self.settings.teleworld_bot_token) as bot:
+                minute = asyncio.create_task(self.minute_loop(stop, bot), name="scheduler:minute")
+                daily = asyncio.create_task(self.daily_loop(stop), name="scheduler:daily")
+                stop_waiter = asyncio.create_task(stop.wait(), name="scheduler:stop")
+                done, _ = await asyncio.wait(
+                    {minute, daily, stop_waiter}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if stop_waiter not in done:
+                    for task in done:
+                        if task is not stop_waiter:
+                            exc = task.exception()
+                            if exc:
+                                raise exc
+                            raise RuntimeError(f"{task.get_name()} exited unexpectedly")
+                for task in (minute, daily, stop_waiter):
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(minute, daily, stop_waiter, return_exceptions=True)
+        finally:
+            self._running = False
 ```
 
 ### `apps\telelife_bot\__init__.py`
@@ -714,6 +826,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from telegram import Message, Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from apps.telelife_bot.texts import fa
@@ -781,8 +894,16 @@ async def send_panel(
 ) -> None:
     """Send or edit a panel and arm its auto-cleanup timer."""
     if edit:
-        sent = await message.edit_text(text, reply_markup=markup)
-        target = sent if isinstance(sent, Message) else message
+        try:
+            sent = await message.edit_text(text, reply_markup=markup)
+        except BadRequest as exc:
+            # Double taps and refreshes can legitimately produce an identical panel.
+            # Telegram rejects that no-op with HTTP 400; it is not an application error.
+            if "message is not modified" not in str(exc).lower():
+                raise
+            target = message
+        else:
+            target = sent if isinstance(sent, Message) else message
     else:
         target = await message.reply_text(text, reply_markup=markup)
     schedule_cleanup(context, target, panel)
@@ -1577,7 +1698,7 @@ def level_up(result: XPResult) -> str:
 ```python
 """TeleWorld handler modules; imported explicitly by the application."""
 
-__all__ = ["country", "politics", "production", "status"]
+__all__ = ["country", "onboarding", "politics", "production", "status"]
 ```
 
 ### `apps\teleworld_bot\handlers\country.py`
@@ -1649,7 +1770,7 @@ async def create(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             description=parts[2],
         )
     except ValueError as exc:
-        await ctx.message.reply_text(fa.INVALID_INPUT.format(reason=str(exc)))
+        await ctx.message.reply_text(fa.INVALID_INPUT.format(reason=fa.ERROR_NAMES.get(str(exc), str(exc))))
         return
     await ctx.message.reply_text(fa.COUNTRY_CREATED.format(name=row["name"]))
 
@@ -1730,6 +1851,107 @@ def register(application) -> None:  # type: ignore[no-untyped-def]
         ("paytax", tax),
     ):
         application.add_handler(CommandHandler(command, handler))
+```
+
+### `apps\teleworld_bot\handlers\onboarding.py`
+
+```python
+"""Welcoming lifecycle, guided menu and country-creation conversation."""
+from __future__ import annotations
+from telegram import Update
+from telegram.constants import ChatMemberStatus, ChatType
+from telegram.ext import CallbackQueryHandler, ChatMemberHandler, CommandHandler, ContextTypes, MessageHandler, filters
+from apps.teleworld_bot import keyboards as kb
+from apps.teleworld_bot.texts import fa
+from packages.core.repositories import country_repo, group_repo, player_repo
+from packages.core.services import country as country_service
+
+_GROUPS={ChatType.GROUP,ChatType.SUPERGROUP}
+FLOW_KEY="tw_country_flow"
+
+async def _is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+ chat=update.effective_chat; user=update.effective_user
+ if not chat or not user:return False
+ member=await context.bot.get_chat_member(chat.id,user.id)
+ return member.status in {ChatMemberStatus.ADMINISTRATOR,ChatMemberStatus.OWNER}
+
+async def _home(update: Update, context: ContextTypes.DEFAULT_TYPE, *, edit: bool=False) -> None:
+ chat=update.effective_chat; msg=update.effective_message
+ if not chat or not msg:return
+ if chat.type not in _GROUPS:
+  username=context.bot.username or ""
+  await msg.reply_text(fa.WORLD_PRIVATE,reply_markup=kb.private(username) if username else None)
+  return
+ await group_repo.get_or_create(chat.id,chat.title or "سرزمین بی‌نام")
+ country=await country_repo.by_chat(chat.id); admin=await _is_admin(update,context)
+ text=fa.WORLD_HOME_COUNTRY.format(name=country["name"]) if country else fa.WORLD_HOME_EMPTY_ADMIN if admin else fa.WORLD_HOME_EMPTY_MEMBER
+ markup=kb.home(bool(country),admin)
+ if edit and update.callback_query:
+  try: await update.callback_query.edit_message_text(text,reply_markup=markup)
+  except Exception as exc:
+   if "message is not modified" not in str(exc).lower():raise
+ else: await msg.reply_text(text,reply_markup=markup)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE)->None: await _home(update,context)
+
+async def welcomed(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
+ change=update.my_chat_member
+ if not change or change.chat.type not in _GROUPS:return
+ old,new=change.old_chat_member.status,change.new_chat_member.status
+ if old in {ChatMemberStatus.LEFT,ChatMemberStatus.BANNED} and new in {ChatMemberStatus.MEMBER,ChatMemberStatus.ADMINISTRATOR}:
+  await group_repo.get_or_create(change.chat.id,change.chat.title or "سرزمین بی‌نام")
+  await context.bot.send_message(change.chat.id,fa.WORLD_ADDED,reply_markup=kb.home(False,False))
+
+async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
+ q=update.callback_query
+ if not q:return
+ await q.answer(); action=(q.data or "").removeprefix("tw:")
+ if action in {"home","cancel"}:
+  context.chat_data.pop(FLOW_KEY,None);await _home(update,context,edit=True);return
+ if action=="guide":await q.message.reply_text(fa.WORLD_GUIDE,reply_markup=kb.back());return
+ if action=="create":
+  if not await _is_admin(update,context):await q.answer(fa.ADMIN_REQUIRED,show_alert=True);return
+  if await country_repo.by_chat(q.message.chat.id):await q.answer(fa.COUNTRY_EXISTS,show_alert=True);return
+  context.chat_data[FLOW_KEY]={"step":"name","owner_id":q.from_user.id}
+  await q.edit_message_text(fa.WIZARD_NAME,reply_markup=kb.cancel());return
+ if action.startswith("gov:"):
+  flow=context.chat_data.get(FLOW_KEY)
+  if not flow or flow.get("owner_id")!=q.from_user.id or flow.get("step")!="government":return
+  flow["government"]=action.split(":",1)[1];flow["step"]="description"
+  await q.edit_message_text(fa.WIZARD_DESCRIPTION.format(name=flow["name"]),reply_markup=kb.cancel());return
+ if action=="join":
+  user=q.from_user; player=await player_repo.get_or_create(user.id,username=user.username,first_name=user.first_name or "شهروند",language_code=user.language_code or "fa")
+  try: joined=await country_service.join_country(chat_id=q.message.chat.id,player_id=player.id)
+  except ValueError:await q.answer(fa.COUNTRY_MISSING,show_alert=True);return
+  await q.message.reply_text(fa.COUNTRY_JOINED if joined else fa.ALREADY_CITIZEN,reply_markup=kb.back());return
+ if action=="country":
+  row=await country_repo.by_chat(q.message.chat.id)
+  if row:await q.message.reply_text(fa.COUNTRY_STATUS.format(name=row['name'],description=row['description'],government=fa.GOVERNMENT_NAMES.get(row['government_type'],row['government_type']),treasury=row['treasury_toman']),reply_markup=kb.back())
+  return
+ if action=="jobs":await q.message.reply_text(fa.JOBS_GUIDE,reply_markup=kb.back());return
+ if action=="politics":await q.message.reply_text(fa.POLITICS_GUIDE,reply_markup=kb.back());return
+ if action=="donate_help":await q.message.reply_text(fa.DONATE_GUIDE,reply_markup=kb.back());return
+
+async def wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
+ flow=context.chat_data.get(FLOW_KEY);msg=update.effective_message;user=update.effective_user;chat=update.effective_chat
+ if not flow or not msg or not user or not chat or user.id!=flow.get("owner_id"):return
+ text=(msg.text or "").strip()
+ if flow["step"]=="name":
+  if not 3<=len(text)<=80:await msg.reply_text(fa.WIZARD_NAME_ERROR);return
+  flow["name"]=text;flow["step"]="government";await msg.reply_text(fa.WIZARD_GOVERNMENT,reply_markup=kb.governments());return
+ if flow["step"]=="description":
+  if not 10<=len(text)<=500:await msg.reply_text(fa.WIZARD_DESCRIPTION_ERROR);return
+  player=await player_repo.get_or_create(user.id,username=user.username,first_name=user.first_name or "شهروند",language_code=user.language_code or "fa")
+  try:row=await country_service.create_country(chat_id=chat.id,chat_title=chat.title or "",player_id=player.id,name=flow["name"],government=flow["government"],description=text)
+  except ValueError as exc:context.chat_data.pop(FLOW_KEY,None);await msg.reply_text(fa.INVALID_INPUT.format(reason=fa.ERROR_NAMES.get(str(exc),str(exc))),reply_markup=kb.home(False,True));return
+  context.chat_data.pop(FLOW_KEY,None);await msg.reply_text(fa.COUNTRY_CREATED_GUIDED.format(name=row["name"]),reply_markup=kb.home(True,True))
+
+def register(app)->None:
+ app.add_handler(CommandHandler("start",start),group=0)
+ app.add_handler(CommandHandler("menu",start),group=0)
+ app.add_handler(ChatMemberHandler(welcomed,ChatMemberHandler.MY_CHAT_MEMBER),group=0)
+ app.add_handler(CallbackQueryHandler(callback,pattern=r"^tw:"),group=0)
+ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,wizard_text),group=1)
 ```
 
 ### `apps\teleworld_bot\handlers\politics.py`
@@ -1887,13 +2109,13 @@ def register(application) -> None:  # type: ignore[no-untyped-def]
 ### `apps\teleworld_bot\handlers\status.py`
 
 ```python
-"""Group activation and status for TeleWorld."""
+"""TeleWorld onboarding, group activation and status commands."""
 
 from __future__ import annotations
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatType
-from telegram.ext import CommandHandler, ContextTypes
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
 
 from apps.teleworld_bot.texts import fa
 from packages.core.repositories import group_repo, player_repo
@@ -1918,6 +2140,44 @@ async def _sync(update: Update) -> tuple[int, str] | None:
     return group.id, group.title
 
 
+def _private_menu(bot_username: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "➕ افزودن TeleWorld به گروه",
+            url=f"https://t.me/{bot_username}?startgroup=true",
+            style="primary",
+        )],
+        [InlineKeyboardButton("📚 مشاهده راهنما", callback_data="tw:help")],
+    ])
+
+
+def _group_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🌍 وضعیت گروه", callback_data="tw:status", style="primary"),
+            InlineKeyboardButton("💼 فهرست شغل‌ها", callback_data="tw:jobs"),
+        ],
+        [InlineKeyboardButton("📚 راهنمای دستورات", callback_data="tw:help")],
+    ])
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Always acknowledge /start and direct users to the correct game context."""
+    message = update.effective_message
+    chat = update.effective_chat
+    if message is None or chat is None:
+        return
+
+    if chat.type in _GROUP_TYPES:
+        await _sync(update)
+        await message.reply_text(fa.START_GROUP, reply_markup=_group_menu())
+        return
+
+    username = context.bot.username or ""
+    markup = _private_menu(username) if username else None
+    await message.reply_text(fa.START_PRIVATE, reply_markup=markup)
+
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message is None:
@@ -1933,19 +2193,82 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "SELECT count(*) FROM group_members WHERE group_id = $1", group_id
     )
     await message.reply_text(
-        fa.STATUS.format(title=title, members=fmt.number(int(members or 0)))
+        fa.STATUS.format(title=title, members=fmt.number(int(members or 0))),
+        reply_markup=_group_menu(),
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
     if message:
-        await message.reply_text(fa.HELP)
+        await message.reply_text(
+            fa.HELP,
+            reply_markup=_group_menu()
+            if update.effective_chat and update.effective_chat.type in _GROUP_TYPES
+            else None,
+        )
+
+
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    action = (query.data or "").removeprefix("tw:")
+    if action == "status":
+        await status(update, context)
+    elif action == "jobs":
+        await query.message.reply_text(fa.JOBS, reply_markup=_group_menu())
+    elif action == "help":
+        await query.message.reply_text(fa.HELP)
 
 
 def register(application) -> None:  # type: ignore[no-untyped-def]
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("help", help_command))
+```
+
+### `apps\teleworld_bot\keyboards.py`
+
+```python
+"""Coherent glass keyboard system for TeleWorld onboarding and navigation."""
+from __future__ import annotations
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+def b(text: str, action: str, *, primary: bool = False, success: bool = False) -> InlineKeyboardButton:
+    style = "primary" if primary else "success" if success else None
+    return InlineKeyboardButton(text, callback_data=f"tw:{action}", style=style)
+
+def private(bot_username: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{bot_username}?startgroup=true", style="primary")],
+        [b("📘 TeleWorld چطور کار می‌کند؟", "guide")],
+    ])
+
+def home(has_country: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
+    rows=[]
+    if has_country:
+        rows += [[b("🏛 کشور من", "country", primary=True), b("💼 شغل و تولید", "jobs")],
+                 [b("🗳 سیاست", "politics"), b("🎁 کمک به کشور", "donate_help")]]
+    elif is_admin:
+        rows += [[b("🏗 ساخت کشور", "create", primary=True)], [b("📘 راهنمای شروع", "guide")]]
+    else:
+        rows += [[b("🤝 عضویت در کشور", "join", primary=True)], [b("📘 راهنمای شروع", "guide")]]
+    rows.append([b("🔄 تازه‌سازی", "home")])
+    return InlineKeyboardMarkup(rows)
+
+def governments() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [b("🏛 جمهوری", "gov:republic", primary=True), b("👑 پادشاهی", "gov:monarchy")],
+        [b("🏢 فدرال", "gov:federal"), b("🤝 شورایی", "gov:council")],
+        [b("⚔️ دیکتاتوری", "gov:dictatorship"), b("لغو", "cancel")],
+    ])
+
+def cancel() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[b("لغو ساخت کشور", "cancel")]])
+
+def back() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[b("بازگشت به منوی اصلی", "home")]])
 ```
 
 ### `apps\teleworld_bot\main.py`
@@ -1954,12 +2277,12 @@ def register(application) -> None:  # type: ignore[no-untyped-def]
 """TeleWorld bot entrypoint."""
 from __future__ import annotations
 from telegram.ext import Application
-from apps.teleworld_bot.handlers import country,politics,production,status
+from apps.teleworld_bot.handlers import country,onboarding,politics,production,status
 from apps.teleworld_bot.texts import fa
 from packages.core.bot import make_error_handler,run_bot
 from packages.core.settings import Service
 def register(application:Application)->None:
- status.register(application);country.register(application);production.register(application);politics.register(application);application.add_error_handler(make_error_handler(fa.ERROR))
+ onboarding.register(application);status.register(application);country.register(application);production.register(application);politics.register(application);application.add_error_handler(make_error_handler(fa.ERROR))
 def main()->None:run_bot(Service.TELEWORLD,register)
 if __name__=='__main__':main()
 ```
@@ -2007,34 +2330,115 @@ CHOOSE_JOB_USAGE = "روش استفاده: /choosejob farmer"
 UPGRADE_USAGE = "روش استفاده: /upgrade production یا /upgrade storage"
 INVALID_AMOUNT = "مقدار باید یک عدد صحیح مثبت باشد."
 INVALID_INPUT = "ورودی معتبر نیست: {reason}"
+
+START_PRIVATE = (
+    "🌐 <b>به TeleWorld خوش آمدید</b>\n\n"
+    "TeleWorld بخش گروهی بازی است؛ کشور، اقتصاد، شغل، انتخابات و پروژه‌های ملی "
+    "داخل گروه‌های تلگرام اجرا می‌شوند.\n\n"
+    "ربات را به گروه اضافه کنید و همان‌جا /start یا /status را بزنید."
+)
+START_GROUP = (
+    "🌍 <b>TeleWorld در این گروه فعال شد</b>\n\n"
+    "از منوی زیر شروع کنید. برای ساخت کشور، مدیر گروه می‌تواند از /createcountry استفاده کند."
+)
+
+# Guided TeleWorld experience
+WORLD_PRIVATE = (
+    "🌐 <b>من TeleWorld هستم</b>\n\n"
+    "بخش گروهی دنیای TeleLife؛ اینجا گروه شما تبدیل به یک کشور می‌شود، "
+    "شهروند می‌گیرد، اقتصاد می‌سازد و وارد سیاست می‌شود.\n\n"
+    "برای شروع من را به یک گروه اضافه کنید."
+)
+WORLD_ADDED = (
+    "🌍 <b>TeleWorld وارد گروه شد</b>\n"
+    "<code>─────────────────</code>\n"
+    "من این گروه را به یک دنیای زنده تبدیل می‌کنم: کشور، شغل، تولید، "
+    "انتخابات و پروژه‌های ملی.\n\n"
+    "👑 <b>مدیر گروه:</b> از منوی زیر «ساخت کشور» را بزن.\n"
+    "👥 <b>اعضا:</b> بعد از ساخت کشور، با یک دکمه شهروند شوید.\n\n"
+    "هر وقت گم شدید /menu را بزنید."
+)
+WORLD_HOME_EMPTY_ADMIN = (
+    "🧭 <b>شروع TeleWorld</b>\n\n"
+    "این گروه هنوز کشور ندارد. ساخت کشور فقط سه مرحله ساده دارد:\n"
+    "۱) نام کشور  ۲) نوع حکومت  ۳) توضیح کوتاه\n\n"
+    "دکمه ساخت کشور را بزنید؛ من قدم‌به‌قدم همراهتان هستم."
+)
+WORLD_HOME_EMPTY_MEMBER = (
+    "🧭 <b>TeleWorld آماده است</b>\n\n"
+    "هنوز کشوری در این گروه ساخته نشده. از یکی از مدیرهای گروه بخواهید "
+    "با دکمه «ساخت کشور» راه‌اندازی را انجام دهد."
+)
+WORLD_HOME_COUNTRY = (
+    "🏛 <b>{name}</b>\n"
+    "مرکز فرمان کشور آماده است. از دکمه‌ها برای دیدن کشور، شغل، سیاست و اقتصاد استفاده کنید."
+)
+WORLD_GUIDE = (
+    "📘 <b>راهنمای خیلی سریع</b>\n\n"
+    "<b>۱. کشور:</b> مدیر گروه آن را با Wizard می‌سازد.\n"
+    "<b>۲. شهروندی:</b> اعضا دکمه عضویت را می‌زنند.\n"
+    "<b>۳. شغل:</b> /choosejob programmer و بعد /collect\n"
+    "<b>۴. اقتصاد:</b> /donate IRT 10000 یا /paytax 10000\n"
+    "<b>۵. سیاست:</b> بعد از شکل‌گیری کشور انتخابات و پروژه ملی فعال‌اند.\n\n"
+    "دستورهای اصلی: /menu، /country، /jobs، /help"
+)
+WIZARD_NAME = "🏗 <b>مرحله ۱ از ۳ — نام کشور</b>\n\nنامی بین ۳ تا ۸۰ حرف بفرستید.\nمثال: جمهوری آفتاب"
+WIZARD_NAME_ERROR = "نام کشور باید بین ۳ تا ۸۰ حرف باشد. یک نام دیگر بفرستید."
+WIZARD_GOVERNMENT = "🏗 <b>مرحله ۲ از ۳ — نوع حکومت</b>\n\nیکی از مدل‌های زیر را انتخاب کنید:"
+WIZARD_DESCRIPTION = "🏗 <b>مرحله ۳ از ۳ — معرفی {name}</b>\n\nدر یک یا دو جمله کشور را معرفی کنید (۱۰ تا ۵۰۰ حرف)."
+WIZARD_DESCRIPTION_ERROR = "توضیح باید بین ۱۰ تا ۵۰۰ حرف باشد. کمی کامل‌تر بنویسید."
+COUNTRY_CREATED_GUIDED = (
+    "🎉 <b>{name} ساخته شد!</b>\n\n"
+    "شما بنیان‌گذار و اولین شهروند هستید. حالا اعضای گروه می‌توانند از منوی /menu عضو شوند، "
+    "شغل انتخاب کنند و اقتصاد کشور را بسازند."
+)
+ALREADY_CITIZEN = "شما قبلاً شهروند یک کشور هستید."
+JOBS_GUIDE = (
+    "💼 <b>شغل و تولید</b>\n\n"
+    "شغل‌ها: farmer، miner، trader، journalist، doctor، programmer، engineer\n\n"
+    "انتخاب: <code>/choosejob programmer</code>\n"
+    "جمع‌آوری درآمد: <code>/collect</code>\n"
+    "ارتقای تولید: <code>/upgrade production</code>\n"
+    "ارتقای انبار: <code>/upgrade storage</code>"
+)
+POLITICS_GUIDE = (
+    "🗳 <b>سیاست کشور</b>\n\n"
+    "شروع انتخابات: /startelection\nنامزدی: /nominate\n"
+    "رأی: روی پیام نامزد Reply کنید و /vote بزنید.\n"
+    "پروژه ملی: /startproject"
+)
+DONATE_GUIDE = (
+    "🎁 <b>کمک به کشور</b>\n\n"
+    "کمک پولی: <code>/donate IRT 10000</code>\n"
+    "مالیات: <code>/paytax 10000</code>\n"
+    "برای منابع، IRT را با food، oil، minerals، energy یا technology جایگزین کنید."
+)
+GOVERNMENT_NAMES = {"republic":"جمهوری","monarchy":"پادشاهی","dictatorship":"دیکتاتوری","federal":"فدرال","council":"شورایی"}
+ERROR_NAMES = {"invalid_government":"نوع حکومت معتبر نیست.","invalid_name":"نام کشور معتبر نیست.","invalid_description":"توضیح کشور معتبر نیست.","country_already_exists":"این گروه قبلاً کشور دارد."}
 ```
 
 ### `AUDIT_STATUS.md`
 
 ```markdown
-# TeleLife Audit Status
+# Production Readiness Audit
 
-## Completed validations
+## اصلاحات تکمیل‌شده
 
-- Reconstructed and recursively audited the complete supplied project dump.
-- All Python files compile successfully.
-- All local imports resolve statically.
-- No circular imports remain in the project dependency graph.
-- All YAML files parse as mappings.
-- Required configuration paths resolve.
-- Embedded shell/heredoc contamination was removed.
-- Missing clock and admin static resources were added.
-- Render multi-service and Docker configuration were repaired.
-- Supabase transaction-pooler settings disable asyncpg statement caching.
-- 46 dependency-independent logic and integrity tests passed.
+- ورودی چهار-service قدیمی با یک process supervisor جایگزین شد.
+- دو bot در polling mode، scheduler و FastAPI همزمان اجرا می‌شوند.
+- فقط Uvicorn/FastAPI روی `PORT` listen می‌کند.
+- crash boundary، auto-restart با exponential backoff، health registry، heartbeat، memory watermark و graceful shutdown افزوده شد.
+- lifecycle دیتابیس process-level شد تا یک pool مشترک asyncpg با سقف ۴ connection استفاده شود.
+- Supabase transaction pooler با statement cache صفر، TLS در DSN نمونه و inactive lifetime محدود پیکربندی شد.
+- migration runner با PostgreSQL advisory transaction lock ایمن شد.
+- health/readiness endpoints و security headers افزوده شدند.
+- Render Blueprint به یک Free Web Service کاهش یافت؛ هیچ feature، route، table یا game service حذف نشد.
+- تمام فایل‌های Python با AST و compileall بررسی شدند؛ fragment تولیدی خراب در source پیدا نشد.
+- تست crash isolation افزوده شد.
 
-## Environment-dependent verification still required
+## محدودیت اعتبارسنجی محیط ممیزی
 
-The audit sandbox did not contain Docker, Python 3.13, PostgreSQL, or all declared runtime/test packages. Before production deployment, CI or a deployment environment must install the declared dependencies, run the full pytest suite, build the Docker image, apply migrations to staging Supabase, and smoke-test all four Render services.
-
-## Security action
-
-Rotate the Supabase database password that appeared in the original supplied dump. The corrected environment example contains no credential.
+اجرای کامل pytest و integration test زنده با Supabase/Telegram در sandbox آفلاین ممکن نبود، زیرا runtime dependencyهای پروژه و credentialهای واقعی موجود نبودند. Dockerfile نصب dependencyها و compile check را در build انجام می‌دهد. پیش از production، تست‌های integration باید در CI با database آزمایشی و tokenهای اختصاصی اجرا شوند.
 ```
 
 ### `DELIVERY.md`
@@ -2902,6 +3306,45 @@ CREATE TRIGGER trg_player_jobs_touch
     FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 ```
 
+### `migrations\0004_admin_command_center.sql`
+
+```sql
+-- Admin command center: authoritative market board and historical snapshots.
+CREATE TABLE IF NOT EXISTS market_prices (
+    asset_code          TEXT PRIMARY KEY,
+    title_fa            TEXT NOT NULL,
+    current_price_toman BIGINT NOT NULL CHECK (current_price_toman > 0),
+    updated_by          TEXT NOT NULL DEFAULT 'system',
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (length(asset_code) BETWEEN 1 AND 64)
+);
+
+CREATE TABLE IF NOT EXISTS market_price_snapshots (
+    asset_code  TEXT NOT NULL REFERENCES market_prices(asset_code) ON DELETE RESTRICT,
+    price_toman BIGINT NOT NULL CHECK (price_toman > 0),
+    captured_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (asset_code, captured_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_market_snapshots_time
+    ON market_price_snapshots (captured_at DESC, asset_code);
+
+INSERT INTO market_prices (asset_code, title_fa, current_price_toman)
+VALUES
+    ('USD', 'دلار', 85000),
+    ('oil', 'نفت', 720000),
+    ('food', 'غذا', 85000),
+    ('minerals', 'مواد معدنی', 310000),
+    ('energy', 'انرژی', 190000),
+    ('technology', 'فناوری', 950000)
+ON CONFLICT (asset_code) DO NOTHING;
+
+INSERT INTO market_price_snapshots (asset_code, price_toman, captured_at)
+SELECT asset_code, current_price_toman, date_trunc('minute', now())
+FROM market_prices
+ON CONFLICT DO NOTHING;
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -2918,9 +3361,9 @@ CREATE TRIGGER trg_player_jobs_touch
 
 ```python
 from packages.core.bot.errors import make_error_handler
-from packages.core.bot.runtime import build_application, run_bot
+from packages.core.bot.runtime import PollingService, build_application, run_bot
 
-__all__ = ["build_application", "make_error_handler", "run_bot"]
+__all__ = ["PollingService", "build_application", "make_error_handler", "run_bot"]
 ```
 
 ### `packages\core\bot\errors.py`
@@ -2958,35 +3401,24 @@ def make_error_handler(user_message: str) -> Any:
 ### `packages\core\bot\runtime.py`
 
 ```python
-"""Shared bot bootstrap: polling and webhook from one code path."""
-
+"""Shared Telegram application construction and supervised polling lifecycle."""
 from __future__ import annotations
 
+import asyncio
 import logging
-import signal
 from collections.abc import Callable
 
 from telegram.ext import AIORateLimiter, Application, ApplicationBuilder, Defaults
 
-from packages.core import db
 from packages.core.config import get_config
+from packages.core.settings import Service, Settings, get_settings
+
+from packages.core import db
 from packages.core.db.migrator import migrate
 from packages.core.logging import setup_logging
-from packages.core.settings import RunMode, Service, Settings, get_settings
 
 logger = logging.getLogger(__name__)
-
 RegisterFn = Callable[[Application], None]
-
-
-async def _post_init(app: Application, settings: Settings, service: Service) -> None:
-    await db.create_pool(settings)
-    await migrate()
-    logger.info("%s ready in %s mode", service.value, settings.run_mode.value)
-
-
-async def _post_shutdown(app: Application) -> None:
-    await db.close_pool()
 
 
 def build_application(settings: Settings, service: Service) -> Application:
@@ -2995,8 +3427,6 @@ def build_application(settings: Settings, service: Service) -> Application:
     return (
         ApplicationBuilder()
         .token(settings.token_for(service))
-        .post_init(lambda app: _post_init(app, settings, service))
-        .post_shutdown(_post_shutdown)
         .defaults(defaults)
         .rate_limiter(AIORateLimiter())
         .concurrent_updates(cfg.int_("core.telegram.concurrent_updates"))
@@ -3006,30 +3436,55 @@ def build_application(settings: Settings, service: Service) -> Application:
     )
 
 
+class PollingService:
+    """Owns one Telegram Application without owning the process event loop."""
+
+    def __init__(self, settings: Settings, service: Service, register: RegisterFn) -> None:
+        self.application = build_application(settings, service)
+        register(self.application)
+        self.service = service
+
+    def healthy(self) -> bool:
+        updater = self.application.updater
+        return bool(self.application.running and updater and updater.running)
+
+    async def run(self, stop: asyncio.Event) -> None:
+        app = self.application
+        updater = app.updater
+        if updater is None:
+            raise RuntimeError(f"{self.service.value} updater is unavailable")
+        try:
+            await app.initialize()
+            await app.start()
+            await updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=["message", "callback_query", "my_chat_member"],
+            )
+            logger.info("%s polling started", self.service.value)
+            await stop.wait()
+        finally:
+            if updater.running:
+                await updater.stop()
+            if app.running:
+                await app.stop()
+            await app.shutdown()
+            logger.info("%s polling stopped", self.service.value)
+
+
 def run_bot(service: Service, register: RegisterFn) -> None:
-    """Entrypoint used by both bots. Blocking; handles its own event loop."""
-    settings = get_settings()
-    setup_logging(service.value, settings.log_level)
-
-    application = build_application(settings, service)
-    register(application)
-
-    if settings.run_mode is RunMode.WEBHOOK:
-        application.run_webhook(
-            listen=settings.host,
-            port=settings.port,
-            url_path=f"telegram/{service.value}",
-            webhook_url=settings.webhook_url(service),
-            secret_token=settings.webhook_secret or None,
-            drop_pending_updates=True,
-            allowed_updates=["message", "callback_query", "my_chat_member"],
-        )
-    else:
-        application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=["message", "callback_query", "my_chat_member"],
-            stop_signals=(signal.SIGINT, signal.SIGTERM),
-        )
+    """Backward-compatible standalone entrypoint; production uses the supervisor."""
+    async def standalone() -> None:
+        settings = get_settings()
+        setup_logging(service.value, settings.log_level)
+        await db.create_pool(settings)
+        await migrate()
+        stop = asyncio.Event()
+        polling = PollingService(settings, service, register)
+        try:
+            await polling.run(stop)
+        finally:
+            await db.close_pool()
+    asyncio.run(standalone())
 ```
 
 ### `packages\core\config\__init__.py`
@@ -3722,37 +4177,33 @@ def discover() -> list[Path]:
 
 
 async def migrate() -> list[str]:
-    """Apply pending migrations. Each file runs in its own transaction."""
+    """Apply pending migrations under a PostgreSQL advisory lock."""
     applied: list[str] = []
     async with dbpool.acquire() as conn:
-        await conn.execute(_BOOTSTRAP)
-        done = {r["version"]: r["checksum"] for r in await conn.fetch(
-            "SELECT version, checksum FROM schema_migrations"
-        )}
-
-    for path in discover():
-        version = path.stem
-        sql = path.read_text(encoding="utf-8")
-        digest = _checksum(sql)
-
-        if version in done:
-            if done[version] != digest:
-                raise RuntimeError(
-                    f"Migration '{version}' changed after being applied. "
-                    "Create a new migration instead of editing history."
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", 839204731)
+            await conn.execute(_BOOTSTRAP)
+            done = {r["version"]: r["checksum"] for r in await conn.fetch(
+                "SELECT version, checksum FROM schema_migrations"
+            )}
+            for path in discover():
+                version = path.stem
+                sql = path.read_text(encoding="utf-8")
+                digest = _checksum(sql)
+                if version in done:
+                    if done[version] != digest:
+                        raise RuntimeError(
+                            f"Migration '{version}' changed after being applied. "
+                            "Create a new migration instead of editing history."
+                        )
+                    continue
+                await conn.execute(sql)
+                await conn.execute(
+                    "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)",
+                    version, digest,
                 )
-            continue
-
-        async with dbpool.transaction() as conn:
-            await conn.execute(sql)
-            await conn.execute(
-                "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)",
-                version,
-                digest,
-            )
-        applied.append(version)
-        logger.info("applied migration %s", version)
-
+                applied.append(version)
+                logger.info("applied migration %s", version)
     if not applied:
         logger.info("database schema up to date")
     return applied
@@ -3801,9 +4252,9 @@ async def create_pool(settings: Settings) -> asyncpg.Pool:
         command_timeout=settings.db_command_timeout,
         # Required for Supabase / pgbouncer transaction mode.
         statement_cache_size=settings.db_statement_cache_size,
-        max_inactive_connection_lifetime=300.0,
+        max_inactive_connection_lifetime=settings.db_max_inactive_seconds,
         init=_init_connection,
-        server_settings={"application_name": f"telelife-{settings.service}"},
+        server_settings={"application_name": "telelife-supervisor"},
     )
     logger.info("database pool ready")
     return _pool
@@ -4013,19 +4464,113 @@ __all__ = [
 ### `packages\core\repositories\admin_repo.py`
 
 ```python
-"""Admin mutations and append-only audit writes."""
+"""Read models and audited mutation primitives for the admin command center."""
 from __future__ import annotations
+
 from typing import Any
 import asyncpg
 from packages.core import db
-async def audit(conn:asyncpg.Connection,actor:str,action:str,request_id:str,details:dict[str,Any],player_id:int|None=None,country_id:int|None=None)->bool:
- return await conn.fetchval("INSERT INTO admin_audit_log(admin_actor,action,target_player_id,target_country_id,request_id,details) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id",actor,action,player_id,country_id,request_id,details) is not None
-async def set_ban(conn:asyncpg.Connection,player_id:int,banned:bool,reason:str|None)->None:await conn.execute("UPDATE players SET is_banned=$2,ban_reason=$3 WHERE id=$1",player_id,banned,reason)
-async def set_flag(conn:asyncpg.Connection,key:str,enabled:bool,actor:str)->None:await conn.execute("INSERT INTO feature_flags(key,enabled,updated_by) VALUES($1,$2,$3) ON CONFLICT(key) DO UPDATE SET enabled=$2,updated_by=$3,updated_at=now()",key,enabled,actor)
-async def stats()->asyncpg.Record|None:return await db.fetchrow("SELECT (SELECT count(*) FROM players) players,(SELECT count(*) FROM countries) countries,(SELECT count(*) FROM citizenships) citizens")
-async def users(limit:int=100)->list[asyncpg.Record]:return await db.fetch("SELECT id,telegram_id,first_name,level,xp,is_banned FROM players ORDER BY created_at DESC LIMIT $1",limit)
-async def countries(limit:int=100)->list[asyncpg.Record]:return await db.fetch("SELECT id,name,government_type,treasury_toman,created_at FROM countries ORDER BY created_at DESC LIMIT $1",limit)
-async def audits(limit:int=100)->list[asyncpg.Record]:return await db.fetch("SELECT * FROM admin_audit_log ORDER BY created_at DESC LIMIT $1",limit)
+
+async def audit(conn: asyncpg.Connection, actor: str, action: str, request_id: str,
+                details: dict[str, Any], player_id: int | None = None,
+                country_id: int | None = None) -> bool:
+    return await conn.fetchval(
+        """INSERT INTO admin_audit_log
+        (admin_actor,action,target_player_id,target_country_id,request_id,details)
+        VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING id""",
+        actor, action, player_id, country_id, request_id, details,
+    ) is not None
+
+async def set_ban(conn: asyncpg.Connection, player_id: int, banned: bool,
+                  reason: str | None) -> None:
+    result = await conn.execute(
+        "UPDATE players SET is_banned=$2,ban_reason=$3 WHERE id=$1", player_id, banned, reason
+    )
+    if result == "UPDATE 0":
+        raise ValueError("player_not_found")
+
+async def set_flag(conn: asyncpg.Connection, key: str, enabled: bool, actor: str) -> None:
+    await conn.execute(
+        """INSERT INTO feature_flags(key,enabled,updated_by) VALUES($1,$2,$3)
+        ON CONFLICT(key) DO UPDATE SET enabled=$2,updated_by=$3,updated_at=now()""",
+        key, enabled, actor,
+    )
+
+async def dashboard_stats() -> asyncpg.Record | None:
+    return await db.fetchrow("""
+        SELECT
+          (SELECT count(*) FROM players) AS players_total,
+          (SELECT count(*) FROM players WHERE last_seen_at >= now()-interval '7 days') AS players_active,
+          (SELECT count(*) FROM countries) AS countries_total,
+          (SELECT count(*) FROM groups WHERE is_active) AS groups_total,
+          (SELECT COALESCE(sum(wallet_toman+savings_toman),0) FROM players) AS player_liquidity,
+          (SELECT COALESCE(sum(treasury_toman),0) FROM countries) AS country_treasury,
+          (SELECT count(*) FROM news_outbox WHERE published_at IS NULL) AS news_pending,
+          (SELECT count(*) FROM players WHERE is_banned) AS players_banned
+    """)
+
+async def stats() -> asyncpg.Record | None:
+    return await db.fetchrow("""SELECT
+        (SELECT count(*) FROM players) players,
+        (SELECT count(*) FROM countries) countries,
+        (SELECT count(*) FROM citizenships) citizens""")
+
+async def users(limit: int = 100, query: str = "") -> list[asyncpg.Record]:
+    needle = f"%{query.strip()}%"
+    return await db.fetch("""
+        SELECT id,telegram_id,username,first_name,level,xp,wallet_toman,savings_toman,
+               usd_cents,is_banned,is_frozen,ban_reason,last_seen_at,created_at
+        FROM players
+        WHERE $2='' OR first_name ILIKE $3 OR COALESCE(username,'') ILIKE $3
+                      OR telegram_id::text=$2 OR id::text=$2
+        ORDER BY last_seen_at DESC LIMIT $1
+    """, limit, query.strip(), needle)
+
+async def countries(limit: int = 100) -> list[asyncpg.Record]:
+    return await db.fetch("""
+        SELECT c.id,c.name,c.government_type,c.treasury_toman,c.daily_income_toman,
+               c.daily_expense_toman,c.president_player_id,p.first_name AS president_name,
+               count(DISTINCT z.player_id) AS citizens,
+               COALESCE(jsonb_object_agg(r.asset_code,r.quantity)
+                 FILTER (WHERE r.asset_code IS NOT NULL),'{}'::jsonb) AS resources,
+               c.created_at
+        FROM countries c
+        LEFT JOIN players p ON p.id=c.president_player_id
+        LEFT JOIN citizenships z ON z.country_id=c.id
+        LEFT JOIN country_resources r ON r.country_id=c.id
+        GROUP BY c.id,p.first_name ORDER BY c.treasury_toman DESC LIMIT $1
+    """, limit)
+
+async def audits(limit: int = 100) -> list[asyncpg.Record]:
+    return await db.fetch("SELECT * FROM admin_audit_log ORDER BY created_at DESC LIMIT $1", limit)
+
+async def news_rows(limit: int = 100) -> list[asyncpg.Record]:
+    return await db.fetch("""
+        SELECT id,event_type,destination_chat_id,payload,attempts,available_at,
+               processing_until,published_at,last_error_code,created_at
+        FROM news_outbox ORDER BY created_at DESC LIMIT $1
+    """, limit)
+
+async def market_history(hours: int = 24) -> list[asyncpg.Record]:
+    return await db.fetch("""
+        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,
+               COALESCE(jsonb_agg(jsonb_build_object(
+                 'time',s.captured_at,'price',s.price_toman) ORDER BY s.captured_at)
+                 FILTER (WHERE s.captured_at IS NOT NULL),'[]'::jsonb) AS points
+        FROM market_prices p
+        LEFT JOIN market_price_snapshots s ON s.asset_code=p.asset_code
+          AND s.captured_at >= now()-($1::int * interval '1 hour')
+        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at
+        ORDER BY CASE p.asset_code WHEN 'USD' THEN 0 ELSE 1 END,p.asset_code
+    """, hours)
+
+async def capture_market_snapshot() -> int:
+    result = await db.execute("""
+        INSERT INTO market_price_snapshots(asset_code,price_toman,captured_at)
+        SELECT asset_code,current_price_toman,date_trunc('minute',now()) FROM market_prices
+        ON CONFLICT DO NOTHING
+    """)
+    return int(result.rsplit(" ", 1)[-1])
 ```
 
 ### `packages\core\repositories\country_repo.py`
@@ -4085,7 +4630,7 @@ async def create(
         INSERT INTO countries
             (group_id, name, government_type, description,
              protection_until, created_by_player_id)
-        VALUES ($1, $2, $3, $4, now() + ($5::text || ' days')::interval, $6)
+        VALUES ($1, $2, $3, $4, now() + ($5::double precision * interval '1 day'), $6)
         RETURNING *
         """,
         group_id,
@@ -4624,7 +5169,7 @@ async def effect(
         INSERT INTO country_effects
             (country_id, effect_code, magnitude, starts_at, ends_at,
              source_type, source_key)
-        VALUES ($1, $2, $3, now(), now() + ($5::text || ' hours')::interval,
+        VALUES ($1, $2, $3, now(), now() + ($5::double precision * interval '1 hour'),
                 'country_mission', $4)
         ON CONFLICT DO NOTHING
         """,
@@ -4708,7 +5253,7 @@ async def claim(
             )
             UPDATE news_outbox n SET
                 processing_token = $1,
-                processing_until = now() + ($4::text || ' seconds')::interval,
+                processing_until = now() + ($4::double precision * interval '1 second'),
                 attempts = attempts + 1
             FROM picked
             WHERE n.id = picked.id
@@ -4748,7 +5293,7 @@ async def failed(
             processing_token = NULL,
             processing_until = NULL,
             last_error_code  = $3,
-            available_at     = now() + ($4::text || ' seconds')::interval
+            available_at     = now() + ($4::double precision * interval '1 second')
         WHERE id = $1 AND processing_token = $2
         """,
         row_id,
@@ -4860,7 +5405,7 @@ async def count_total() -> int:
 async def count_active(days: int = 7) -> int:
     return int(
         await db.fetchval(
-            "SELECT count(*) FROM players WHERE last_seen_at > now() - ($1 || ' days')::interval",
+            "SELECT count(*) FROM players WHERE last_seen_at > now() - ($1::double precision * interval '1 day')",
             str(days),
         )
         or 0
@@ -5132,6 +5677,47 @@ async def complete_if_ready(conn: asyncpg.Connection, project_id: int) -> bool:
     return completed is not None
 ```
 
+### `packages\core\runtime_status.py`
+
+```python
+"""Process-local runtime health registry shared with the admin panel."""
+from __future__ import annotations
+
+import time
+from dataclasses import asdict, dataclass
+from typing import Any
+
+
+@dataclass(slots=True)
+class ServiceState:
+    name: str
+    status: str = "starting"
+    restarts: int = 0
+    last_error: str | None = None
+    last_started_monotonic: float | None = None
+    last_healthy_monotonic: float | None = None
+
+    def public(self) -> dict[str, Any]:
+        data = asdict(self)
+        now = time.monotonic()
+        started = data.pop("last_started_monotonic")
+        healthy = data.pop("last_healthy_monotonic")
+        data["uptime_seconds"] = round(max(0.0, now - started), 1) if started else 0.0
+        data["healthy_ago_seconds"] = round(max(0.0, now - healthy), 1) if healthy else None
+        return data
+
+
+_states: dict[str, ServiceState] = {}
+
+
+def state(name: str) -> ServiceState:
+    return _states.setdefault(name, ServiceState(name=name))
+
+
+def snapshot() -> dict[str, dict[str, Any]]:
+    return {name: item.public() for name, item in sorted(_states.items())}
+```
+
 ### `packages\core\services\__init__.py`
 
 ```python
@@ -5163,76 +5749,117 @@ __all__ = [
 ### `packages\core\services\admin.py`
 
 ```python
-"""Audited privileged operations.
-
-Every privileged action writes an audit row and its side effect inside the
-same transaction, so an audit trail can never disagree with reality.
-"""
-
+"""Audited privileged operations; mutation and audit commit atomically."""
 from __future__ import annotations
 
 from packages.core import db
-from packages.core.repositories import admin_repo
+from packages.core.repositories import admin_repo, outbox_repo
 from packages.core.services import xp
 from packages.core.services.xp import XPResult
 
-
-async def ban(
-    actor: str,
-    player_id: int,
-    banned: bool,
-    reason: str | None,
-    request_id: str,
-) -> bool:
-    """Ban or unban a player. Returns False when the request_id was replayed."""
-    action = "ban" if banned else "unban"
+async def ban(actor: str, player_id: int, banned: bool, reason: str | None,
+              request_id: str) -> bool:
     async with db.transaction() as conn:
-        recorded = await admin_repo.audit(
-            conn, actor, action, request_id, {"reason": reason}, player_id
-        )
-        if not recorded:
+        if not await admin_repo.audit(conn, actor, "ban" if banned else "unban",
+                                      request_id, {"reason": reason}, player_id):
             return False
         await admin_repo.set_ban(conn, player_id, banned, reason)
         return True
 
-
 async def feature(actor: str, key: str, enabled: bool, request_id: str) -> bool:
-    """Toggle a feature flag. Returns False when the request_id was replayed."""
     async with db.transaction() as conn:
-        recorded = await admin_repo.audit(
-            conn, actor, "feature_toggle", request_id, {"key": key, "enabled": enabled}
-        )
-        if not recorded:
+        if not await admin_repo.audit(conn, actor, "feature_toggle", request_id,
+                                      {"key": key, "enabled": enabled}):
             return False
         await admin_repo.set_flag(conn, key, enabled, actor)
         return True
 
-
-async def grant_xp(
-    actor: str,
-    player_id: int,
-    amount: int,
-    request_id: str,
-) -> XPResult | None:
-    """Grant XP by hand. Returns None when the request_id was replayed.
-
-    The audit row and the XP grant share one transaction: the original code
-    committed the audit, then granted outside it, so a crash in between left
-    an audited grant that never happened.
-    """
+async def grant_xp(actor: str, player_id: int, amount: int,
+                   request_id: str) -> XPResult | None:
     async with db.transaction() as conn:
-        recorded = await admin_repo.audit(
-            conn, actor, "grant_xp", request_id, {"amount": amount}, player_id
-        )
-        if not recorded:
+        if not await admin_repo.audit(conn, actor, "grant_xp", request_id,
+                                      {"amount": amount}, player_id):
             return None
-        return await xp.grant(
-            player_id,
-            "admin_grant",
-            idempotency_key=f"admin-xp:{request_id}",
-            amount=amount,
-            conn=conn,
+        return await xp.grant(player_id, "admin_grant",
+                              idempotency_key=f"admin-xp:{request_id}", amount=amount, conn=conn)
+
+async def set_market_price(actor: str, asset: str, price: int, request_id: str) -> bool:
+    async with db.transaction() as conn:
+        if not await admin_repo.audit(conn, actor, "market_price", request_id,
+                                      {"asset": asset, "price": price}):
+            return False
+        changed = await conn.fetchval("""
+            UPDATE market_prices SET current_price_toman=$2,updated_by=$3,updated_at=now()
+            WHERE asset_code=$1 RETURNING asset_code
+        """, asset, price, actor)
+        if changed is None:
+            raise ValueError("asset_not_found")
+        await conn.execute("""
+            INSERT INTO market_price_snapshots(asset_code,price_toman,captured_at)
+            VALUES($1,$2,date_trunc('minute',now()))
+            ON CONFLICT(asset_code,captured_at) DO UPDATE SET price_toman=EXCLUDED.price_toman
+        """, asset, price)
+        return True
+
+async def adjust_country_asset(actor: str, country_id: int, asset: str, delta: int,
+                               request_id: str) -> int:
+    async with db.transaction() as conn:
+        if not await admin_repo.audit(conn, actor, "country_asset_adjust", request_id,
+                                      {"asset": asset, "delta": delta}, country_id=country_id):
+            return 0
+        exists = await conn.fetchval("SELECT 1 FROM countries WHERE id=$1 FOR UPDATE", country_id)
+        if not exists:
+            raise ValueError("country_not_found")
+        if asset == "IRT":
+            value = await conn.fetchval("""
+                UPDATE countries SET treasury_toman=treasury_toman+$2
+                WHERE id=$1 AND treasury_toman+$2>=0 RETURNING treasury_toman
+            """, country_id, delta)
+        else:
+            value = await conn.fetchval("""
+                INSERT INTO country_resources(country_id,asset_code,quantity) VALUES($1,$2,$3)
+                ON CONFLICT(country_id,asset_code) DO UPDATE
+                SET quantity=country_resources.quantity+$3,updated_at=now()
+                WHERE country_resources.quantity+$3>=0 RETURNING quantity
+            """, country_id, asset, delta)
+        if value is None:
+            raise ValueError("insufficient_balance")
+        await conn.execute("""
+            INSERT INTO ledger(player_id,country_id,idempotency_key,reason,currency,
+                               asset_code,account,amount,balance_after,metadata)
+            VALUES(NULL,$1,$2,'admin_adjustment',$3,$3,'treasury',$4,$5,$6)
+        """, country_id, f"admin-country:{request_id}", asset, delta, value,
+             {"admin_actor": actor})
+        return int(value)
+
+async def set_president(actor: str, country_id: int, player_id: int | None,
+                        request_id: str) -> bool:
+    async with db.transaction() as conn:
+        if player_id is not None:
+            citizen = await conn.fetchval(
+                "SELECT 1 FROM citizenships WHERE country_id=$1 AND player_id=$2",
+                country_id, player_id,
+            )
+            if not citizen:
+                raise ValueError("president_must_be_citizen")
+        if not await admin_repo.audit(conn, actor, "set_president", request_id,
+                                      {"player_id": player_id}, player_id, country_id):
+            return False
+        result = await conn.execute(
+            "UPDATE countries SET president_player_id=$2 WHERE id=$1", country_id, player_id
         )
+        if result == "UPDATE 0":
+            raise ValueError("country_not_found")
+        return True
+
+async def enqueue_news(actor: str, text: str, destination: int,
+                       request_id: str) -> bool:
+    async with db.transaction() as conn:
+        if not await admin_repo.audit(conn, actor, "enqueue_news", request_id,
+                                      {"destination": destination, "text": text[:200]}):
+            return False
+        return await outbox_repo.enqueue(conn, f"admin-news:{request_id}",
+                                         "admin_announcement", {"text": text}, destination)
 ```
 
 ### `packages\core\services\country.py`
@@ -6865,7 +7492,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    service: Service = Service.TELELIFE
+    service: Service = Service.ADMIN
     environment: str = "development"
     debug: bool = False
     log_level: str = "INFO"
@@ -6875,6 +7502,8 @@ class Settings(BaseSettings):
     db_pool_max: int = Field(default=5, ge=1, le=50)
     db_command_timeout: float = Field(default=15.0, gt=0, le=300)
     db_statement_cache_size: int = Field(default=0, ge=0)
+    db_max_inactive_seconds: float = Field(default=60.0, ge=10, le=3600)
+    memory_warning_mb: int = Field(default=450, ge=64, le=4096)
 
     telelife_bot_token: str = ""
     teleworld_bot_token: str = ""
@@ -6905,19 +7534,20 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def validate_service_requirements(self) -> Settings:
-        if self.service in {Service.TELELIFE, Service.TELEWORLD}:
-            self.token_for(self.service)
-            if self.run_mode is RunMode.WEBHOOK:
-                if not self.webhook_base_url:
-                    raise ValueError("WEBHOOK_BASE_URL is required in webhook mode")
-                if len(self.webhook_secret) < 16:
-                    raise ValueError("WEBHOOK_SECRET must contain at least 16 characters")
-        if self.service is Service.ADMIN:
-            if not self.admin_username or not self.admin_password:
-                raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
-            if len(self.admin_password) < 12:
-                raise ValueError("ADMIN_PASSWORD must contain at least 12 characters")
+    def validate_process_requirements(self) -> Settings:
+        # A single supervised process always starts both bots and the admin panel.
+        telelife_token = self.token_for(Service.TELELIFE)
+        teleworld_token = self.token_for(Service.TELEWORLD)
+        if telelife_token == teleworld_token:
+            raise ValueError(
+                "TELELIFE_BOT_TOKEN and TELEWORLD_BOT_TOKEN must belong to two different bots"
+            )
+        if not self.admin_username or not self.admin_password:
+            raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
+        if len(self.admin_password) < 12:
+            raise ValueError("ADMIN_PASSWORD must contain at least 12 characters")
+        if self.run_mode is not RunMode.POLLING:
+            raise ValueError("The single-service deployment requires RUN_MODE=polling")
         return self
 
     def token_for(self, service: Service) -> str:
@@ -6939,6 +7569,154 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
+```
+
+### `packages\core\supervisor.py`
+
+```python
+"""Fault-isolating asyncio supervisor for all long-running application services."""
+from __future__ import annotations
+
+import asyncio
+import inspect
+import logging
+import resource
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
+from packages.core.runtime_status import state
+
+logger = logging.getLogger(__name__)
+Runner = Callable[[asyncio.Event], Awaitable[None]]
+HealthCheck = Callable[[], bool | Awaitable[bool]]
+
+
+@dataclass(frozen=True, slots=True)
+class ServiceSpec:
+    name: str
+    runner: Runner
+    healthcheck: HealthCheck
+
+
+class ServiceSupervisor:
+    """Runs isolated service tasks and restarts only the failed/unhealthy service."""
+
+    def __init__(
+        self,
+        specs: list[ServiceSpec],
+        *,
+        health_interval: float = 15.0,
+        restart_base: float = 1.0,
+        restart_cap: float = 60.0,
+        memory_warning_mb: int = 450,
+    ) -> None:
+        self.specs = specs
+        self.health_interval = health_interval
+        self.restart_base = restart_base
+        self.restart_cap = restart_cap
+        self.memory_warning_mb = memory_warning_mb
+        self.stop = asyncio.Event()
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._monitor: asyncio.Task[None] | None = None
+
+    async def run(self) -> None:
+        for spec in self.specs:
+            self._tasks[spec.name] = asyncio.create_task(
+                self._supervise(spec), name=f"supervisor:{spec.name}"
+            )
+        self._monitor = asyncio.create_task(self._monitor_loop(), name="supervisor:monitor")
+        await self.stop.wait()
+        await self.shutdown()
+
+    async def _supervise(self, spec: ServiceSpec) -> None:
+        failures = 0
+        item = state(spec.name)
+        while not self.stop.is_set():
+            local_stop = asyncio.Event()
+            item.status = "starting"
+            item.last_started_monotonic = time.monotonic()
+            service_task = asyncio.create_task(spec.runner(local_stop), name=f"service:{spec.name}")
+            try:
+                while not self.stop.is_set():
+                    stop_waiter = asyncio.create_task(self.stop.wait())
+                    done, _ = await asyncio.wait(
+                        {service_task, stop_waiter}, timeout=self.health_interval,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if not stop_waiter.done():
+                        stop_waiter.cancel()
+                    await asyncio.gather(stop_waiter, return_exceptions=True)
+                    if stop_waiter in done:
+                        local_stop.set()
+                        try:
+                            await asyncio.wait_for(service_task, timeout=20.0)
+                        except TimeoutError:
+                            service_task.cancel()
+                            await asyncio.gather(service_task, return_exceptions=True)
+                        return
+                    if service_task.done():
+                        exc = service_task.exception()
+                        if exc:
+                            raise exc
+                        raise RuntimeError("service exited unexpectedly")
+                    healthy = spec.healthcheck()
+                    if inspect.isawaitable(healthy):
+                        healthy = await healthy
+                    if not healthy:
+                        raise RuntimeError("service health check failed")
+                    item.status = "healthy"
+                    item.last_healthy_monotonic = time.monotonic()
+                    if time.monotonic() - (item.last_started_monotonic or 0) >= 300:
+                        failures = 0
+            except asyncio.CancelledError:
+                local_stop.set()
+                service_task.cancel()
+                await asyncio.gather(service_task, return_exceptions=True)
+                raise
+            except Exception as exc:  # service boundary intentionally catches everything
+                item.status = "restarting"
+                item.last_error = f"{type(exc).__name__}: {exc}"
+                item.restarts += 1
+                failures += 1
+                logger.exception("service %s failed; restart scheduled", spec.name)
+                local_stop.set()
+                service_task.cancel()
+                await asyncio.gather(service_task, return_exceptions=True)
+                delay = min(self.restart_cap, self.restart_base * (2 ** min(failures - 1, 8)))
+                try:
+                    await asyncio.wait_for(self.stop.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
+            finally:
+                local_stop.set()
+        item.status = "stopped"
+
+    async def _monitor_loop(self) -> None:
+        while not self.stop.is_set():
+            rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+            if rss_mb >= self.memory_warning_mb:
+                logger.warning("high process memory watermark: %.1f MiB", rss_mb)
+            logger.info(
+                "supervisor heartbeat rss_mb=%.1f tasks=%d services=%d",
+                rss_mb, len(asyncio.all_tasks()), len(self._tasks),
+            )
+            try:
+                await asyncio.wait_for(self.stop.wait(), timeout=60)
+            except TimeoutError:
+                pass
+
+    async def shutdown(self) -> None:
+        self.stop.set()
+        for task in self._tasks.values():
+            task.cancel()
+        if self._monitor:
+            self._monitor.cancel()
+        await asyncio.gather(*self._tasks.values(), return_exceptions=True)
+        if self._monitor:
+            await asyncio.gather(self._monitor, return_exceptions=True)
+        for spec in self.specs:
+            state(spec.name).status = "stopped"
 ```
 
 ### `packages\core\ui\__init__.py`
@@ -7338,96 +8116,68 @@ asyncio_mode = "auto"
 ### `README.md`
 
 ```markdown
-# TeleLife | تله‌لایف · TeleWorld | تله‌ورلد
+# TeleLife / TeleWorld
 
-A Telegram virtual-life simulator. Two bots, one world.
+استقرار تک‌پردازه شامل دو ربات Telegram، زمان‌بند و پنل FastAPI است.
 
-- **TeleLife** — private chat. Your second life: profile, work, home, wallet, savings, USD.
-- **TeleWorld** — groups. The society layer: territories, ranks, competition, economy.
+## معماری اجرا
 
-One PostgreSQL database. One player identity. One economy.
+`run.py` یک pool مشترک asyncpg و migrationها را راه‌اندازی می‌کند و `ServiceSupervisor` چهار سرویس زیر را به‌صورت taskهای مستقل اجرا می‌کند:
 
-## Status
+- TeleLife polling bot
+- TeleWorld polling bot
+- Scheduler (minute/daily loops)
+- FastAPI Admin (تنها listener روی `PORT`)
 
-**Phase 2 complete** — progression, daily rewards, missions, unlocks and the
-glass button system are live. See `docs/PHASE_1.md` and `docs/PHASE_2.md`.
-Roadmap and phase map: `TeleLife_Master_Plan.md`.
+خرابی هر سرویس در مرز Supervisor مهار و با exponential backoff همان سرویس restart می‌شود. `SIGTERM` و `SIGINT` باعث graceful shutdown همه taskها، Telegram applications، Uvicorn و pool دیتابیس می‌شوند.
 
-## Stack
+## استقرار Render
 
-Python 3.13 · python-telegram-bot · asyncpg (raw SQL) · PostgreSQL 15+ / Supabase ·
-FastAPI + HTMX + Tailwind · Docker on Render
+1. repository را به GitHub push کنید.
+2. در Render یک Blueprint از `render.yaml` بسازید؛ فقط یک Web Service Free تعریف می‌شود.
+3. secretها را وارد کنید: `DATABASE_URL`، هر دو bot token، و اطلاعات admin.
+4. برای Supabase Transaction Pooler از port `6543`، `sslmode=require` و `DB_STATEMENT_CACHE_SIZE=0` استفاده کنید.
+5. migrationها هنگام startup و پیش از سرویس‌ها، تحت advisory lock اجرا می‌شوند.
 
-## Quick start
+Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیریت با HTTP Basic محافظت شده‌اند.
+
+## اجرا و تست
+
+```bash
+docker build -t telelife .
+docker run --rm --env-file .env -p 8000:8000 telelife
+```
+
+برای تست، dependencyهای dev پروژه را نصب کرده و `pytest -q` را اجرا کنید.
 ```
 
 ### `render.yaml`
 
 ```yaml
 services:
-  - type: worker
-    name: telelife-bot
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    plan: starter
-    envVars:
-      - {key: SERVICE, value: telelife}
-      - {key: ENVIRONMENT, value: production}
-      - {key: RUN_MODE, value: polling}
-      - {key: DATABASE_URL, sync: false}
-      - {key: DB_POOL_MIN, value: "1"}
-      - {key: DB_POOL_MAX, value: "5"}
-      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
-      - {key: TELELIFE_BOT_TOKEN, sync: false}
-
-  - type: worker
-    name: teleworld-bot
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    plan: starter
-    envVars:
-      - {key: SERVICE, value: teleworld}
-      - {key: ENVIRONMENT, value: production}
-      - {key: RUN_MODE, value: polling}
-      - {key: DATABASE_URL, sync: false}
-      - {key: DB_POOL_MIN, value: "1"}
-      - {key: DB_POOL_MAX, value: "5"}
-      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
-      - {key: TELEWORLD_BOT_TOKEN, sync: false}
-
-  - type: worker
-    name: telelife-scheduler
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    plan: starter
-    envVars:
-      - {key: SERVICE, value: scheduler}
-      - {key: ENVIRONMENT, value: production}
-      - {key: DATABASE_URL, sync: false}
-      - {key: DB_POOL_MIN, value: "1"}
-      - {key: DB_POOL_MAX, value: "3"}
-      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
-      - {key: TELEWORLD_BOT_TOKEN, sync: false}
-
   - type: web
-    name: telelife-admin
+    name: telelife
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter
+    plan: free
     healthCheckPath: /healthz
+    autoDeployTrigger: commit
     envVars:
-      - {key: SERVICE, value: admin}
       - {key: ENVIRONMENT, value: production}
+      - {key: RUN_MODE, value: polling}
       - {key: DATABASE_URL, sync: false}
       - {key: DB_POOL_MIN, value: "1"}
-      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_POOL_MAX, value: "4"}
+      - {key: DB_COMMAND_TIMEOUT, value: "15"}
       - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: DB_MAX_INACTIVE_SECONDS, value: "60"}
+      - {key: TELELIFE_BOT_TOKEN, sync: false}
+      - {key: TELEWORLD_BOT_TOKEN, sync: false}
+      - {key: GLOBAL_NEWS_CHAT_ID, sync: false}
       - {key: ADMIN_USERNAME, sync: false}
       - {key: ADMIN_PASSWORD, sync: false}
+      - {key: MEMORY_WARNING_MB, value: "450"}
 ```
 
 ### `requirements.txt`
@@ -7448,37 +8198,86 @@ python-multipart>=0.0.12,<1
 ### `run.py`
 
 ```python
-"""Container entrypoint dispatching exactly one configured service."""
-
+"""Single-container entrypoint supervising both bots, scheduler and FastAPI."""
 from __future__ import annotations
 
-import os
+import asyncio
+import logging
+import signal
+
+import uvicorn
+
+from apps.scheduler.main import SchedulerService
+from apps.telelife_bot.main import register as register_telelife
+from apps.teleworld_bot.main import register as register_teleworld
+from packages.core import db
+from packages.core.bot import PollingService
+from packages.core.db.migrator import migrate
+from packages.core.logging import setup_logging
+from packages.core.settings import Service, get_settings
+from packages.core.supervisor import ServiceSpec, ServiceSupervisor
+
+logger = logging.getLogger(__name__)
+
+
+class AdminService:
+    def __init__(self, settings) -> None:  # type: ignore[no-untyped-def]
+        config = uvicorn.Config(
+            "apps.admin.main:app", host=settings.host, port=settings.port,
+            log_level=settings.log_level.lower(), proxy_headers=True,
+            forwarded_allow_ips="*", lifespan="on", access_log=True,
+        )
+        self.server = uvicorn.Server(config)
+
+    def healthy(self) -> bool:
+        return bool(self.server.started and not self.server.should_exit)
+
+    async def run(self, stop: asyncio.Event) -> None:
+        self.server.should_exit = False
+        serve = asyncio.create_task(self.server.serve(), name="admin:uvicorn")
+        stop_waiter = asyncio.create_task(stop.wait(), name="admin:stop")
+        done, _ = await asyncio.wait({serve, stop_waiter}, return_when=asyncio.FIRST_COMPLETED)
+        if stop_waiter in done:
+            self.server.should_exit = True
+            await serve
+        else:
+            stop_waiter.cancel()
+            await asyncio.gather(stop_waiter, return_exceptions=True)
+            await serve
+
+
+async def amain() -> None:
+    settings = get_settings()
+    setup_logging("supervisor", settings.log_level)
+    await db.create_pool(settings)
+    await migrate()
+
+    telelife = PollingService(settings, Service.TELELIFE, register_telelife)
+    teleworld = PollingService(settings, Service.TELEWORLD, register_teleworld)
+    scheduler = SchedulerService(settings)
+    admin = AdminService(settings)
+    supervisor = ServiceSupervisor([
+        ServiceSpec("telelife", telelife.run, telelife.healthy),
+        ServiceSpec("teleworld", teleworld.run, teleworld.healthy),
+        ServiceSpec("scheduler", scheduler.run, scheduler.healthy),
+        ServiceSpec("admin", admin.run, admin.healthy),
+    ], memory_warning_mb=settings.memory_warning_mb)
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, supervisor.stop.set)
+        except NotImplementedError:
+            pass
+    try:
+        await supervisor.run()
+    finally:
+        await db.close_pool()
+        logger.info("process shutdown complete")
 
 
 def main() -> None:
-    service = os.getenv("SERVICE", "telelife").strip().lower()
-    if service == "telelife":
-        from apps.telelife_bot.main import main as target
-    elif service == "teleworld":
-        from apps.teleworld_bot.main import main as target
-    elif service == "scheduler":
-        from apps.scheduler.main import main as target
-    elif service == "admin":
-        import uvicorn
-        from packages.core.settings import get_settings
-
-        settings = get_settings()
-        uvicorn.run(
-            "apps.admin.main:app",
-            host=settings.host,
-            port=settings.port,
-            proxy_headers=True,
-            forwarded_allow_ips="*",
-        )
-        return
-    else:
-        raise SystemExit(f"Unknown SERVICE value: {service!r}")
-    target()
+    asyncio.run(amain())
 
 
 if __name__ == "__main__":
@@ -7866,6 +8665,25 @@ def test_grid_wraps_rows():
     assert [len(r) for r in rows] == [2, 2, 1]
 ```
 
+### `tests\test_interval_bindings.py`
+
+```python
+from pathlib import Path
+
+def test_integer_intervals_use_numeric_bind_casts() -> None:
+    targets = [
+        Path("packages/core/repositories/country_repo.py"),
+        Path("packages/core/repositories/mission_repo.py"),
+        Path("packages/core/repositories/player_repo.py"),
+        Path("apps/scheduler/jobs/daily_reset.py"),
+    ]
+    text = "\n".join(path.read_text() for path in targets)
+    assert "::text || ' days'" not in text
+    assert "::text || ' hours'" not in text
+    assert "$1 || ' days'" not in text
+    assert "interval '1 day'" in text
+```
+
 ### `tests\test_migrator.py`
 
 ```python
@@ -7919,6 +8737,64 @@ def test_level_gating_limits_the_pool():
     high = select_for(12345, 10, DAY)
     assert len(low) <= len(high)
     assert all(int(m.get("min_level", 1)) <= 1 for m in low)
+```
+
+### `tests\test_outbox_repo.py`
+
+```python
+from __future__ import annotations
+import asyncio
+from typing import Any
+from uuid import uuid4
+from packages.core.repositories import outbox_repo
+
+class FakeConnection:
+    def __init__(self) -> None:
+        self.query = ""
+        self.args: tuple[Any, ...] = ()
+    async def fetch(self, query: str, *args: Any) -> list[Any]:
+        self.query, self.args = query, args
+        return []
+    async def execute(self, query: str, *args: Any) -> str:
+        self.query, self.args = query, args
+        return "UPDATE 1"
+
+def test_claim_uses_numeric_interval_expression() -> None:
+    conn = FakeConnection()
+    asyncio.run(outbox_repo.claim(conn, uuid4(), 20, 60, 5))  # type: ignore[arg-type]
+    assert "$4::double precision * interval '1 second'" in conn.query
+    assert conn.args[3] == 60
+
+def test_failed_uses_numeric_interval_expression() -> None:
+    conn = FakeConnection()
+    asyncio.run(outbox_repo.failed(conn, 1, uuid4(), "telegram_error", 120))  # type: ignore[arg-type]
+    assert "$4::double precision * interval '1 second'" in conn.query
+    assert conn.args[3] == 120
+```
+
+### `tests\test_panel_edit.py`
+
+```python
+from __future__ import annotations
+from unittest.mock import AsyncMock, patch
+import pytest
+from telegram.error import BadRequest
+from apps.telelife_bot.handlers.common import send_panel
+
+@pytest.mark.asyncio
+async def test_identical_edit_is_a_successful_noop() -> None:
+    message = AsyncMock()
+    message.edit_text.side_effect = BadRequest("Message is not modified: same content")
+    with patch("apps.telelife_bot.handlers.common.schedule_cleanup") as cleanup:
+        await send_panel(AsyncMock(), message, "same", None, "profile", edit=True)
+    cleanup.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_other_bad_request_is_not_hidden() -> None:
+    message = AsyncMock()
+    message.edit_text.side_effect = BadRequest("Message to edit not found")
+    with pytest.raises(BadRequest, match="not found"):
+        await send_panel(AsyncMock(), message, "text", None, "profile", edit=True)
 ```
 
 ### `tests\test_phase5_config.py`
@@ -8005,6 +8881,109 @@ def test_required_runtime_directories_exist():
     assert (ROOT / "apps/admin/templates").is_dir()
     assert (ROOT / "apps/admin/static").is_dir()
     assert (ROOT / "migrations").is_dir()
+```
+
+### `tests\test_supervisor.py`
+
+```python
+from __future__ import annotations
+import asyncio
+from packages.core.supervisor import ServiceSpec, ServiceSupervisor
+
+async def test_crashed_service_restarts_without_stopping_peer():
+    crashes = 0
+    peer_ticks = 0
+    async def flaky(stop: asyncio.Event) -> None:
+        nonlocal crashes
+        crashes += 1
+        if crashes == 1:
+            raise RuntimeError("boom")
+        await stop.wait()
+    async def peer(stop: asyncio.Event) -> None:
+        nonlocal peer_ticks
+        while not stop.is_set():
+            peer_ticks += 1
+            await asyncio.sleep(0.005)
+    supervisor = ServiceSupervisor(
+        [ServiceSpec("flaky-test", flaky, lambda: True), ServiceSpec("peer-test", peer, lambda: True)],
+        health_interval=0.01, restart_base=0.01, restart_cap=0.02,
+    )
+    task = asyncio.create_task(supervisor.run())
+    await asyncio.sleep(0.08)
+    supervisor.stop.set()
+    await task
+    assert crashes >= 2
+    assert peer_ticks > 2
+```
+
+### `tests\test_teleworld_onboarding.py`
+
+```python
+from pathlib import Path
+
+def test_onboarding_has_welcome_wizard_and_navigation() -> None:
+    code=Path("apps/teleworld_bot/handlers/onboarding.py").read_text()
+    assert "ChatMemberHandler" in code
+    assert 'FLOW_KEY="tw_country_flow"' in code
+    assert 'action=="create"' in code
+    assert 'flow["step"]="government"' in code
+    assert 'flow["step"]="description"' in code
+    assert 'CommandHandler("menu",start)' in code
+
+def test_world_keyboard_has_glass_navigation() -> None:
+    code=Path("apps/teleworld_bot/keyboards.py").read_text()
+    assert "InlineKeyboardMarkup" in code
+    assert "ساخت کشور" in code
+    assert "شغل و تولید" in code
+    assert "سیاست" in code
+```
+
+### `tests\test_teleworld_start.py`
+
+```python
+from __future__ import annotations
+from apps.teleworld_bot.handlers import status
+
+
+def test_teleworld_registers_start_and_menu_callbacks() -> None:
+    class App:
+        def __init__(self) -> None:
+            self.handlers = []
+        def add_handler(self, handler) -> None:  # type: ignore[no-untyped-def]
+            self.handlers.append(handler)
+    app = App()
+    status.register(app)
+    commands = {
+        command
+        for handler in app.handlers
+        for command in getattr(handler, "commands", set())
+    }
+    assert {"start", "status", "help"} <= commands
+    assert any(getattr(handler, "pattern", None) for handler in app.handlers)
+```
+
+### `tests\test_token_isolation.py`
+
+```python
+from __future__ import annotations
+import pytest
+from pydantic import ValidationError
+from packages.core.settings import Settings
+
+BASE = {
+    "DATABASE_URL": "postgresql://user:pass@localhost/db",
+    "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSWORD": "a-strong-password",
+    "RUN_MODE": "polling",
+}
+
+def test_two_pollers_cannot_share_one_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key, value in BASE.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("TELELIFE_BOT_TOKEN", "123:shared")
+    monkeypatch.setenv("TELEWORLD_BOT_TOKEN", "123:shared")
+    with pytest.raises(ValidationError, match="two different bots"):
+        Settings()
 ```
 
 ### `tests\test_unlocks.py`

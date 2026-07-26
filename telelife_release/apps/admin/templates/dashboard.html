@@ -1,0 +1,50 @@
+{% extends "base.html" %}{% block content %}
+<aside class="rail" aria-label="منوی مدیریت">
+  <a class="brand" href="#overview" aria-label="TeleLife"><span class="brand-mark">T</span><span><b>TeleLife</b><small>COMMAND</small></span></a>
+  <nav>
+    <button class="nav active" data-view="overview"><span>◈</span><em>نمای کلی</em></button>
+    <button class="nav" data-view="market"><span>⌁</span><em>بازار</em></button>
+    <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
+    <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
+    <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
+  </nav>
+  <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
+</aside>
+<main class="shell">
+<header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live"><i></i><span>LIVE</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی">↻</button></div></header>
+<div id="toast" role="status" aria-live="polite"></div>
+<section class="view active" id="view-overview">
+  <div class="hero-grid">
+    <article class="hero-card"><div><p class="eyebrow">حجم اقتصاد بازیکنان</p><strong data-stat="player_liquidity">{{ stats.get('player_liquidity',0) }}</strong><span>تومان نقدینگی ثبت‌شده</span></div><div class="orbit"><b>TL</b><i></i><i></i><i></i></div></article>
+    <article class="signal-card"><p>وضعیت شبکه</p><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
+  </div>
+  <div class="metric-grid">
+    <article><span>بازیکن</span><strong data-stat="players_total">{{ stats.get('players_total',0) }}</strong><small>کل حساب‌ها</small></article>
+    <article><span>فعال</span><strong data-stat="players_active">{{ stats.get('players_active',0) }}</strong><small>هفت روز اخیر</small></article>
+    <article><span>کشور</span><strong data-stat="countries_total">{{ stats.get('countries_total',0) }}</strong><small>جهان فعال</small></article>
+    <article><span>صف خبر</span><strong data-stat="news_pending">{{ stats.get('news_pending',0) }}</strong><small>در انتظار انتشار</small></article>
+  </div>
+  <div class="split">
+    <article class="panel chart-panel"><div class="panel-head"><div><p class="eyebrow">نبض بازار</p><h2>حرکت دارایی‌های اصلی</h2></div><button class="text-btn" data-go="market">مشاهده بازار ←</button></div><div id="mini-chart" class="chart-wrap"><div class="empty">داده بازار در حال بارگذاری است</div></div></article>
+    <article class="panel"><div class="panel-head"><div><p class="eyebrow">کنترل سریع</p><h2>عملیات پرتکرار</h2></div></div><div class="quick-grid"><button data-go="players">اعطای XP<small>مدیریت پیشرفت</small></button><button data-go="countries">تنظیم منابع<small>اقتصاد کشور</small></button><button data-go="news">ارسال خبر<small>صف انتشار</small></button><button data-go="market">قیمت بازار<small>ثبت نقطه جدید</small></button></div></article>
+  </div>
+</section>
+<section class="view" id="view-market">
+  <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>هر تغییر قیمت ثبت و وارد تاریخچه نمودار می‌شود.</p></div><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div>
+  <article class="panel market-stage"><div id="market-tabs" class="asset-tabs"></div><div id="market-chart" class="chart-wrap large"><div class="empty">در حال دریافت قیمت‌ها…</div></div></article>
+  <div id="market-cards" class="market-cards"></div>
+</section>
+<section class="view" id="view-players">
+  <div class="section-lead"><div><p class="eyebrow">مدیریت هویت</p><h2>بازیکنان</h2><p>جست‌وجو، اعطای XP و کنترل دسترسی.</p></div><label class="search"><span>⌕</span><input id="player-search" placeholder="نام، نام کاربری یا شناسه…"></label></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>بازیکن</th><th>سطح / XP</th><th>دارایی</th><th>آخرین حضور</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="players-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-countries">
+  <div class="section-lead"><div><p class="eyebrow">ژئو‌اقتصاد</p><h2>کشورها</h2><p>خزانه، منابع و ریاست‌جمهوری در یک قاب.</p></div></div><div id="country-grid" class="country-grid"></div>
+</section>
+<section class="view" id="view-news">
+  <div class="section-lead"><div><p class="eyebrow">انتشار سراسری</p><h2>اتاق خبر</h2><p>پیام را مستقیم وارد صف مطمئن Outbox کنید.</p></div></div>
+  <div class="split news-layout"><article class="panel composer"><label>متن اطلاعیه<textarea id="news-text" maxlength="4000" placeholder="پیام رسمی شبکه را بنویسید…"></textarea></label><label>Chat ID مقصد <small>خالی = GLOBAL_NEWS_CHAT_ID</small><input id="news-destination" inputmode="numeric" placeholder="-1001234567890"></label><button id="send-news" class="primary">قرار دادن در صف انتشار</button></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">تاریخچه</p><h2>صف پیام‌ها</h2></div></div><div id="news-list" class="news-list"></div></article></div>
+</section>
+</main>
+<dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
+{% endblock %}

@@ -1,0 +1,64 @@
+creation:
+  protection_days: 7
+  founder_joins_country: true
+  require_telegram_group_admin: true
+  supported_chat_types:
+    - group
+    - supergroup
+
+validation:
+  name_min_length: 3
+  name_max_length: 80
+  description_min_length: 10
+  description_max_length: 500
+  announcement_min_length: 3
+  announcement_max_length: 1000
+  government_type_max_length: 32
+  flag_caption_required: true
+
+government_types:
+  - republic
+  - monarchy
+  - dictatorship
+  - federal
+  - council
+
+citizenship:
+  explicit_join_required: true
+  one_country_per_player: true
+
+resources:
+  asset_codes:
+    - oil
+    - food
+    - minerals
+    - energy
+    - technology
+  country_total: 5000
+  minimum_share: 700
+  maximum_share: 1300
+  allocation_seed_namespace: telelife-country-resources-v1
+
+permissions:
+  register_country: telegram_group_admin
+  start_election_without_president: citizen
+  start_election_with_president: president
+  start_project: president
+  set_flag: president
+  announce: president
+  create_poll: citizen
+
+feature_flags:
+  defaults:
+    economy_frozen: false
+    wars: false
+    alliances: false
+    companies: false
+    universities: false
+    global_trade: false
+    military: false
+lifecycle:
+  temporary_min_citizens: 1
+  official_min_citizens: 5
+  require_elected_leader_for_official: true
+  remove_citizenship_on_group_leave: true
