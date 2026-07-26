@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import signal
 from collections.abc import Callable
@@ -20,12 +19,24 @@ logger = logging.getLogger(__name__)
 RegisterFn = Callable[[Application], None]
 
 
+async def _post_init(app: Application, settings: Settings, service: Service) -> None:
+    await db.create_pool(settings)
+    await migrate()
+    logger.info("%s ready in %s mode", service.value, settings.run_mode.value)
+
+
+async def _post_shutdown(app: Application) -> None:
+    await db.close_pool()
+
+
 def build_application(settings: Settings, service: Service) -> Application:
     cfg = get_config()
     defaults = Defaults(parse_mode="HTML", block=False)
     return (
         ApplicationBuilder()
         .token(settings.token_for(service))
+        .post_init(lambda app: _post_init(app, settings, service))
+        .post_shutdown(_post_shutdown)
         .defaults(defaults)
         .rate_limiter(AIORateLimiter())
         .concurrent_updates(cfg.int_("core.telegram.concurrent_updates"))
@@ -35,30 +46,12 @@ def build_application(settings: Settings, service: Service) -> Application:
     )
 
 
-async def _startup(settings: Settings) -> None:
-    await db.create_pool(settings)
-    await migrate()
-
-
-async def _shutdown() -> None:
-    await db.close_pool()
-
-
 def run_bot(service: Service, register: RegisterFn) -> None:
     """Entrypoint used by both bots. Blocking; handles its own event loop."""
     settings = get_settings()
     setup_logging(service.value, settings.log_level)
 
-    async def post_init(app: Application) -> None:
-        await _startup(settings)
-        logger.info("%s ready in %s mode", service.value, settings.run_mode.value)
-
-    async def post_shutdown(app: Application) -> None:
-        await _shutdown()
-
     application = build_application(settings, service)
-    application.post_init = post_init
-    application.post_shutdown = post_shutdown
     register(application)
 
     if settings.run_mode is RunMode.WEBHOOK:

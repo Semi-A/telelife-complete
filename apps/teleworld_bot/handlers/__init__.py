@@ -1,2 +1,3 @@
-from apps.teleworld_bot.handlers import country,politics,production,status
-__all__=["country","politics","production","status"]
+"""TeleWorld handler modules; imported explicitly by the application."""
+
+__all__ = ["country", "politics", "production", "status"]

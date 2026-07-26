@@ -3,55 +3,62 @@ services:
     name: telelife-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     envVars:
-      - key: SERVICE
-        value: telelife
-      - key: RUN_MODE
-        value: polling
-      - key: DATABASE_URL
-        sync: false
-      - key: TELELIFE_BOT_TOKEN
-        sync: false
+      - {key: SERVICE, value: telelife}
+      - {key: ENVIRONMENT, value: production}
+      - {key: RUN_MODE, value: polling}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: TELELIFE_BOT_TOKEN, sync: false}
 
   - type: worker
     name: teleworld-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     envVars:
-      - key: SERVICE
-        value: teleworld
-      - key: RUN_MODE
-        value: polling
-      - key: DATABASE_URL
-        sync: false
-      - key: TELEWORLD_BOT_TOKEN
-        sync: false
+      - {key: SERVICE, value: teleworld}
+      - {key: ENVIRONMENT, value: production}
+      - {key: RUN_MODE, value: polling}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: TELEWORLD_BOT_TOKEN, sync: false}
 
   - type: worker
     name: telelife-scheduler
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     envVars:
-      - key: SERVICE
-        value: scheduler
-      - key: DATABASE_URL
-        sync: false
+      - {key: SERVICE, value: scheduler}
+      - {key: ENVIRONMENT, value: production}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "3"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: TELEWORLD_BOT_TOKEN, sync: false}
 
   - type: web
     name: telelife-admin
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     healthCheckPath: /healthz
     envVars:
-      - key: SERVICE
-        value: admin
-      - key: DATABASE_URL
-        sync: false
-      - key: ADMIN_USERNAME
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
+      - {key: SERVICE, value: admin}
+      - {key: ENVIRONMENT, value: production}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: ADMIN_USERNAME, sync: false}
+      - {key: ADMIN_PASSWORD, sync: false}

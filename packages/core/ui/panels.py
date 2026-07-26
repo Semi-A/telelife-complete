@@ -35,8 +35,8 @@ async def _expire(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.edit_message_reply_markup(
             chat_id=chat_id, message_id=message_id, reply_markup=None
         )
-    except BadRequest:
-        pass  # already edited, deleted, or unchanged - all fine
+    except BadRequest as exc:
+        logger.debug("panel cleanup no-op for chat %s: %s", chat_id, exc)
     except Forbidden:
         logger.info("panel cleanup skipped: bot removed from chat %s", chat_id)
 

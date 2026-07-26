@@ -1,22 +1,20 @@
-FROM python:3.13-slim
+FROM python:3.13-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN addgroup --system --gid 10001 telelife \
+    && adduser --system --uid 10001 --ingroup telelife --home /home/telelife telelife
 
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY --chown=telelife:telelife . .
+RUN python -m compileall -q apps packages run.py
 
-RUN useradd -m -u 10001 telelife && chown -R telelife:telelife /app
 USER telelife
-
-ENV SERVICE=telelife
 CMD ["python", "run.py"]

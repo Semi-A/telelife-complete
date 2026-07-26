@@ -1,35 +1,20 @@
-"""Single entrypoint for all four services. One image, four Render services."""
+"""Container entrypoint dispatching exactly one configured service."""
 
 from __future__ import annotations
 
 import os
-import sys
-
-from packages.core.settings import Service
 
 
 def main() -> None:
-    raw = os.getenv("SERVICE", Service.TELELIFE.value).strip().lower()
-    try:
-        service = Service(raw)
-    except ValueError:
-        sys.exit(f"Unknown SERVICE={raw!r}. Expected: {[s.value for s in Service]}")
-
-    if service is Service.TELELIFE:
-        from apps.telelife_bot.main import main as run_service
-
-        run_service()
-    elif service is Service.TELEWORLD:
-        from apps.teleworld_bot.main import main as run_service
-
-        run_service()
-    elif service is Service.SCHEDULER:
-        from apps.scheduler.main import main as run_service
-
-        run_service()
-    else:
+    service = os.getenv("SERVICE", "telelife").strip().lower()
+    if service == "telelife":
+        from apps.telelife_bot.main import main as target
+    elif service == "teleworld":
+        from apps.teleworld_bot.main import main as target
+    elif service == "scheduler":
+        from apps.scheduler.main import main as target
+    elif service == "admin":
         import uvicorn
-
         from packages.core.settings import get_settings
 
         settings = get_settings()
@@ -37,9 +22,13 @@ def main() -> None:
             "apps.admin.main:app",
             host=settings.host,
             port=settings.port,
-            log_config=None,
-            access_log=False,
+            proxy_headers=True,
+            forwarded_allow_ips="*",
         )
+        return
+    else:
+        raise SystemExit(f"Unknown SERVICE value: {service!r}")
+    target()
 
 
 if __name__ == "__main__":

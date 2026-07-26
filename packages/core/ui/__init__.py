@@ -1,6 +1,8 @@
-from packages.core.ui.buttons import Keyboard, Style, button, url_button
-from packages.core.ui.callbacks import Callback, cb
-from packages.core.ui.panels import schedule_cleanup, timeout_for
+"""Telegram UI primitives, loaded lazily to keep submodules independent."""
+
+from __future__ import annotations
+
+from typing import Any
 
 __all__ = [
     "Callback",
@@ -10,5 +12,20 @@ __all__ = [
     "cb",
     "schedule_cleanup",
     "timeout_for",
-    "url_button",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"Callback", "cb"}:
+        from packages.core.ui import callbacks
+
+        return getattr(callbacks, name)
+    if name in {"Keyboard", "Style", "button"}:
+        from packages.core.ui import buttons
+
+        return getattr(buttons, name)
+    if name in {"schedule_cleanup", "timeout_for"}:
+        from packages.core.ui import panels
+
+        return getattr(panels, name)
+    raise AttributeError(name)

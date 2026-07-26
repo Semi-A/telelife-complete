@@ -1,11 +1,11 @@
-"""Environment-driven settings. Secrets live here; game numbers live in config/*.yaml."""
+"""Validated, environment-driven runtime settings."""
 
 from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,7 +23,10 @@ class Service(StrEnum):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
     )
 
     service: Service = Service.TELELIFE
@@ -31,53 +34,70 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
-    # --- database ---
     database_url: PostgresDsn
-    db_pool_min: int = Field(default=2, ge=1)
-    db_pool_max: int = Field(default=10, ge=1)
-    db_command_timeout: float = 15.0
-    # Supabase transaction pooler is incompatible with prepared statements.
-    db_statement_cache_size: int = 0
+    db_pool_min: int = Field(default=1, ge=1, le=50)
+    db_pool_max: int = Field(default=5, ge=1, le=50)
+    db_command_timeout: float = Field(default=15.0, gt=0, le=300)
+    db_statement_cache_size: int = Field(default=0, ge=0)
 
-    # --- bots ---
     telelife_bot_token: str = ""
     teleworld_bot_token: str = ""
     global_news_chat_id: int | None = None
 
-    # --- run mode ---
     run_mode: RunMode = RunMode.POLLING
     webhook_base_url: str = ""
     webhook_secret: str = ""
-    port: int = 8000
+    port: int = Field(default=8000, ge=1, le=65535)
     host: str = "0.0.0.0"  # noqa: S104
 
-    # --- admin ---
-    admin_session_secret: str = "change-me"
-    admin_username: str = "admin"
-    admin_password: str = "change-me"
+    admin_username: str = ""
+    admin_password: str = ""
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        normalized = value.upper()
+        if normalized not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+            raise ValueError("LOG_LEVEL must be a standard Python logging level")
+        return normalized
 
     @field_validator("db_pool_max")
     @classmethod
-    def _check_pool(cls, v: int, info) -> int:  # type: ignore[no-untyped-def]
-        mn = info.data.get("db_pool_min", 1)
-        if v < mn:
-            raise ValueError("db_pool_max must be >= db_pool_min")
-        return v
+    def validate_pool_bounds(cls, value: int, info: ValidationInfo) -> int:
+        if value < int(info.data.get("db_pool_min", 1)):
+            raise ValueError("DB_POOL_MAX must be greater than or equal to DB_POOL_MIN")
+        return value
+
+    @model_validator(mode="after")
+    def validate_service_requirements(self) -> Settings:
+        if self.service in {Service.TELELIFE, Service.TELEWORLD}:
+            self.token_for(self.service)
+            if self.run_mode is RunMode.WEBHOOK:
+                if not self.webhook_base_url:
+                    raise ValueError("WEBHOOK_BASE_URL is required in webhook mode")
+                if len(self.webhook_secret) < 16:
+                    raise ValueError("WEBHOOK_SECRET must contain at least 16 characters")
+        if self.service is Service.ADMIN:
+            if not self.admin_username or not self.admin_password:
+                raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
+            if len(self.admin_password) < 12:
+                raise ValueError("ADMIN_PASSWORD must contain at least 12 characters")
+        return self
 
     def token_for(self, service: Service) -> str:
         token = {
             Service.TELELIFE: self.telelife_bot_token,
             Service.TELEWORLD: self.teleworld_bot_token,
-        }.get(service, "")
+        }.get(service, "").strip()
         if not token:
-            raise RuntimeError(f"Missing bot token for service '{service}'")
+            raise RuntimeError(f"Missing bot token for service '{service.value}'")
         return token
 
     def webhook_url(self, service: Service) -> str:
         base = self.webhook_base_url.rstrip("/")
         if not base:
             raise RuntimeError("WEBHOOK_BASE_URL is required in webhook mode")
-        return f"{base}/telegram/{service}"
+        return f"{base}/telegram/{service.value}"
 
 
 @lru_cache(maxsize=1)

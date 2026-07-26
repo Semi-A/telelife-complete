@@ -1,7 +1,6 @@
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
 from telegram import Bot
-from packages.core.config import get_config
 from packages.core.services import country_economy,elections,news
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
 async def daily_events()->int:

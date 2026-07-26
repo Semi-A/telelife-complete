@@ -7,11 +7,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
-<style>
-  :root { color-scheme: dark; }
-  body { font-family: Vazirmatn, system-ui, sans-serif; }
-  .panel { background:#12151c; border:1px solid #1f2532; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', path='/admin.css') }}">
 </head>
 <body class="bg-[#0a0c11] text-slate-200 min-h-screen">
   <header class="border-b border-[#1f2532] bg-[#0d1016]">

@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.log
+telelife_complete_dump.md
+dump.py
+MANIFEST.sha256

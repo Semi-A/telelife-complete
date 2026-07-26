@@ -17,3 +17,11 @@ def test_missing_key_raises():
 
 def test_default_is_returned():
     assert get_config().get("nope.nope", "fallback") == "fallback"
+
+
+def test_explicit_none_default_is_supported():
+    assert get_config().get("missing.optional.value", None) is None
+
+
+def test_numeric_yaml_keys_support_dotted_access():
+    assert get_config().int_("jobs.storage.levels.1.capacity_hours") == 6

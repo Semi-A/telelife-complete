@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from apps.admin.auth import require_admin
+from apps.admin.routers.country_admin import router as country_admin_router
 from packages.core import db
 from packages.core.db.migrator import migrate
 from packages.core.logging import setup_logging
@@ -21,22 +21,6 @@ from packages.core.utils import fmt
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-security = HTTPBasic()
-
-
-def require_admin(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    settings = get_settings()
-    ok_user = secrets.compare_digest(credentials.username, settings.admin_username)
-    ok_pass = secrets.compare_digest(credentials.password, settings.admin_password)
-    if not (ok_user and ok_pass):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-
 async def _collect_stats() -> dict[str, object]:
     return {
         "players_total": await player_repo.count_total(),
@@ -47,17 +31,20 @@ async def _collect_stats() -> dict[str, object]:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     settings = get_settings()
     setup_logging(Service.ADMIN.value, settings.log_level)
     await db.create_pool(settings)
-    await migrate()
-    yield
-    await db.close_pool()
+    try:
+        await migrate()
+        yield
+    finally:
+        await db.close_pool()
 
 
 app = FastAPI(title="TeleLife Admin", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.include_router(country_admin_router)
 
 
 @app.get("/healthz")
@@ -77,5 +64,3 @@ async def stats_partial(request: Request, _: str = Depends(require_admin)) -> HT
     return templates.TemplateResponse(
         request, "partials/stats.html", {"stats": await _collect_stats(), "fmt": fmt}
     )
-from apps.admin.routers.country_admin import router as country_admin_router  # noqa: E402
-app.include_router(country_admin_router)
