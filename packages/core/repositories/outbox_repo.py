@@ -56,7 +56,7 @@ async def claim(
             )
             UPDATE news_outbox n SET
                 processing_token = $1,
-                processing_until = now() + ($4::text || ' seconds')::interval,
+                processing_until = now() + ($4::double precision * interval '1 second'),
                 attempts = attempts + 1
             FROM picked
             WHERE n.id = picked.id
@@ -96,7 +96,7 @@ async def failed(
             processing_token = NULL,
             processing_until = NULL,
             last_error_code  = $3,
-            available_at     = now() + ($4::text || ' seconds')::interval
+            available_at     = now() + ($4::double precision * interval '1 second')
         WHERE id = $1 AND processing_token = $2
         """,
         row_id,
