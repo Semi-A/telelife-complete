@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from telegram import Message, Update
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from apps.telelife_bot.texts import fa
@@ -72,8 +73,16 @@ async def send_panel(
 ) -> None:
     """Send or edit a panel and arm its auto-cleanup timer."""
     if edit:
-        sent = await message.edit_text(text, reply_markup=markup)
-        target = sent if isinstance(sent, Message) else message
+        try:
+            sent = await message.edit_text(text, reply_markup=markup)
+        except BadRequest as exc:
+            # Double taps and refreshes can legitimately produce an identical panel.
+            # Telegram rejects that no-op with HTTP 400; it is not an application error.
+            if "message is not modified" not in str(exc).lower():
+                raise
+            target = message
+        else:
+            target = sent if isinstance(sent, Message) else message
     else:
         target = await message.reply_text(text, reply_markup=markup)
     schedule_cleanup(context, target, panel)
