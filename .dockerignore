@@ -9,6 +9,5 @@ __pycache__
 .mypy_cache
 .ruff_cache
 *.log
+tests
 telelife_complete_dump.md
-dump.py
-MANIFEST.sha256

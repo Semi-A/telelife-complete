@@ -29,7 +29,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    service: Service = Service.TELELIFE
+    service: Service = Service.ADMIN
     environment: str = "development"
     debug: bool = False
     log_level: str = "INFO"
@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     db_pool_max: int = Field(default=5, ge=1, le=50)
     db_command_timeout: float = Field(default=15.0, gt=0, le=300)
     db_statement_cache_size: int = Field(default=0, ge=0)
+    db_max_inactive_seconds: float = Field(default=60.0, ge=10, le=3600)
+    memory_warning_mb: int = Field(default=450, ge=64, le=4096)
 
     telelife_bot_token: str = ""
     teleworld_bot_token: str = ""
@@ -69,19 +71,16 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def validate_service_requirements(self) -> Settings:
-        if self.service in {Service.TELELIFE, Service.TELEWORLD}:
-            self.token_for(self.service)
-            if self.run_mode is RunMode.WEBHOOK:
-                if not self.webhook_base_url:
-                    raise ValueError("WEBHOOK_BASE_URL is required in webhook mode")
-                if len(self.webhook_secret) < 16:
-                    raise ValueError("WEBHOOK_SECRET must contain at least 16 characters")
-        if self.service is Service.ADMIN:
-            if not self.admin_username or not self.admin_password:
-                raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
-            if len(self.admin_password) < 12:
-                raise ValueError("ADMIN_PASSWORD must contain at least 12 characters")
+    def validate_process_requirements(self) -> Settings:
+        # A single supervised process always starts both bots and the admin panel.
+        self.token_for(Service.TELELIFE)
+        self.token_for(Service.TELEWORLD)
+        if not self.admin_username or not self.admin_password:
+            raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
+        if len(self.admin_password) < 12:
+            raise ValueError("ADMIN_PASSWORD must contain at least 12 characters")
+        if self.run_mode is not RunMode.POLLING:
+            raise ValueError("The single-service deployment requires RUN_MODE=polling")
         return self
 
     def token_for(self, service: Service) -> str:

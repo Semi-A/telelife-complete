@@ -38,9 +38,9 @@ async def create_pool(settings: Settings) -> asyncpg.Pool:
         command_timeout=settings.db_command_timeout,
         # Required for Supabase / pgbouncer transaction mode.
         statement_cache_size=settings.db_statement_cache_size,
-        max_inactive_connection_lifetime=300.0,
+        max_inactive_connection_lifetime=settings.db_max_inactive_seconds,
         init=_init_connection,
-        server_settings={"application_name": f"telelife-{settings.service}"},
+        server_settings={"application_name": "telelife-supervisor"},
     )
     logger.info("database pool ready")
     return _pool

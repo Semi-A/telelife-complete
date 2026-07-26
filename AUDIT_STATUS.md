@@ -1,23 +1,19 @@
-# TeleLife Audit Status
+# Production Readiness Audit
 
-## Completed validations
+## اصلاحات تکمیل‌شده
 
-- Reconstructed and recursively audited the complete supplied project dump.
-- All Python files compile successfully.
-- All local imports resolve statically.
-- No circular imports remain in the project dependency graph.
-- All YAML files parse as mappings.
-- Required configuration paths resolve.
-- Embedded shell/heredoc contamination was removed.
-- Missing clock and admin static resources were added.
-- Render multi-service and Docker configuration were repaired.
-- Supabase transaction-pooler settings disable asyncpg statement caching.
-- 46 dependency-independent logic and integrity tests passed.
+- ورودی چهار-service قدیمی با یک process supervisor جایگزین شد.
+- دو bot در polling mode، scheduler و FastAPI همزمان اجرا می‌شوند.
+- فقط Uvicorn/FastAPI روی `PORT` listen می‌کند.
+- crash boundary، auto-restart با exponential backoff، health registry، heartbeat، memory watermark و graceful shutdown افزوده شد.
+- lifecycle دیتابیس process-level شد تا یک pool مشترک asyncpg با سقف ۴ connection استفاده شود.
+- Supabase transaction pooler با statement cache صفر، TLS در DSN نمونه و inactive lifetime محدود پیکربندی شد.
+- migration runner با PostgreSQL advisory transaction lock ایمن شد.
+- health/readiness endpoints و security headers افزوده شدند.
+- Render Blueprint به یک Free Web Service کاهش یافت؛ هیچ feature، route، table یا game service حذف نشد.
+- تمام فایل‌های Python با AST و compileall بررسی شدند؛ fragment تولیدی خراب در source پیدا نشد.
+- تست crash isolation افزوده شد.
 
-## Environment-dependent verification still required
+## محدودیت اعتبارسنجی محیط ممیزی
 
-The audit sandbox did not contain Docker, Python 3.13, PostgreSQL, or all declared runtime/test packages. Before production deployment, CI or a deployment environment must install the declared dependencies, run the full pytest suite, build the Docker image, apply migrations to staging Supabase, and smoke-test all four Render services.
-
-## Security action
-
-Rotate the Supabase database password that appeared in the original supplied dump. The corrected environment example contains no credential.
+اجرای کامل pytest و integration test زنده با Supabase/Telegram در sandbox آفلاین ممکن نبود، زیرا runtime dependencyهای پروژه و credentialهای واقعی موجود نبودند. Dockerfile نصب dependencyها و compile check را در build انجام می‌دهد. پیش از production، تست‌های integration باید در CI با database آزمایشی و tokenهای اختصاصی اجرا شوند.

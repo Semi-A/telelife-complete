@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 130
+تعداد کل فایل‌ها: 137
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -14,12 +14,15 @@ telelife_complete/
 │   │   ├── routers/
 │   │   │   ├── __init__.py
 │   │   │   └── country_admin.py
+│   │   ├── static/
+│   │   │   └── admin.css
 │   │   ├── templates/
 │   │   │   ├── partials/
 │   │   │   │   └── stats.html
 │   │   │   ├── base.html
 │   │   │   └── dashboard.html
 │   │   ├── __init__.py
+│   │   ├── auth.py
 │   │   └── main.py
 │   ├── scheduler/
 │   │   ├── jobs/
@@ -137,6 +140,7 @@ telelife_complete/
 │   │   │   └── panels.py
 │   │   ├── utils/
 │   │   │   ├── __init__.py
+│   │   │   ├── clock.py
 │   │   │   └── fmt.py
 │   │   ├── __init__.py
 │   │   ├── logging.py
@@ -146,6 +150,7 @@ telelife_complete/
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_callbacks.py
+│   ├── test_clock.py
 │   ├── test_config.py
 │   ├── test_daily.py
 │   ├── test_fmt.py
@@ -155,10 +160,13 @@ telelife_complete/
 │   ├── test_phase5_config.py
 │   ├── test_production_security.py
 │   ├── test_progression.py
+│   ├── test_project_integrity.py
 │   ├── test_unlocks.py
 │   └── test_xp.py
+├── .dockerignore
 ├── .env.example
 ├── .gitignore
+├── AUDIT_STATUS.md
 ├── DELIVERY.md
 ├── Dockerfile
 ├── dump.py
@@ -175,6 +183,11 @@ telelife_complete/
 ## محتوای فایل‌ها
 
 
+### `.dockerignore`
+
+_[این فایل باینری/غیرمتنی تشخیص داده شد و محتوایش درج نشد]_
+
+
 ### `.env.example`
 
 ```
@@ -183,10 +196,12 @@ ENVIRONMENT=development
 LOG_LEVEL=INFO
 DEBUG=false
 
-# Supabase: use the TRANSACTION POOLER connection string (port 6543)
-DATABASE_URL=postgresql://postgres.wozukvvzkbieendlshkb:Nimapopop13!@aws-1-us-west-2.pooler.supabase.com:6543/postgres
-DB_POOL_MIN=2
-DB_POOL_MAX=10
+# Paste the Supabase transaction-pooler URL (normally port 6543) and require TLS.
+DATABASE_URL=
+DB_POOL_MIN=1
+DB_POOL_MAX=5
+DB_COMMAND_TIMEOUT=15
+DB_STATEMENT_CACHE_SIZE=0
 
 TELELIFE_BOT_TOKEN=
 TELEWORLD_BOT_TOKEN=
@@ -196,10 +211,10 @@ RUN_MODE=polling
 WEBHOOK_BASE_URL=
 WEBHOOK_SECRET=
 PORT=8000
+HOST=0.0.0.0
 
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-me
-ADMIN_SESSION_SECRET=change-me
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
 ```
 
 ### `.gitignore`
@@ -219,13 +234,47 @@ venv/
 ### `apps\__init__.py`
 
 ```python
-
+"""Package apps."""
 ```
 
 ### `apps\admin\__init__.py`
 
 ```python
+"""Package apps.admin."""
+```
 
+### `apps\admin\auth.py`
+
+```python
+"""Authentication dependencies shared by the admin application and routers."""
+
+from __future__ import annotations
+
+import secrets
+from typing import Annotated
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
+from packages.core.settings import get_settings
+
+security = HTTPBasic()
+
+
+def require_admin(
+    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
+) -> str:
+    """Authenticate an admin with constant-time credential comparisons."""
+    settings = get_settings()
+    username_ok = secrets.compare_digest(credentials.username, settings.admin_username)
+    password_ok = secrets.compare_digest(credentials.password, settings.admin_password)
+    if not (username_ok and password_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
 ```
 
 ### `apps\admin\main.py`
@@ -235,16 +284,16 @@ venv/
 
 from __future__ import annotations
 
-import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from apps.admin.auth import require_admin
+from apps.admin.routers.country_admin import router as country_admin_router
 from packages.core import db
 from packages.core.db.migrator import migrate
 from packages.core.logging import setup_logging
@@ -254,22 +303,6 @@ from packages.core.utils import fmt
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-security = HTTPBasic()
-
-
-def require_admin(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    settings = get_settings()
-    ok_user = secrets.compare_digest(credentials.username, settings.admin_username)
-    ok_pass = secrets.compare_digest(credentials.password, settings.admin_password)
-    if not (ok_user and ok_pass):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-
 async def _collect_stats() -> dict[str, object]:
     return {
         "players_total": await player_repo.count_total(),
@@ -280,17 +313,20 @@ async def _collect_stats() -> dict[str, object]:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     settings = get_settings()
     setup_logging(Service.ADMIN.value, settings.log_level)
     await db.create_pool(settings)
-    await migrate()
-    yield
-    await db.close_pool()
+    try:
+        await migrate()
+        yield
+    finally:
+        await db.close_pool()
 
 
 app = FastAPI(title="TeleLife Admin", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.include_router(country_admin_router)
 
 
 @app.get("/healthz")
@@ -310,43 +346,94 @@ async def stats_partial(request: Request, _: str = Depends(require_admin)) -> HT
     return templates.TemplateResponse(
         request, "partials/stats.html", {"stats": await _collect_stats(), "fmt": fmt}
     )
-from apps.admin.routers.country_admin import router as country_admin_router  # noqa: E402
-app.include_router(country_admin_router)
 ```
 
 ### `apps\admin\routers\__init__.py`
 
 ```python
-
+"""Package apps.admin.routers."""
 ```
 
 ### `apps\admin\routers\country_admin.py`
 
 ```python
-"""Authenticated country/admin API. Every mutation is audited."""
+"""Authenticated country administration API with audited mutations."""
+
 from __future__ import annotations
+
+from typing import Annotated
 from uuid import uuid4
-from fastapi import APIRouter,Depends,Form
-from apps.admin.main import require_admin
+
+from fastapi import APIRouter, Depends, Form, Query
+
+from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
 from packages.core.services import admin
-router=APIRouter(prefix='/api/admin',dependencies=[Depends(require_admin)])
-@router.get('/stats')
-async def stats():
- row=await admin_repo.stats();return dict(row) if row else {}
-@router.get('/users')
-async def users(limit:int=100):return [dict(x) for x in await admin_repo.users(min(limit,500))]
-@router.get('/countries')
-async def countries(limit:int=100):return [dict(x) for x in await admin_repo.countries(min(limit,500))]
-@router.get('/audit')
-async def audit(limit:int=100):return [dict(x) for x in await admin_repo.audits(min(limit,500))]
-@router.post('/ban/{player_id}')
-async def ban(player_id:int,enabled:bool=Form(...),reason:str|None=Form(None),actor:str=Depends(require_admin)):return {'applied':await admin.ban(actor,player_id,enabled,reason,str(uuid4()))}
-@router.post('/grant-xp/{player_id}')
-async def grant(player_id:int,amount:int=Form(...),actor:str=Depends(require_admin)):
- result=await admin.grant_xp(actor,player_id,amount,str(uuid4()));return {'granted':result.granted if result else 0}
-@router.post('/feature/{key}')
-async def feature(key:str,enabled:bool=Form(...),actor:str=Depends(require_admin)):return {'applied':await admin.feature(actor,key,enabled,str(uuid4()))}
+
+AdminActor = Annotated[str, Depends(require_admin)]
+router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
+
+
+@router.get("/stats")
+async def stats() -> dict[str, object]:
+    row = await admin_repo.stats()
+    return dict(row) if row else {}
+
+
+@router.get("/users")
+async def users(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.users(limit)]
+
+
+@router.get("/countries")
+async def countries(
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.countries(limit)]
+
+
+@router.get("/audit")
+async def audit(limit: Annotated[int, Query(ge=1, le=500)] = 100) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.audits(limit)]
+
+
+@router.post("/ban/{player_id}")
+async def ban(
+    player_id: int,
+    actor: AdminActor,
+    enabled: Annotated[bool, Form()],
+    reason: Annotated[str | None, Form()] = None,
+) -> dict[str, bool]:
+    return {
+        "applied": await admin.ban(actor, player_id, enabled, reason, str(uuid4()))
+    }
+
+
+@router.post("/grant-xp/{player_id}")
+async def grant(
+    player_id: int,
+    actor: AdminActor,
+    amount: Annotated[int, Form(gt=0, le=1_000_000)],
+) -> dict[str, int]:
+    result = await admin.grant_xp(actor, player_id, amount, str(uuid4()))
+    return {"granted": result.granted if result else 0}
+
+
+@router.post("/feature/{key}")
+async def feature(
+    key: str,
+    actor: AdminActor,
+    enabled: Annotated[bool, Form()],
+) -> dict[str, bool]:
+    return {"applied": await admin.feature(actor, key, enabled, str(uuid4()))}
+```
+
+### `apps\admin\static\admin.css`
+
+```css
+:root { color-scheme: dark; }
+body { font-family: Vazirmatn, system-ui, sans-serif; }
+.panel { background: #12151c; border: 1px solid #1f2532; }
 ```
 
 ### `apps\admin\templates\base.html`
@@ -361,11 +448,7 @@ async def feature(key:str,enabled:bool=Form(...),actor:str=Depends(require_admin
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/htmx.org@1.9.12"></script>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;800&display=swap" rel="stylesheet">
-<style>
-  :root { color-scheme: dark; }
-  body { font-family: Vazirmatn, system-ui, sans-serif; }
-  .panel { background:#12151c; border:1px solid #1f2532; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', path='/admin.css') }}">
 </head>
 <body class="bg-[#0a0c11] text-slate-200 min-h-screen">
   <header class="border-b border-[#1f2532] bg-[#0d1016]">
@@ -426,14 +509,15 @@ async def feature(key:str,enabled:bool=Form(...),actor:str=Depends(require_admin
 ### `apps\scheduler\__init__.py`
 
 ```python
-
+"""Package apps.scheduler."""
 ```
 
 ### `apps\scheduler\jobs\__init__.py`
 
 ```python
-from apps.scheduler.jobs import country_jobs,daily_reset
-__all__=["country_jobs","daily_reset"]
+"""Scheduler job modules; imported lazily to avoid startup side effects."""
+
+__all__ = ["country_jobs", "daily_reset"]
 ```
 
 ### `apps\scheduler\jobs\country_jobs.py`
@@ -442,7 +526,6 @@ __all__=["country_jobs","daily_reset"]
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
 from telegram import Bot
-from packages.core.config import get_config
 from packages.core.services import country_economy,elections,news
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
 async def daily_events()->int:
@@ -526,51 +609,99 @@ async def run() -> dict[str, int]:
 ### `apps\scheduler\main.py`
 
 ```python
-"""Scheduler: minute resolution/outbox and idempotent daily maintenance."""
+"""Scheduler for minute-resolution and daily idempotent maintenance."""
+
 from __future__ import annotations
-import asyncio,contextlib,logging,signal
-from datetime import UTC,datetime,timedelta
+
+import asyncio
+import logging
+import signal
+from datetime import UTC, datetime, timedelta
+
 from telegram import Bot
-from apps.scheduler.jobs import country_jobs,daily_reset
+
+from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.db.migrator import migrate
 from packages.core.logging import setup_logging
-from packages.core.settings import Service,get_settings
-logger=logging.getLogger(__name__)
-async def minute(stop:asyncio.Event,bot:Bot)->None:
- while not stop.is_set():
-  try:
-   await db.execute('DELETE FROM cooldowns WHERE expires_at<now()');await country_jobs.resolve_due();await country_jobs.publish_news(bot)
-  except Exception:logger.exception('minute jobs failed')
-  with contextlib.suppress(TimeoutError):await asyncio.wait_for(stop.wait(),timeout=60)
-def until_daily()->float:
- now=datetime.now(UTC);n=(now+timedelta(days=1)).replace(hour=0,minute=10,second=0,microsecond=0);return (n-now).total_seconds()
-async def daily(stop:asyncio.Event)->None:
- await country_jobs.daily_events()
- while not stop.is_set():
-  with contextlib.suppress(TimeoutError):await asyncio.wait_for(stop.wait(),timeout=until_daily())
-  if stop.is_set():return
-  try:await daily_reset.run();await country_jobs.daily_events()
-  except Exception:logger.exception('daily jobs failed')
-async def run()->None:
- s=get_settings();setup_logging(Service.SCHEDULER.value,s.log_level);await db.create_pool(s);await migrate();stop=asyncio.Event();loop=asyncio.get_running_loop()
- for sig in (signal.SIGINT,signal.SIGTERM):
-  with contextlib.suppress(NotImplementedError):loop.add_signal_handler(sig,stop.set)
- bot=Bot(s.teleworld_bot_token);await asyncio.gather(minute(stop,bot),daily(stop));await db.close_pool()
-def main()->None:asyncio.run(run())
-if __name__=='__main__':main()
+from packages.core.settings import Service, get_settings
+
+logger = logging.getLogger(__name__)
+
+
+async def minute_loop(stop: asyncio.Event, bot: Bot) -> None:
+    while not stop.is_set():
+        try:
+            await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
+            await country_jobs.resolve_due()
+            await country_jobs.publish_news(bot)
+        except Exception:
+            logger.exception("minute jobs failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=60)
+        except TimeoutError:
+            continue
+
+
+def seconds_until_daily() -> float:
+    now = datetime.now(UTC)
+    target = (now + timedelta(days=1)).replace(
+        hour=0, minute=10, second=0, microsecond=0
+    )
+    return max(1.0, (target - now).total_seconds())
+
+
+async def daily_loop(stop: asyncio.Event) -> None:
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=seconds_until_daily())
+            return
+        except TimeoutError:
+            logger.debug("daily maintenance window reached")
+        try:
+            await daily_reset.run()
+            await country_jobs.daily_events()
+        except Exception:
+            logger.exception("daily jobs failed")
+
+
+async def run() -> None:
+    settings = get_settings()
+    setup_logging(Service.SCHEDULER.value, settings.log_level)
+    await db.create_pool(settings)
+    await migrate()
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            logger.debug("signal handlers are unavailable on this event loop")
+    try:
+        async with Bot(settings.teleworld_bot_token) as bot:
+            await asyncio.gather(minute_loop(stop, bot), daily_loop(stop))
+    finally:
+        await db.close_pool()
+
+
+def main() -> None:
+    asyncio.run(run())
+
+
+if __name__ == "__main__":
+    main()
 ```
 
 ### `apps\telelife_bot\__init__.py`
 
 ```python
-
+"""Package apps.telelife_bot."""
 ```
 
 ### `apps\telelife_bot\handlers\__init__.py`
 
 ```python
-
+"""Package apps.telelife_bot.handlers."""
 ```
 
 ### `apps\telelife_bot\handlers\common.py`
@@ -1118,7 +1249,7 @@ if __name__ == "__main__":
 ### `apps\telelife_bot\texts\__init__.py`
 
 ```python
-
+"""Package apps.telelife_bot.texts."""
 ```
 
 ### `apps\telelife_bot\texts\fa.py`
@@ -1180,11 +1311,11 @@ DAILY_NEXT = "فردا بیای: <b>{amount}</b>"
 DAILY_NEXT_MILESTONE = "🎯 {days} روز دیگه تا نشان بعدی"
 
 DAILY_READY = (
-    "🎁 <b>جایزه امروزت آماده‌ست</b>\\n"
-    "<code>─────────────────</code>\\n"
-    "🔥 استریک فعلی: <b>{streak} روز</b>\\n"
-    "🏆 رکوردت: {best} روز\\n\\n"
-    "💰 امروز می‌گیری: <b>{amount}</b>\\n"
+    "🎁 <b>جایزه امروزت آماده‌ست</b>\n"
+    "<code>─────────────────</code>\n"
+    "🔥 استریک فعلی: <b>{streak} روز</b>\n"
+    "🏆 رکوردت: {best} روز\n\n"
+    "💰 امروز می‌گیری: <b>{amount}</b>\n"
     "{next_line}"
 )
 
@@ -1438,68 +1569,167 @@ def level_up(result: XPResult) -> str:
 ### `apps\teleworld_bot\__init__.py`
 
 ```python
-
+"""Package apps.teleworld_bot."""
 ```
 
 ### `apps\teleworld_bot\handlers\__init__.py`
 
 ```python
-from apps.teleworld_bot.handlers import country,politics,production,status
-__all__=["country","politics","production","status"]
+"""TeleWorld handler modules; imported explicitly by the application."""
+
+__all__ = ["country", "politics", "production", "status"]
 ```
 
 ### `apps\teleworld_bot\handlers\country.py`
 
 ```python
-"""Thin Telegram adapters for country/economy commands."""
+"""Telegram adapters for country and economy commands."""
+
 from __future__ import annotations
-from uuid import uuid4
-from telegram import Update
-from telegram.constants import ChatMemberStatus,ChatType
-from telegram.ext import CommandHandler,ContextTypes
+
+from dataclasses import dataclass
+
+from telegram import Chat, Message, Update, User
+from telegram.constants import ChatMemberStatus, ChatType
+from telegram.ext import CommandHandler, ContextTypes
+
 from apps.teleworld_bot.texts import fa
-from packages.core.repositories import country_repo,player_repo
-from packages.core.services import country as country_service,economy,country_missions
-GROUPS={ChatType.GROUP,ChatType.SUPERGROUP}
-async def _ctx(update:Update):
- chat=update.effective_chat;user=update.effective_user;message=update.effective_message
- if not chat or not user or not message or chat.type not in GROUPS:
-  if message:await message.reply_text(fa.PRIVATE_ONLY)
-  return None
- player=await player_repo.get_or_create(user.id,username=user.username,first_name=user.first_name or '',language_code=user.language_code or 'fa')
- return chat,user,message,player
-async def create(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- x=await _ctx(update)
- if not x:return
- chat,user,message,player=x;member=await context.bot.get_chat_member(chat.id,user.id)
- if member.status not in {ChatMemberStatus.ADMINISTRATOR,ChatMemberStatus.OWNER}:await message.reply_text(fa.ADMIN_REQUIRED);return
- parts=[p.strip() for p in ' '.join(context.args).split('|')]
- if len(parts)!=3:await message.reply_text(fa.CREATE_USAGE);return
- row=await country_service.create_country(chat_id=chat.id,chat_title=chat.title or '',player_id=player.id,name=parts[0],government=parts[1].lower(),description=parts[2]);await message.reply_text(fa.COUNTRY_CREATED.format(name=row['name']))
-async def join(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- x=await _ctx(update)
- if x:
-  chat,_,message,player=x;await country_service.join_country(chat_id=chat.id,player_id=player.id);await message.reply_text(fa.COUNTRY_JOINED)
-async def show(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- x=await _ctx(update)
- if x:
-  chat,_,message,_=x;row=await country_repo.by_chat(chat.id)
-  if not row:await message.reply_text(fa.COUNTRY_MISSING);return
-  await message.reply_text(fa.COUNTRY_STATUS.format(name=row['name'],description=row['description'],government=row['government_type'],treasury=row['treasury_toman']))
-async def donate(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- x=await _ctx(update)
- if not x:return
- chat,_,message,player=x
- if len(context.args)!=2:await message.reply_text(fa.DONATE_USAGE);return
- asset=context.args[0];amount=int(context.args[1]);c=await country_repo.by_chat(chat.id)
- if not c:await message.reply_text(fa.COUNTRY_MISSING);return
- await economy.transfer(player_id=player.id,country_id=c['id'],asset=asset,amount=amount,reason='country_donation',idempotency_key=f'donate:{message.message_id}:{player.id}')
- await country_missions.report(c['id'],'donate',asset,amount);await message.reply_text(fa.DONATED.format(amount=amount,asset=asset))
-async def tax(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- if len(context.args)!=1:return await donate(update,context)
- context.args=['IRT',context.args[0]];await donate(update,context)
-def register(application)->None:
- for cmd,fn in [('createcountry',create),('joincountry',join),('country',show),('economy',show),('resources',show),('donate',donate),('paytax',tax)]:application.add_handler(CommandHandler(cmd,fn))
+from packages.core.models import Player
+from packages.core.repositories import country_repo, player_repo
+from packages.core.services import country as country_service
+from packages.core.services import country_missions, economy
+
+_GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
+
+
+@dataclass(frozen=True, slots=True)
+class GroupContext:
+    chat: Chat
+    user: User
+    message: Message
+    player: Player
+
+
+async def resolve_group(update: Update) -> GroupContext | None:
+    chat = update.effective_chat
+    user = update.effective_user
+    message = update.effective_message
+    if chat is None or user is None or message is None or chat.type not in _GROUP_TYPES:
+        if message is not None:
+            await message.reply_text(fa.PRIVATE_ONLY)
+        return None
+    player = await player_repo.get_or_create(
+        user.id,
+        username=user.username,
+        first_name=user.first_name or "شهروند",
+        language_code=user.language_code or "fa",
+    )
+    return GroupContext(chat, user, message, player)
+
+
+async def create(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx = await resolve_group(update)
+    if ctx is None:
+        return
+    member = await context.bot.get_chat_member(ctx.chat.id, ctx.user.id)
+    if member.status not in {ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER}:
+        await ctx.message.reply_text(fa.ADMIN_REQUIRED)
+        return
+    parts = [part.strip() for part in " ".join(context.args).split("|")]
+    if len(parts) != 3:
+        await ctx.message.reply_text(fa.CREATE_USAGE)
+        return
+    try:
+        row = await country_service.create_country(
+            chat_id=ctx.chat.id,
+            chat_title=ctx.chat.title or "",
+            player_id=ctx.player.id,
+            name=parts[0],
+            government=parts[1].lower(),
+            description=parts[2],
+        )
+    except ValueError as exc:
+        await ctx.message.reply_text(fa.INVALID_INPUT.format(reason=str(exc)))
+        return
+    await ctx.message.reply_text(fa.COUNTRY_CREATED.format(name=row["name"]))
+
+
+async def join(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx = await resolve_group(update)
+    if ctx is None:
+        return
+    await country_service.join_country(chat_id=ctx.chat.id, player_id=ctx.player.id)
+    await ctx.message.reply_text(fa.COUNTRY_JOINED)
+
+
+async def show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx = await resolve_group(update)
+    if ctx is None:
+        return
+    row = await country_repo.by_chat(ctx.chat.id)
+    if row is None:
+        await ctx.message.reply_text(fa.COUNTRY_MISSING)
+        return
+    await ctx.message.reply_text(
+        fa.COUNTRY_STATUS.format(
+            name=row["name"],
+            description=row["description"],
+            government=row["government_type"],
+            treasury=row["treasury_toman"],
+        )
+    )
+
+
+async def donate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx = await resolve_group(update)
+    if ctx is None:
+        return
+    if len(context.args) != 2:
+        await ctx.message.reply_text(fa.DONATE_USAGE)
+        return
+    try:
+        amount = int(context.args[1])
+    except ValueError:
+        await ctx.message.reply_text(fa.INVALID_AMOUNT)
+        return
+    asset = context.args[0]
+    country = await country_repo.by_chat(ctx.chat.id)
+    if country is None:
+        await ctx.message.reply_text(fa.COUNTRY_MISSING)
+        return
+    await economy.transfer(
+        player_id=ctx.player.id,
+        country_id=country["id"],
+        asset=asset,
+        amount=amount,
+        reason="country_donation",
+        idempotency_key=f"donate:{ctx.message.message_id}:{ctx.player.id}",
+    )
+    await country_missions.report(country["id"], "donate", asset, amount)
+    await ctx.message.reply_text(fa.DONATED.format(amount=amount, asset=asset))
+
+
+async def tax(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if len(context.args) != 1:
+        message = update.effective_message
+        if message is not None:
+            await message.reply_text(fa.TAX_USAGE)
+        return
+    context.args = ["IRT", context.args[0]]
+    await donate(update, context)
+
+
+def register(application) -> None:  # type: ignore[no-untyped-def]
+    for command, handler in (
+        ("createcountry", create),
+        ("joincountry", join),
+        ("country", show),
+        ("economy", show),
+        ("resources", show),
+        ("donate", donate),
+        ("paytax", tax),
+    ):
+        application.add_handler(CommandHandler(command, handler))
 ```
 
 ### `apps\teleworld_bot\handlers\politics.py`
@@ -1565,32 +1795,93 @@ def register(app)->None:
 ### `apps\teleworld_bot\handlers\production.py`
 
 ```python
-"""Thin job and lazy-production Telegram adapters."""
+"""Telegram adapters for jobs and lazy production."""
+
 from __future__ import annotations
-from telegram import Update
-from telegram.ext import CommandHandler,ContextTypes
+
+from telegram import Message, Update
+from telegram.ext import CommandHandler, ContextTypes
+
 from apps.teleworld_bot.texts import fa
+from packages.core.models import Player
 from packages.core.repositories import player_repo
 from packages.core.services import production
-async def player(update:Update):
- u=update.effective_user
- return await player_repo.get_or_create(u.id,username=u.username,first_name=u.first_name or '',language_code=u.language_code or 'fa') if u else None
-async def jobs(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- if update.effective_message:await update.effective_message.reply_text(fa.JOBS)
-async def choose(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- p=await player(update)
- if p and context.args:
-  await production.choose(p.id,context.args[0]);await update.effective_message.reply_text(fa.JOB_CHOSEN)
-async def collect(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- p=await player(update)
- if p:
-  a,x=await production.collect(p.id,f'collect:{p.id}:{update.effective_message.message_id}');await update.effective_message.reply_text(fa.COLLECTED.format(amount=a,xp=x))
-async def upgrade(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
- p=await player(update)
- if p and context.args:
-  kind=context.args[0];level=await production.upgrade(p.id,kind,f'upgrade:{p.id}:{update.effective_message.message_id}');await update.effective_message.reply_text(fa.UPGRADED.format(kind=kind,level=level))
-def register(app)->None:
- for c,f in [('jobs',jobs),('choosejob',choose),('collect',collect),('upgrade',upgrade)]:app.add_handler(CommandHandler(c,f))
+
+
+async def resolve(update: Update) -> tuple[Player, Message] | None:
+    user = update.effective_user
+    message = update.effective_message
+    if user is None or message is None:
+        return None
+    player = await player_repo.get_or_create(
+        user.id,
+        username=user.username,
+        first_name=user.first_name or "شهروند",
+        language_code=user.language_code or "fa",
+    )
+    return player, message
+
+
+async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message is not None:
+        await message.reply_text(fa.JOBS)
+
+
+async def choose(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    resolved = await resolve(update)
+    if resolved is None:
+        return
+    player, message = resolved
+    if len(context.args) != 1:
+        await message.reply_text(fa.CHOOSE_JOB_USAGE)
+        return
+    try:
+        await production.choose(player.id, context.args[0])
+    except ValueError as exc:
+        await message.reply_text(fa.INVALID_INPUT.format(reason=str(exc)))
+        return
+    await message.reply_text(fa.JOB_CHOSEN)
+
+
+async def collect(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    resolved = await resolve(update)
+    if resolved is None:
+        return
+    player, message = resolved
+    amount, earned_xp = await production.collect(
+        player.id, f"collect:{player.id}:{message.message_id}"
+    )
+    await message.reply_text(fa.COLLECTED.format(amount=amount, xp=earned_xp))
+
+
+async def upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    resolved = await resolve(update)
+    if resolved is None:
+        return
+    player, message = resolved
+    if len(context.args) != 1:
+        await message.reply_text(fa.UPGRADE_USAGE)
+        return
+    kind = context.args[0]
+    try:
+        level = await production.upgrade(
+            player.id, kind, f"upgrade:{player.id}:{message.message_id}"
+        )
+    except ValueError as exc:
+        await message.reply_text(fa.INVALID_INPUT.format(reason=str(exc)))
+        return
+    await message.reply_text(fa.UPGRADED.format(kind=kind, level=level))
+
+
+def register(application) -> None:  # type: ignore[no-untyped-def]
+    for command, handler in (
+        ("jobs", jobs),
+        ("choosejob", choose),
+        ("collect", collect),
+        ("upgrade", upgrade),
+    ):
+        application.add_handler(CommandHandler(command, handler))
 ```
 
 ### `apps\teleworld_bot\handlers\status.py`
@@ -1676,7 +1967,7 @@ if __name__=='__main__':main()
 ### `apps\teleworld_bot\texts\__init__.py`
 
 ```python
-
+"""Package apps.teleworld_bot.texts."""
 ```
 
 ### `apps\teleworld_bot\texts\fa.py`
@@ -1711,6 +2002,39 @@ PRESIDENT_REQUIRED="این کار فقط دست رئیس‌جمهور است."
 PRIVATE_ONLY="این دستور را داخل گروه اجرا کن."
 ERROR="انجام عملیات ممکن نشد. کمی بعد دوباره امتحان کن."
 HELP="/createcountry /joincountry /country /donate /paytax /jobs /choosejob /collect /upgrade /startelection /nominate /vote /startproject /contribute /poll /polls /pollvote /setflag /announce"
+TAX_USAGE = "روش استفاده: /paytax 10000"
+CHOOSE_JOB_USAGE = "روش استفاده: /choosejob farmer"
+UPGRADE_USAGE = "روش استفاده: /upgrade production یا /upgrade storage"
+INVALID_AMOUNT = "مقدار باید یک عدد صحیح مثبت باشد."
+INVALID_INPUT = "ورودی معتبر نیست: {reason}"
+```
+
+### `AUDIT_STATUS.md`
+
+```markdown
+# TeleLife Audit Status
+
+## Completed validations
+
+- Reconstructed and recursively audited the complete supplied project dump.
+- All Python files compile successfully.
+- All local imports resolve statically.
+- No circular imports remain in the project dependency graph.
+- All YAML files parse as mappings.
+- Required configuration paths resolve.
+- Embedded shell/heredoc contamination was removed.
+- Missing clock and admin static resources were added.
+- Render multi-service and Docker configuration were repaired.
+- Supabase transaction-pooler settings disable asyncpg statement caching.
+- 46 dependency-independent logic and integrity tests passed.
+
+## Environment-dependent verification still required
+
+The audit sandbox did not contain Docker, Python 3.13, PostgreSQL, or all declared runtime/test packages. Before production deployment, CI or a deployment environment must install the declared dependencies, run the full pytest suite, build the Docker image, apply migrations to staging Supabase, and smoke-test all four Render services.
+
+## Security action
+
+Rotate the Supabase database password that appeared in the original supplied dump. The corrected environment example contains no credential.
 ```
 
 ### `DELIVERY.md`
@@ -1749,27 +2073,25 @@ Migrations are applied automatically at service startup.
 ### `Dockerfile`
 
 ```
-FROM python:3.13-slim
+FROM python:3.13-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN addgroup --system --gid 10001 telelife \
+    && adduser --system --uid 10001 --ingroup telelife --home /home/telelife telelife
 
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY --chown=telelife:telelife . .
+RUN python -m compileall -q apps packages run.py
 
-RUN useradd -m -u 10001 telelife && chown -R telelife:telelife /app
 USER telelife
-
-ENV SERVICE=telelife
 CMD ["python", "run.py"]
 ```
 
@@ -2583,13 +2905,13 @@ CREATE TRIGGER trg_player_jobs_touch
 ### `packages\__init__.py`
 
 ```python
-
+"""Package packages."""
 ```
 
 ### `packages\core\__init__.py`
 
 ```python
-
+"""Package packages.core."""
 ```
 
 ### `packages\core\bot\__init__.py`
@@ -2640,7 +2962,6 @@ def make_error_handler(user_message: str) -> Any:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import signal
 from collections.abc import Callable
@@ -2658,12 +2979,24 @@ logger = logging.getLogger(__name__)
 RegisterFn = Callable[[Application], None]
 
 
+async def _post_init(app: Application, settings: Settings, service: Service) -> None:
+    await db.create_pool(settings)
+    await migrate()
+    logger.info("%s ready in %s mode", service.value, settings.run_mode.value)
+
+
+async def _post_shutdown(app: Application) -> None:
+    await db.close_pool()
+
+
 def build_application(settings: Settings, service: Service) -> Application:
     cfg = get_config()
     defaults = Defaults(parse_mode="HTML", block=False)
     return (
         ApplicationBuilder()
         .token(settings.token_for(service))
+        .post_init(lambda app: _post_init(app, settings, service))
+        .post_shutdown(_post_shutdown)
         .defaults(defaults)
         .rate_limiter(AIORateLimiter())
         .concurrent_updates(cfg.int_("core.telegram.concurrent_updates"))
@@ -2673,30 +3006,12 @@ def build_application(settings: Settings, service: Service) -> Application:
     )
 
 
-async def _startup(settings: Settings) -> None:
-    await db.create_pool(settings)
-    await migrate()
-
-
-async def _shutdown() -> None:
-    await db.close_pool()
-
-
 def run_bot(service: Service, register: RegisterFn) -> None:
     """Entrypoint used by both bots. Blocking; handles its own event loop."""
     settings = get_settings()
     setup_logging(service.value, settings.log_level)
 
-    async def post_init(app: Application) -> None:
-        await _startup(settings)
-        logger.info("%s ready in %s mode", service.value, settings.run_mode.value)
-
-    async def post_shutdown(app: Application) -> None:
-        await _shutdown()
-
     application = build_application(settings, service)
-    application.post_init = post_init
-    application.post_shutdown = post_shutdown
     register(application)
 
     if settings.run_mode is RunMode.WEBHOOK:
@@ -3242,6 +3557,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+_MISSING = object()
+
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -3250,7 +3567,7 @@ CONFIG_DIR = Path(__file__).resolve().parent / "data"
 
 
 class ConfigError(RuntimeError):
-    pass
+    """Raised when game configuration is missing or invalid."""
 
 
 class GameConfig:
@@ -3261,24 +3578,46 @@ class GameConfig:
     def __init__(self, data: dict[str, Any]) -> None:
         self._data = data
 
-    def get(self, path: str, default: Any = None) -> Any:
+    def get(self, path: str, default: Any = _MISSING) -> Any:
         node: Any = self._data
         for part in path.split("."):
-            if not isinstance(node, dict) or part not in node:
-                if default is None:
+            if not isinstance(node, dict):
+                if default is _MISSING:
                     raise ConfigError(f"Missing config key: {path}")
                 return default
-            node = node[part]
+            key: str | int = part
+            if key not in node and part.lstrip("-").isdigit():
+                key = int(part)
+            if key not in node:
+                if default is _MISSING:
+                    raise ConfigError(f"Missing config key: {path}")
+                return default
+            node = node[key]
         return node
 
-    def int_(self, path: str, default: int | None = None) -> int:
-        return int(self.get(path, default))
+    def int_(self, path: str, default: int | object = _MISSING) -> int:
+        value = self.get(path, default)
+        if isinstance(value, bool):
+            raise ConfigError(f"Config key '{path}' must be an integer")
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"Config key '{path}' must be an integer") from exc
 
-    def float_(self, path: str, default: float | None = None) -> float:
-        return float(self.get(path, default))
+    def float_(self, path: str, default: float | object = _MISSING) -> float:
+        value = self.get(path, default)
+        if isinstance(value, bool):
+            raise ConfigError(f"Config key '{path}' must be numeric")
+        try:
+            return float(value)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"Config key '{path}' must be numeric") from exc
 
-    def bool_(self, path: str, default: bool | None = None) -> bool:
-        return bool(self.get(path, default))
+    def bool_(self, path: str, default: bool | object = _MISSING) -> bool:
+        value = self.get(path, default)
+        if not isinstance(value, bool):
+            raise ConfigError(f"Config key '{path}' must be a boolean")
+        return value
 
     def section(self, path: str) -> dict[str, Any]:
         value = self.get(path)
@@ -3295,8 +3634,14 @@ def get_config() -> GameConfig:
     merged: dict[str, Any] = {}
     if not CONFIG_DIR.exists():
         raise ConfigError(f"Config directory not found: {CONFIG_DIR}")
-    for path in sorted(CONFIG_DIR.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    paths = sorted(CONFIG_DIR.glob("*.yaml"))
+    if not paths:
+        raise ConfigError(f"No YAML config files found in: {CONFIG_DIR}")
+    for path in paths:
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            raise ConfigError(f"Unable to load config file '{path.name}': {exc}") from exc
         if not isinstance(data, dict):
             raise ConfigError(f"Config file '{path.name}' must contain a mapping")
         merged[path.stem] = data
@@ -3312,18 +3657,11 @@ def reload_config() -> GameConfig:
 ### `packages\core\db\__init__.py`
 
 ```python
-from packages.core.db.pool import (
-    acquire,
-    close_pool,
-    create_pool,
-    execute,
-    fetch,
-    fetchrow,
-    fetchval,
-    get_pool,
-    healthcheck,
-    transaction,
-)
+"""Public database API resolved lazily to avoid import-time side effects."""
+
+from __future__ import annotations
+
+from typing import Any
 
 __all__ = [
     "acquire",
@@ -3337,6 +3675,14 @@ __all__ = [
     "healthcheck",
     "transaction",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name not in __all__:
+        raise AttributeError(name)
+    from packages.core.db import pool
+
+    return getattr(pool, name)
 ```
 
 ### `packages\core\db\migrator.py`
@@ -3647,15 +3993,20 @@ class Group:
 ### `packages\core\repositories\__init__.py`
 
 ```python
-from packages.core.repositories import (
-    admin_repo, country_repo, election_repo, group_repo, ledger_repo,
-    mission_repo, outbox_repo, player_repo, production_repo,
-    progression_repo, project_repo,
-)
+"""Database repository package with lazy submodule imports."""
+
 __all__ = [
-    "admin_repo", "country_repo", "election_repo", "group_repo", "ledger_repo",
-    "mission_repo", "outbox_repo", "player_repo", "production_repo",
-    "progression_repo", "project_repo",
+    "admin_repo",
+    "country_repo",
+    "election_repo",
+    "group_repo",
+    "ledger_repo",
+    "mission_repo",
+    "outbox_repo",
+    "player_repo",
+    "production_repo",
+    "progression_repo",
+    "project_repo",
 ]
 ```
 
@@ -4784,14 +5135,28 @@ async def complete_if_ready(conn: asyncpg.Connection, project_id: int) -> bool:
 ### `packages\core\services\__init__.py`
 
 ```python
-from packages.core.services import (
-    admin, country, country_economy, country_missions, daily, economy, elections, missions,
-    national_project, news, production, progression, unlocks, xp,
-)
+"""Domain service package.
+
+Submodules are intentionally not eagerly imported. Python resolves explicit
+``from packages.core.services import xp`` imports lazily, avoiding package-level
+cycles while preserving the public import style.
+"""
+
 __all__ = [
-    "admin", "country", "country_economy", "country_missions", "daily", "economy", "elections",
-    "missions", "national_project", "news", "production", "progression",
-    "unlocks", "xp",
+    "admin",
+    "country",
+    "country_economy",
+    "country_missions",
+    "daily",
+    "economy",
+    "elections",
+    "missions",
+    "national_project",
+    "news",
+    "production",
+    "progression",
+    "unlocks",
+    "xp",
 ]
 ```
 
@@ -4985,27 +5350,88 @@ async def join_country(*, chat_id: int, player_id: int) -> bool:
 
 ```python
 """Idempotent daily country income/expense settlement."""
+
 from __future__ import annotations
-from datetime import UTC,date,datetime,timedelta
+
+from datetime import date, timedelta
+
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import ledger_repo
-async def settle_day(country_id:int,day:date)->bool:
- key=f"country-economy:{country_id}:{day}"
- async with db.transaction() as conn:
-  if await ledger_repo.idempotency_exists(conn,key):return False
-  row=await ledger_repo.lock_country(conn,country_id)
-  if not row:return False
-  cfg=get_config();income=int(row["daily_income_toman"])+cfg.int_("economy.country.daily_base_income_toman");expense=int(row["daily_expense_toman"])+cfg.int_("economy.country.daily_base_expense_toman");delta=income-expense
-  if delta<0:delta=max(delta,-int(row["treasury_toman"]))
-  balance=await ledger_repo.change_country(conn,country_id,"IRT",delta)
-  await ledger_repo.insert(conn,player_id=None,country_id=country_id,key=key,reason="country_daily_economy",asset="IRT",account="treasury",amount=delta,balance=balance,metadata={"date":str(day),"income":income,"expense":expense})
-  await conn.execute("INSERT INTO country_economy_daily(country_id,economy_date,income_toman,expense_toman,closing_treasury,ledger_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",country_id,day,income,expense,balance,key);return True
-async def catch_up(today:date|None=None)->int:
- end=today or datetime.now(UTC).date();days=get_config().int_("economy.country.catch_up_days");rows=await db.fetch("SELECT id FROM countries");done=0
- for row in rows:
-  for offset in range(days-1,-1,-1):done+=int(await settle_day(int(row["id"]),end-timedelta(days=offset)))
- return done
+from packages.core.utils import clock
+
+_IRT = "IRT"
+
+
+async def settle_day(country_id: int, day: date) -> bool:
+    """Settle one country-day. Returns False when already settled."""
+    key = f"country-economy:{country_id}:{day}"
+
+    async with db.transaction() as conn:
+        # Lock first, then check: checking before locking leaves a window
+        # where two schedulers both see "not settled yet".
+        row = await ledger_repo.lock_country(conn, country_id)
+        if row is None:
+            return False
+        if await ledger_repo.idempotency_exists(conn, key):
+            return False
+
+        cfg = get_config()
+        income = int(row["daily_income_toman"]) + cfg.int_(
+            "economy.country.daily_base_income_toman"
+        )
+        expense = int(row["daily_expense_toman"]) + cfg.int_(
+            "economy.country.daily_base_expense_toman"
+        )
+        delta = income - expense
+        if delta < 0:
+            # Never drive the treasury below zero; the CHECK would abort the
+            # whole scheduler batch instead of just skipping this country.
+            delta = max(delta, -int(row["treasury_toman"]))
+
+        balance = await ledger_repo.change_country(conn, country_id, _IRT, delta)
+        await ledger_repo.insert(
+            conn,
+            player_id=None,
+            country_id=country_id,
+            key=key,
+            reason="country_daily_economy",
+            asset=_IRT,
+            account="treasury",
+            amount=delta,
+            balance=balance,
+            metadata={"date": str(day), "income": income, "expense": expense},
+        )
+        await conn.execute(
+            """
+            INSERT INTO country_economy_daily
+                (country_id, economy_date, income_toman, expense_toman,
+                 closing_treasury, ledger_key)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT DO NOTHING
+            """,
+            country_id,
+            day,
+            income,
+            expense,
+            balance,
+            key,
+        )
+        return True
+
+
+async def catch_up(today: date | None = None) -> int:
+    """Settle any missed days after downtime. Returns settlements performed."""
+    end = today or clock.game_today()
+    days = get_config().int_("economy.country.catch_up_days")
+    rows = await db.fetch("SELECT id FROM countries ORDER BY id")
+
+    settled = 0
+    for row in rows:
+        for offset in range(days - 1, -1, -1):
+            if await settle_day(int(row["id"]), end - timedelta(days=offset)):
+                settled += 1
+    return settled
 ```
 
 ### `packages\core\services\country_missions.py`
@@ -5094,91 +5520,6 @@ async def report(country_id: int, action: str, asset: str, amount: int) -> bool:
             destination,
         )
         return True
-EOF
-cat > packages/core/services/country_economy.py <<'EOF'
-"""Idempotent daily country income/expense settlement."""
-
-from __future__ import annotations
-
-from datetime import date, timedelta
-
-from packages.core import db
-from packages.core.config import get_config
-from packages.core.repositories import ledger_repo
-from packages.core.utils import clock
-
-_IRT = "IRT"
-
-
-async def settle_day(country_id: int, day: date) -> bool:
-    """Settle one country-day. Returns False when already settled."""
-    key = f"country-economy:{country_id}:{day}"
-
-    async with db.transaction() as conn:
-        # Lock first, then check: checking before locking leaves a window
-        # where two schedulers both see "not settled yet".
-        row = await ledger_repo.lock_country(conn, country_id)
-        if row is None:
-            return False
-        if await ledger_repo.idempotency_exists(conn, key):
-            return False
-
-        cfg = get_config()
-        income = int(row["daily_income_toman"]) + cfg.int_(
-            "economy.country.daily_base_income_toman"
-        )
-        expense = int(row["daily_expense_toman"]) + cfg.int_(
-            "economy.country.daily_base_expense_toman"
-        )
-        delta = income - expense
-        if delta < 0:
-            # Never drive the treasury below zero; the CHECK would abort the
-            # whole scheduler batch instead of just skipping this country.
-            delta = max(delta, -int(row["treasury_toman"]))
-
-        balance = await ledger_repo.change_country(conn, country_id, _IRT, delta)
-        await ledger_repo.insert(
-            conn,
-            player_id=None,
-            country_id=country_id,
-            key=key,
-            reason="country_daily_economy",
-            asset=_IRT,
-            account="treasury",
-            amount=delta,
-            balance=balance,
-            metadata={"date": str(day), "income": income, "expense": expense},
-        )
-        await conn.execute(
-            """
-            INSERT INTO country_economy_daily
-                (country_id, economy_date, income_toman, expense_toman,
-                 closing_treasury, ledger_key)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT DO NOTHING
-            """,
-            country_id,
-            day,
-            income,
-            expense,
-            balance,
-            key,
-        )
-        return True
-
-
-async def catch_up(today: date | None = None) -> int:
-    """Settle any missed days after downtime. Returns settlements performed."""
-    end = today or clock.game_today()
-    days = get_config().int_("economy.country.catch_up_days")
-    rows = await db.fetch("SELECT id FROM countries ORDER BY id")
-
-    settled = 0
-    for row in rows:
-        for offset in range(days - 1, -1, -1):
-            if await settle_day(int(row["id"]), end - timedelta(days=offset)):
-                settled += 1
-    return settled
 ```
 
 ### `packages\core\services\daily.py`
@@ -6493,14 +6834,14 @@ def day_key(prefix: str, player_id: int) -> str:
 ### `packages\core\settings.py`
 
 ```python
-"""Environment-driven settings. Secrets live here; game numbers live in config/*.yaml."""
+"""Validated, environment-driven runtime settings."""
 
 from __future__ import annotations
 
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6518,7 +6859,10 @@ class Service(StrEnum):
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
     )
 
     service: Service = Service.TELELIFE
@@ -6526,53 +6870,70 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
 
-    # --- database ---
     database_url: PostgresDsn
-    db_pool_min: int = Field(default=2, ge=1)
-    db_pool_max: int = Field(default=10, ge=1)
-    db_command_timeout: float = 15.0
-    # Supabase transaction pooler is incompatible with prepared statements.
-    db_statement_cache_size: int = 0
+    db_pool_min: int = Field(default=1, ge=1, le=50)
+    db_pool_max: int = Field(default=5, ge=1, le=50)
+    db_command_timeout: float = Field(default=15.0, gt=0, le=300)
+    db_statement_cache_size: int = Field(default=0, ge=0)
 
-    # --- bots ---
     telelife_bot_token: str = ""
     teleworld_bot_token: str = ""
     global_news_chat_id: int | None = None
 
-    # --- run mode ---
     run_mode: RunMode = RunMode.POLLING
     webhook_base_url: str = ""
     webhook_secret: str = ""
-    port: int = 8000
+    port: int = Field(default=8000, ge=1, le=65535)
     host: str = "0.0.0.0"  # noqa: S104
 
-    # --- admin ---
-    admin_session_secret: str = "change-me"
-    admin_username: str = "admin"
-    admin_password: str = "change-me"
+    admin_username: str = ""
+    admin_password: str = ""
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        normalized = value.upper()
+        if normalized not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
+            raise ValueError("LOG_LEVEL must be a standard Python logging level")
+        return normalized
 
     @field_validator("db_pool_max")
     @classmethod
-    def _check_pool(cls, v: int, info) -> int:  # type: ignore[no-untyped-def]
-        mn = info.data.get("db_pool_min", 1)
-        if v < mn:
-            raise ValueError("db_pool_max must be >= db_pool_min")
-        return v
+    def validate_pool_bounds(cls, value: int, info: ValidationInfo) -> int:
+        if value < int(info.data.get("db_pool_min", 1)):
+            raise ValueError("DB_POOL_MAX must be greater than or equal to DB_POOL_MIN")
+        return value
+
+    @model_validator(mode="after")
+    def validate_service_requirements(self) -> Settings:
+        if self.service in {Service.TELELIFE, Service.TELEWORLD}:
+            self.token_for(self.service)
+            if self.run_mode is RunMode.WEBHOOK:
+                if not self.webhook_base_url:
+                    raise ValueError("WEBHOOK_BASE_URL is required in webhook mode")
+                if len(self.webhook_secret) < 16:
+                    raise ValueError("WEBHOOK_SECRET must contain at least 16 characters")
+        if self.service is Service.ADMIN:
+            if not self.admin_username or not self.admin_password:
+                raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD are required")
+            if len(self.admin_password) < 12:
+                raise ValueError("ADMIN_PASSWORD must contain at least 12 characters")
+        return self
 
     def token_for(self, service: Service) -> str:
         token = {
             Service.TELELIFE: self.telelife_bot_token,
             Service.TELEWORLD: self.teleworld_bot_token,
-        }.get(service, "")
+        }.get(service, "").strip()
         if not token:
-            raise RuntimeError(f"Missing bot token for service '{service}'")
+            raise RuntimeError(f"Missing bot token for service '{service.value}'")
         return token
 
     def webhook_url(self, service: Service) -> str:
         base = self.webhook_base_url.rstrip("/")
         if not base:
             raise RuntimeError("WEBHOOK_BASE_URL is required in webhook mode")
-        return f"{base}/telegram/{service}"
+        return f"{base}/telegram/{service.value}"
 
 
 @lru_cache(maxsize=1)
@@ -6583,9 +6944,11 @@ def get_settings() -> Settings:
 ### `packages\core\ui\__init__.py`
 
 ```python
-from packages.core.ui.buttons import Keyboard, Style, button, url_button
-from packages.core.ui.callbacks import Callback, cb
-from packages.core.ui.panels import schedule_cleanup, timeout_for
+"""Telegram UI primitives, loaded lazily to keep submodules independent."""
+
+from __future__ import annotations
+
+from typing import Any
 
 __all__ = [
     "Callback",
@@ -6595,8 +6958,23 @@ __all__ = [
     "cb",
     "schedule_cleanup",
     "timeout_for",
-    "url_button",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"Callback", "cb"}:
+        from packages.core.ui import callbacks
+
+        return getattr(callbacks, name)
+    if name in {"Keyboard", "Style", "button"}:
+        from packages.core.ui import buttons
+
+        return getattr(buttons, name)
+    if name in {"schedule_cleanup", "timeout_for"}:
+        from packages.core.ui import panels
+
+        return getattr(panels, name)
+    raise AttributeError(name)
 ```
 
 ### `packages\core\ui\buttons.py`
@@ -6792,8 +7170,8 @@ async def _expire(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.edit_message_reply_markup(
             chat_id=chat_id, message_id=message_id, reply_markup=None
         )
-    except BadRequest:
-        pass  # already edited, deleted, or unchanged - all fine
+    except BadRequest as exc:
+        logger.debug("panel cleanup no-op for chat %s: %s", chat_id, exc)
     except Forbidden:
         logger.info("panel cleanup skipped: bot removed from chat %s", chat_id)
 
@@ -6822,9 +7200,56 @@ def schedule_cleanup(
 ### `packages\core\utils\__init__.py`
 
 ```python
-from packages.core.utils import fmt
+"""Shared formatting and timezone utilities."""
 
-__all__ = ["fmt"]
+from packages.core.utils import clock, fmt
+
+__all__ = ["clock", "fmt"]
+```
+
+### `packages\core\utils\clock.py`
+
+```python
+"""Timezone-aware game clock utilities.
+
+All domain dates are derived from the configured IANA timezone. Keeping this in
+one module prevents UTC/local-date drift around midnight and makes time policy
+explicit for every service.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from packages.core.config import ConfigError, get_config
+
+
+def game_timezone() -> ZoneInfo:
+    """Return the configured game timezone, raising a clear config error."""
+    name = str(get_config().get("core.timezone"))
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError as exc:
+        raise ConfigError(f"Invalid IANA timezone in core.timezone: {name}") from exc
+
+
+def utcnow() -> datetime:
+    """Return an aware UTC timestamp."""
+    return datetime.now(UTC)
+
+
+def game_today(now: datetime | None = None) -> date:
+    """Return the calendar date in the configured game timezone."""
+    current = now or utcnow()
+    if current.tzinfo is None:
+        raise ValueError("game_today requires a timezone-aware datetime")
+    return current.astimezone(game_timezone()).date()
+
+
+def day_stamp(now: datetime | None = None) -> str:
+    """Return the ISO game date used in idempotency keys."""
+    return game_today(now).isoformat()
 ```
 
 ### `packages\core\utils\fmt.py`
@@ -6878,15 +7303,16 @@ version = "0.1.0"
 description = "TeleLife / TeleWorld - Telegram Virtual Life Simulator"
 requires-python = ">=3.13"
 dependencies = [
-    "python-telegram-bot[rate-limiter,webhooks,job-queue]>=22.7",
-    "asyncpg>=0.30.0",
-    "pydantic>=2.9.0",
-    "pydantic-settings>=2.5.0",
-    "PyYAML>=6.0.2",
-    "uvicorn[standard]>=0.31.0",
-    "fastapi>=0.115.0",
-    "jinja2>=3.1.4",
-    "orjson>=3.10.7",
+    "python-telegram-bot[rate-limiter,webhooks,job-queue]>=22.8,<23",
+    "asyncpg>=0.30,<1",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.5,<3",
+    "PyYAML>=6.0.2,<7",
+    "uvicorn[standard]>=0.31,<1",
+    "fastapi>=0.115,<1",
+    "jinja2>=3.1.4,<4",
+    "orjson>=3.10.7,<4",
+    "python-multipart>=0.0.12,<1",
 ]
 
 [project.optional-dependencies]
@@ -6943,109 +7369,102 @@ services:
     name: telelife-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     envVars:
-      - key: SERVICE
-        value: telelife
-      - key: RUN_MODE
-        value: polling
-      - key: DATABASE_URL
-        sync: false
-      - key: TELELIFE_BOT_TOKEN
-        sync: false
+      - {key: SERVICE, value: telelife}
+      - {key: ENVIRONMENT, value: production}
+      - {key: RUN_MODE, value: polling}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: TELELIFE_BOT_TOKEN, sync: false}
 
   - type: worker
     name: teleworld-bot
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     envVars:
-      - key: SERVICE
-        value: teleworld
-      - key: RUN_MODE
-        value: polling
-      - key: DATABASE_URL
-        sync: false
-      - key: TELEWORLD_BOT_TOKEN
-        sync: false
+      - {key: SERVICE, value: teleworld}
+      - {key: ENVIRONMENT, value: production}
+      - {key: RUN_MODE, value: polling}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: TELEWORLD_BOT_TOKEN, sync: false}
 
   - type: worker
     name: telelife-scheduler
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     envVars:
-      - key: SERVICE
-        value: scheduler
-      - key: DATABASE_URL
-        sync: false
+      - {key: SERVICE, value: scheduler}
+      - {key: ENVIRONMENT, value: production}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "3"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: TELEWORLD_BOT_TOKEN, sync: false}
 
   - type: web
     name: telelife-admin
     runtime: docker
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
     healthCheckPath: /healthz
     envVars:
-      - key: SERVICE
-        value: admin
-      - key: DATABASE_URL
-        sync: false
-      - key: ADMIN_USERNAME
-        sync: false
-      - key: ADMIN_PASSWORD
-        sync: false
+      - {key: SERVICE, value: admin}
+      - {key: ENVIRONMENT, value: production}
+      - {key: DATABASE_URL, sync: false}
+      - {key: DB_POOL_MIN, value: "1"}
+      - {key: DB_POOL_MAX, value: "5"}
+      - {key: DB_STATEMENT_CACHE_SIZE, value: "0"}
+      - {key: ADMIN_USERNAME, sync: false}
+      - {key: ADMIN_PASSWORD, sync: false}
 ```
 
 ### `requirements.txt`
 
 ```text
-python-telegram-bot[rate-limiter,webhooks,job-queue]>=22.7
-asyncpg>=0.30.0
-pydantic>=2.9.0
-pydantic-settings>=2.5.0
-PyYAML>=6.0.2
-uvicorn[standard]>=0.31.0
-fastapi>=0.115.0
-jinja2>=3.1.4
-orjson>=3.10.7
+python-telegram-bot[rate-limiter,webhooks,job-queue]>=22.8,<23
+asyncpg>=0.30,<1
+pydantic>=2.9,<3
+pydantic-settings>=2.5,<3
+PyYAML>=6.0.2,<7
+uvicorn[standard]>=0.31,<1
+fastapi>=0.115,<1
+jinja2>=3.1.4,<4
+orjson>=3.10.7,<4
+python-multipart>=0.0.12,<1
 ```
 
 ### `run.py`
 
 ```python
-"""Single entrypoint for all four services. One image, four Render services."""
+"""Container entrypoint dispatching exactly one configured service."""
 
 from __future__ import annotations
 
 import os
-import sys
-
-from packages.core.settings import Service
 
 
 def main() -> None:
-    raw = os.getenv("SERVICE", Service.TELELIFE.value).strip().lower()
-    try:
-        service = Service(raw)
-    except ValueError:
-        sys.exit(f"Unknown SERVICE={raw!r}. Expected: {[s.value for s in Service]}")
-
-    if service is Service.TELELIFE:
-        from apps.telelife_bot.main import main as run_service
-
-        run_service()
-    elif service is Service.TELEWORLD:
-        from apps.teleworld_bot.main import main as run_service
-
-        run_service()
-    elif service is Service.SCHEDULER:
-        from apps.scheduler.main import main as run_service
-
-        run_service()
-    else:
+    service = os.getenv("SERVICE", "telelife").strip().lower()
+    if service == "telelife":
+        from apps.telelife_bot.main import main as target
+    elif service == "teleworld":
+        from apps.teleworld_bot.main import main as target
+    elif service == "scheduler":
+        from apps.scheduler.main import main as target
+    elif service == "admin":
         import uvicorn
-
         from packages.core.settings import get_settings
 
         settings = get_settings()
@@ -7053,9 +7472,13 @@ def main() -> None:
             "apps.admin.main:app",
             host=settings.host,
             port=settings.port,
-            log_config=None,
-            access_log=False,
+            proxy_headers=True,
+            forwarded_allow_ips="*",
         )
+        return
+    else:
+        raise SystemExit(f"Unknown SERVICE value: {service!r}")
+    target()
 
 
 if __name__ == "__main__":
@@ -7221,33 +7644,19 @@ See [docs/PHASE_5.md](docs/PHASE_5.md).
 ### `tests\__init__.py`
 
 ```python
-
+"""Package tests."""
 ```
 
 ### `tests\conftest.py`
 
 ```python
-"""Offline-safe stubs so pure game logic is testable without a database."""
+"""Shared test configuration.
+
+Tests use the real declared dependencies. Missing runtime packages must fail
+collection instead of being hidden by stubs.
+"""
 
 from __future__ import annotations
-
-import sys
-import types
-
-
-def _stub(name: str, **attrs: object) -> None:
-    if name in sys.modules:
-        return
-    module = types.ModuleType(name)
-    for key, value in attrs.items():
-        setattr(module, key, value)
-    sys.modules[name] = module
-
-
-try:  # pragma: no cover
-    import asyncpg  # noqa: F401
-except ImportError:  # pragma: no cover
-    _stub("asyncpg", Connection=object, Record=object, Pool=object, create_pool=None)
 ```
 
 ### `tests\test_callbacks.py`
@@ -7281,6 +7690,26 @@ def test_enforces_telegram_64_byte_limit():
         cb("tl", "action", 123456789, "x" * 80)
 ```
 
+### `tests\test_clock.py`
+
+```python
+from datetime import UTC, datetime
+
+import pytest
+
+from packages.core.utils import clock
+
+
+def test_game_date_uses_configured_timezone():
+    instant = datetime(2026, 7, 25, 21, 0, tzinfo=UTC)
+    assert clock.game_today(instant).isoformat() == "2026-07-26"
+
+
+def test_naive_datetimes_are_rejected():
+    with pytest.raises(ValueError, match="timezone-aware"):
+        clock.game_today(datetime(2026, 7, 26))
+```
+
 ### `tests\test_config.py`
 
 ```python
@@ -7303,6 +7732,14 @@ def test_missing_key_raises():
 
 def test_default_is_returned():
     assert get_config().get("nope.nope", "fallback") == "fallback"
+
+
+def test_explicit_none_default_is_supported():
+    assert get_config().get("missing.optional.value", None) is None
+
+
+def test_numeric_yaml_keys_support_dotted_access():
+    assert get_config().int_("jobs.storage.levels.1.capacity_hours") == 6
 ```
 
 ### `tests\test_daily.py`
@@ -7528,6 +7965,46 @@ def test_max_level_caps_progress():
     top = progression.max_level()
     current, needed = progression.level_progress(top, 999)
     assert current == needed == 999
+```
+
+### `tests\test_project_integrity.py`
+
+```python
+"""Repository-wide integrity checks for generated-source contamination."""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_all_python_files_parse():
+    for path in ROOT.rglob("*.py"):
+        ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
+def test_no_shell_heredoc_fragments_in_source():
+    banned = ("cat >", "<<'PY'", '<<"PY"', "\nEOF\n")
+    for path in [*ROOT.rglob("*.py"), *ROOT.rglob("*.sql")]:
+        if path == Path(__file__):
+            continue
+        text = path.read_text(encoding="utf-8")
+        assert not any(token in text for token in banned), path
+
+
+def test_every_yaml_file_is_a_mapping():
+    for path in ROOT.rglob("*.yaml"):
+        assert isinstance(yaml.safe_load(path.read_text(encoding="utf-8")), dict), path
+
+
+def test_required_runtime_directories_exist():
+    assert (ROOT / "apps/admin/templates").is_dir()
+    assert (ROOT / "apps/admin/static").is_dir()
+    assert (ROOT / "migrations").is_dir()
 ```
 
 ### `tests\test_unlocks.py`

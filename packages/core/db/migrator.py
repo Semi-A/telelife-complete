@@ -32,37 +32,33 @@ def discover() -> list[Path]:
 
 
 async def migrate() -> list[str]:
-    """Apply pending migrations. Each file runs in its own transaction."""
+    """Apply pending migrations under a PostgreSQL advisory lock."""
     applied: list[str] = []
     async with dbpool.acquire() as conn:
-        await conn.execute(_BOOTSTRAP)
-        done = {r["version"]: r["checksum"] for r in await conn.fetch(
-            "SELECT version, checksum FROM schema_migrations"
-        )}
-
-    for path in discover():
-        version = path.stem
-        sql = path.read_text(encoding="utf-8")
-        digest = _checksum(sql)
-
-        if version in done:
-            if done[version] != digest:
-                raise RuntimeError(
-                    f"Migration '{version}' changed after being applied. "
-                    "Create a new migration instead of editing history."
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", 839204731)
+            await conn.execute(_BOOTSTRAP)
+            done = {r["version"]: r["checksum"] for r in await conn.fetch(
+                "SELECT version, checksum FROM schema_migrations"
+            )}
+            for path in discover():
+                version = path.stem
+                sql = path.read_text(encoding="utf-8")
+                digest = _checksum(sql)
+                if version in done:
+                    if done[version] != digest:
+                        raise RuntimeError(
+                            f"Migration '{version}' changed after being applied. "
+                            "Create a new migration instead of editing history."
+                        )
+                    continue
+                await conn.execute(sql)
+                await conn.execute(
+                    "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)",
+                    version, digest,
                 )
-            continue
-
-        async with dbpool.transaction() as conn:
-            await conn.execute(sql)
-            await conn.execute(
-                "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)",
-                version,
-                digest,
-            )
-        applied.append(version)
-        logger.info("applied migration %s", version)
-
+                applied.append(version)
+                logger.info("applied migration %s", version)
     if not applied:
         logger.info("database schema up to date")
     return applied

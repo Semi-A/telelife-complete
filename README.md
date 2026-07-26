@@ -1,21 +1,33 @@
-# TeleLife | تله‌لایف · TeleWorld | تله‌ورلد
+# TeleLife / TeleWorld
 
-A Telegram virtual-life simulator. Two bots, one world.
+استقرار تک‌پردازه شامل دو ربات Telegram، زمان‌بند و پنل FastAPI است.
 
-- **TeleLife** — private chat. Your second life: profile, work, home, wallet, savings, USD.
-- **TeleWorld** — groups. The society layer: territories, ranks, competition, economy.
+## معماری اجرا
 
-One PostgreSQL database. One player identity. One economy.
+`run.py` یک pool مشترک asyncpg و migrationها را راه‌اندازی می‌کند و `ServiceSupervisor` چهار سرویس زیر را به‌صورت taskهای مستقل اجرا می‌کند:
 
-## Status
+- TeleLife polling bot
+- TeleWorld polling bot
+- Scheduler (minute/daily loops)
+- FastAPI Admin (تنها listener روی `PORT`)
 
-**Phase 2 complete** — progression, daily rewards, missions, unlocks and the
-glass button system are live. See `docs/PHASE_1.md` and `docs/PHASE_2.md`.
-Roadmap and phase map: `TeleLife_Master_Plan.md`.
+خرابی هر سرویس در مرز Supervisor مهار و با exponential backoff همان سرویس restart می‌شود. `SIGTERM` و `SIGINT` باعث graceful shutdown همه taskها، Telegram applications، Uvicorn و pool دیتابیس می‌شوند.
 
-## Stack
+## استقرار Render
 
-Python 3.13 · python-telegram-bot · asyncpg (raw SQL) · PostgreSQL 15+ / Supabase ·
-FastAPI + HTMX + Tailwind · Docker on Render
+1. repository را به GitHub push کنید.
+2. در Render یک Blueprint از `render.yaml` بسازید؛ فقط یک Web Service Free تعریف می‌شود.
+3. secretها را وارد کنید: `DATABASE_URL`، هر دو bot token، و اطلاعات admin.
+4. برای Supabase Transaction Pooler از port `6543`، `sslmode=require` و `DB_STATEMENT_CACHE_SIZE=0` استفاده کنید.
+5. migrationها هنگام startup و پیش از سرویس‌ها، تحت advisory lock اجرا می‌شوند.
 
-## Quick start
+Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیریت با HTTP Basic محافظت شده‌اند.
+
+## اجرا و تست
+
+```bash
+docker build -t telelife .
+docker run --rm --env-file .env -p 8000:8000 telelife
+```
+
+برای تست، dependencyهای dev پروژه را نصب کرده و `pytest -q` را اجرا کنید.
