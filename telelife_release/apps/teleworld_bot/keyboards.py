@@ -36,3 +36,13 @@ def cancel() -> InlineKeyboardMarkup:
 
 def back() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[b("بازگشت به منوی اصلی", "home")]])
+def country_actions() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+      [b("💰 کمک ۵۰ هزار تومان","donate:50000",primary=True),b("💰 کمک ۲۰۰ هزار","donate:200000")],
+      [b("🗳 شروع انتخابات","election"),b("🚪 خروج از کشور","leave")],
+      [b("🔄 تازه‌سازی","country"),b("بازگشت","home")],
+    ])
+
+def jobs_actions(has_job:bool) -> InlineKeyboardMarkup:
+    if has_job:return InlineKeyboardMarkup([[b("📦 دریافت تولید","jcollect",success=True)],[b("⚙️ ارتقای تولید","jup:production",primary=True),b("🗄 ارتقای انبار","jup:storage")],[b("بازگشت","home")]])
+    return InlineKeyboardMarkup([[b("🌾 کشاورز","job:farmer",primary=True),b("💻 برنامه‌نویس","job:programmer")],[b("📈 بازرگان","job:trader"),b("⚡ مهندس","job:engineer")],[b("بازگشت","home")]])

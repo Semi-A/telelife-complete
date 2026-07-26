@@ -87,11 +87,12 @@ async def collect(player_id: int, key: str, at: datetime | None = None) -> tuple
         row = await production_repo.lock(conn, player_id)
         if not row:
             raise ValueError("job_not_found")
+        # The player_jobs lock serializes double taps; re-check idempotency only after it.
+        if await ledger_repo.idempotency_exists(conn, key):
+            return 0, 0
         accrual = accrue(row, now)
         amount = accrual.stored
         if amount < cfg.int_("jobs.production.minimum_collection_amount"):
-            return 0, 0
-        if await ledger_repo.idempotency_exists(conn, key):
             return 0, 0
         asset = row["output_asset_code"]
         balance = await ledger_repo.change_player(conn, player_id, asset, amount)

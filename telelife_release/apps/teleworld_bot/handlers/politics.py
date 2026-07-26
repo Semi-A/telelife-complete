@@ -51,5 +51,6 @@ async def announce(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  if x and x[3] and await country_repo.is_president(x[3]['id'],x[2].id):
   async with db.transaction() as conn:await outbox_repo.enqueue(conn,f'announce:{x[1].message_id}','country_announcement',{'text':' '.join(context.args)},x[0].id)
   await x[1].reply_text(fa.ANNOUNCED)
-def register(app)->None:
- for c,f in [('startelection',start_election),('nominate',nominate),('vote',vote),('startproject',start_project),('contribute',contribute),('poll',poll),('polls',polls),('pollvote',pollvote),('setflag',setflag),('announce',announce)]:app.add_handler(CommandHandler(c,f))
+def register(application) -> None:
+    """Legacy slash adapter intentionally disabled; use glass panels."""
+    return

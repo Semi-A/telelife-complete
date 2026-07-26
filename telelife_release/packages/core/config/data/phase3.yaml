@@ -1,0 +1,34 @@
+savings:
+  minimum_transfer_toman: 10000
+  maximum_transfer_toman: 50000000
+  presets_toman: [50000, 200000, 1000000]
+
+living:
+  base_daily_cost_toman: 12000
+  max_catch_up_days: 7
+  missed_day_happiness_penalty: 2
+
+housing:
+  rent_period_days: 7
+  options:
+    room:
+      title: "اتاق جمع‌وجور"
+      min_level: 3
+      purchase_toman: 900000
+      weekly_rent_toman: 90000
+      daily_living_toman: 7000
+      happiness_bonus: 1
+    apartment:
+      title: "آپارتمان شهری"
+      min_level: 8
+      purchase_toman: 4500000
+      weekly_rent_toman: 320000
+      daily_living_toman: 18000
+      happiness_bonus: 2
+    villa:
+      title: "ویلای لوکس"
+      min_level: 20
+      purchase_toman: 25000000
+      weekly_rent_toman: 1200000
+      daily_living_toman: 50000
+      happiness_bonus: 4

@@ -56,4 +56,3 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def register(application) -> None:  # type: ignore[no-untyped-def]
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))

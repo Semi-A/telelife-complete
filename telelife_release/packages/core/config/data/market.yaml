@@ -1,0 +1,17 @@
+usd:
+  min_level: 10
+  minimum_trade_cents: 100
+  maximum_trade_cents: 100000
+  daily_buy_limit_cents: 200000
+  daily_sell_limit_cents: 200000
+  fee_basis_points: 50
+  spread_basis_points: 30
+  impact_cents_per_step: 50000
+  impact_basis_points_per_step: 8
+  max_trade_move_basis_points: 80
+  daily_band_basis_points: 800
+  stabilization_basis_points_per_minute: 2
+  presets_cents: [1000, 5000, 10000]
+  health:
+    healthy_min: 75
+    watch_min: 45
