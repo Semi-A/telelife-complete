@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="text-2xl font-extrabold text-white mb-1">داشبورد زنده</h1>
+<p class="text-sm text-slate-500 mb-6">هر ۱۰ ثانیه به‌روزرسانی می‌شود</p>
+
+<div id="stats" hx-get="/partials/stats" hx-trigger="every 10s" hx-swap="innerHTML">
+  {% include "partials/stats.html" %}
+</div>
+{% endblock %}

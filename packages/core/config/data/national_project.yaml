@@ -1,0 +1,22 @@
+projects:
+  national_storage:
+    once_per_country: true
+    requirements:
+      IRT: 2500000
+      food: 250
+      minerals: 200
+    completion:
+      country_storage_capacity_bonus_fraction: 0.25
+      contributor_reward_xp: 250
+
+contribution:
+  minimum_amount: 1
+  maximum_amount_per_request: 1000000
+  clamp_to_remaining_requirement: true
+  citizenship_required: true
+  use_ledger_for_every_asset: true
+  require_idempotency_key: true
+
+permissions:
+  start_without_president: citizen
+  start_with_president: president

@@ -1,0 +1,57 @@
+services:
+  - type: worker
+    name: telelife-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: SERVICE
+        value: telelife
+      - key: RUN_MODE
+        value: polling
+      - key: DATABASE_URL
+        sync: false
+      - key: TELELIFE_BOT_TOKEN
+        sync: false
+
+  - type: worker
+    name: teleworld-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: SERVICE
+        value: teleworld
+      - key: RUN_MODE
+        value: polling
+      - key: DATABASE_URL
+        sync: false
+      - key: TELEWORLD_BOT_TOKEN
+        sync: false
+
+  - type: worker
+    name: telelife-scheduler
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: SERVICE
+        value: scheduler
+      - key: DATABASE_URL
+        sync: false
+
+  - type: web
+    name: telelife-admin
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: SERVICE
+        value: admin
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

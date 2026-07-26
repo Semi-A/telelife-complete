@@ -1,0 +1,18 @@
+outbox:
+  publish_interval_seconds: 15
+  claim_batch_size: 50
+  claim_lease_seconds: 60
+  maximum_attempts: 5
+  retry_backoff_seconds:
+    - 15
+    - 60
+    - 300
+    - 900
+    - 3600
+  last_error_code_max_length: 64
+  payload_max_bytes: 16384
+  delivery_semantics: at_least_once
+
+destinations:
+  country: source_country_chat
+  global: configured_global_news_chat

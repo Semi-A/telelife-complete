@@ -1,0 +1,33 @@
+scheduler:
+  hour_utc: 0
+  minute_utc: 10
+  catch_up_days: 7
+  claim_batch_size: 31
+  deterministic_seed_namespace: telelife-daily-events-v1
+
+events:
+  harvest_boom:
+    weight: 25
+    effect_code: food_production
+    magnitude_basis_points: 1200
+    duration_hours: 24
+  mining_surge:
+    weight: 20
+    effect_code: minerals_production
+    magnitude_basis_points: 1200
+    duration_hours: 24
+  energy_wave:
+    weight: 20
+    effect_code: energy_production
+    magnitude_basis_points: 1150
+    duration_hours: 24
+  technology_rush:
+    weight: 20
+    effect_code: technology_production
+    magnitude_basis_points: 1150
+    duration_hours: 24
+  market_day:
+    weight: 15
+    effect_code: currency_production
+    magnitude_basis_points: 1100
+    duration_hours: 24
