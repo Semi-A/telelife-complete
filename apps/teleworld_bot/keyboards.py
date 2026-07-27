@@ -80,3 +80,11 @@ def migration_review(rows):
  buttons=[]
  for r in rows:buttons.extend([[b(f"✅ پذیرش {r['first_name']}",f"migaccept:{r['id']}","success"),b("رد",f"migreject:{r['id']}","danger")]])
  buttons.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(buttons)
+
+def central_bank(president=False):
+    rows=[]
+    if president:
+        rows.append([b("➕ افزایش بهره ۱٪","rate:up","primary"),b("➖ کاهش بهره ۱٪","rate:down")])
+        rows.append([b("💵 خرید ذخیره ارزی ۱۰M","reserve:buy","success")])
+    rows.append([b("↩️ اقتصاد کشور","economy"),b("🏠 خانه جهان","home")])
+    return InlineKeyboardMarkup(rows)

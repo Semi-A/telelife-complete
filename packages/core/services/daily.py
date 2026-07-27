@@ -142,13 +142,13 @@ async def claim(player_id: int, today: date | None = None) -> DailyResult:
         if balance is None:
             raise ValueError(f"player {player_id} not found")
 
-        await conn.execute(
+        ledger_id = await conn.fetchval(
             """
             INSERT INTO ledger
                 (player_id, idempotency_key, reason, currency, asset_code, account,
                  amount, balance_after, metadata)
             VALUES ($1, $2, 'daily_reward', 'IRT', 'IRT', 'wallet', $3, $4, $5)
-            ON CONFLICT (idempotency_key) DO NOTHING
+            ON CONFLICT (idempotency_key) DO NOTHING RETURNING id
             """,
             player_id,
             f"daily:{player_id}:{today:%Y-%m-%d}",
@@ -156,6 +156,9 @@ async def claim(player_id: int, today: date | None = None) -> DailyResult:
             balance,
             {"streak": new_streak, "milestone": bool(milestone)},
         )
+        if ledger_id is None:
+            # A money mutation without its immutable ledger leg must never commit.
+            raise RuntimeError("daily_ledger_conflict")
 
         return DailyResult(
             claimed=True,

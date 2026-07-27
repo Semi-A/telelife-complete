@@ -18,14 +18,14 @@ async def _update_streaks(conn)->int:
 
 async def _queue_digest(conn)->int:
     count=0
-    rows=await conn.fetch("""SELECT g.id,g.telegram_id,g.title,e.streak,
-      (SELECT count(*) FROM citizenships cs JOIN countries c ON c.id=cs.country_id WHERE c.group_id=g.id AND cs.is_active) citizens,
+    rows=await conn.fetch("""SELECT g.id,g.telegram_id,c.name country_name,e.streak,
+      (SELECT count(*) FROM citizenships cs WHERE cs.country_id=c.id AND cs.is_active) citizens,
       (SELECT current_price_toman FROM market_prices WHERE asset_code='USD') usd
-      FROM groups g JOIN group_engagement_state e ON e.group_id=g.id
+      FROM groups g JOIN countries c ON c.group_id=g.id JOIN group_engagement_state e ON e.group_id=g.id
       WHERE g.is_active AND EXTRACT(HOUR FROM now() AT TIME ZONE 'UTC')=18
        AND e.last_digest_date IS DISTINCT FROM current_date""")
     for row in rows:
-      payload={"text":f"📊 خلاصه امروز {row['title']}\n\n🔥 زنجیره فعالیت: {row['streak']} روز\n👥 شهروند فعال: {row['citizens']}\n💱 نرخ تتر: {int(row['usd'] or 0):,} تومان\n\nبرای ادامه زنجیره، امروز یک تصمیم گروهی بگیرید."}
+      payload={"text":f"📊 خلاصه امروز {row['country_name']}\n\n🔥 زنجیره فعالیت: {row['streak']} روز\n👥 شهروند فعال: {row['citizens']}\n💱 نرخ تتر: {int(row['usd'] or 0):,} تومان\n\nبرای ادامه زنجیره، امروز یک تصمیم گروهی بگیرید."}
       if await outbox_repo.enqueue(conn,f"group-digest:{row['id']}:{datetime.now(UTC).date()}","group_digest",payload,row['telegram_id']):count+=1
       await conn.execute("UPDATE group_engagement_state SET last_digest_date=current_date WHERE group_id=$1",row['id'])
     return count
@@ -33,15 +33,15 @@ async def _queue_digest(conn)->int:
 async def _queue_events(conn)->int:
     count=0
     # One short collective decision per active group every 48h; resolution can be extended later.
-    rows=await conn.fetch("""SELECT g.id,g.telegram_id,g.title FROM groups g
-      JOIN group_engagement_state s ON s.group_id=g.id
+    rows=await conn.fetch("""SELECT g.id,g.telegram_id,c.name country_name FROM groups g
+      JOIN countries c ON c.group_id=g.id JOIN group_engagement_state s ON s.group_id=g.id
       WHERE g.is_active AND g.last_active_at>=now()-interval '1 day'
        AND (s.last_event_at IS NULL OR s.last_event_at<=now()-interval '48 hours')
        AND NOT EXISTS(SELECT 1 FROM group_live_events e WHERE e.group_id=g.id AND e.status='open') LIMIT 20""")
     for row in rows:
       event=await conn.fetchrow("""INSERT INTO group_live_events(group_id,event_code,title,payload,ends_at)
        VALUES($1,'market_reserve','تصمیم فوری ذخیره ارزی','{"choices":["تقویت خزانه","سرمایه‌گذاری فناوری"]}',now()+interval '45 minutes') RETURNING id,ends_at""",row['id'])
-      text=f"⚡ تصمیم فوری برای {row['title']}\n\nذخیره تازه‌ای آزاد شده است. اعضا تا ۴۵ دقیقه فرصت دارند درباره «تقویت خزانه» یا «سرمایه‌گذاری فناوری» گفتگو کنند. رئیس‌جمهور تصمیم نهایی را ثبت می‌کند."
+      text=f"⚡ تصمیم فوری برای {row['country_name']}\n\nذخیره تازه‌ای آزاد شده است. اعضا تا ۴۵ دقیقه فرصت دارند درباره «تقویت خزانه» یا «سرمایه‌گذاری فناوری» گفتگو کنند. رئیس‌جمهور تصمیم نهایی را ثبت می‌کند."
       if await outbox_repo.enqueue(conn,f"live-event:{event['id']}","group_live_event",{"text":text,"event_id":event['id']},row['telegram_id']):count+=1
       await conn.execute("UPDATE group_engagement_state SET last_event_at=now() WHERE group_id=$1",row['id'])
     return count
@@ -55,7 +55,7 @@ async def _market_alert(conn)->int:
     change=(int(row['price_toman'])-int(row['previous']))*100/int(row['previous'])
     if abs(change)<0.5:return 0
     count=0
-    groups=await conn.fetch("SELECT id,telegram_id FROM groups WHERE is_active AND last_active_at>=now()-interval '7 days'")
+    groups=await conn.fetch("SELECT g.id,g.telegram_id,c.name country_name FROM groups g JOIN countries c ON c.group_id=g.id WHERE g.is_active AND g.last_active_at>=now()-interval '7 days'")
     bucket=row['captured_at'].strftime('%Y%m%d%H%M')
     for group in groups:
       text=f"📈 هشدار بازار: تتر {change:+.2f}٪ تغییر کرد و به {int(row['price_toman']):,} تومان رسید."

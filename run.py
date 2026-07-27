@@ -25,7 +25,7 @@ class AdminService:
         config = uvicorn.Config(
             "apps.admin.main:app", host=settings.host, port=settings.port,
             log_level=settings.log_level.lower(), proxy_headers=True,
-            forwarded_allow_ips="*", lifespan="on", access_log=True,
+            forwarded_allow_ips="127.0.0.1", lifespan="on", access_log=True,
         )
         self.server = uvicorn.Server(config)
 

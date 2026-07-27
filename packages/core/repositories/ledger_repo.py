@@ -47,7 +47,8 @@ async def change_player(conn: asyncpg.Connection, player_id: int, asset: str, de
         )
     else:
         value = await conn.fetchval(
-            """INSERT INTO player_resources(player_id,asset_code,quantity) VALUES($1,$2,$3)
+            """INSERT INTO player_resources(player_id,asset_code,quantity)
+            SELECT $1,$2,$3 WHERE $3>=0
             ON CONFLICT(player_id,asset_code) DO UPDATE SET quantity=player_resources.quantity+$3,updated_at=now()
             WHERE player_resources.quantity+$3>=0 RETURNING quantity""",
             player_id, asset, delta,
@@ -65,7 +66,8 @@ async def change_country(conn: asyncpg.Connection, country_id: int, asset: str, 
         )
     else:
         value = await conn.fetchval(
-            """INSERT INTO country_resources(country_id,asset_code,quantity) VALUES($1,$2,$3)
+            """INSERT INTO country_resources(country_id,asset_code,quantity)
+            SELECT $1,$2,$3 WHERE $3>=0
             ON CONFLICT(country_id,asset_code) DO UPDATE SET quantity=country_resources.quantity+$3,updated_at=now()
             WHERE country_resources.quantity+$3>=0 RETURNING quantity""",
             country_id, asset, delta,

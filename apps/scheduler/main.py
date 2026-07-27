@@ -11,7 +11,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ class SchedulerService:
                 await daily_reset.run()
                 await usd_market.daily_rollover()
                 await country_jobs.daily_events()
+                await scheduler_ops.run("country_realism", country_realism.daily_tick)
             except asyncio.CancelledError:
                 raise
             except Exception:

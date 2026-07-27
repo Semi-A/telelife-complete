@@ -5,11 +5,15 @@
     <button class="nav active" data-view="overview"><span>◈</span><em>نمای کلی</em></button>
     <button class="nav" data-view="market"><span>⌁</span><em>بازار</em></button>
     <button class="nav" data-view="operations"><span>≋</span><em>عملیات زنده</em></button>
+    <button class="nav" data-view="engagement"><span>↗</span><em>ماندگاری</em></button>
     <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
     <button class="nav" data-view="ads"><span>✦</span><em>تبلیغات</em></button>
     <button class="nav" data-view="requests"><span>▣</span><em>درخواست‌ها</em></button>
+    <button class="nav" data-view="ledger"><span>≜</span><em>دفتر اقتصاد</em></button>
+    <button class="nav" data-view="audit"><span>⌾</span><em>حسابرسی</em></button>
+    <button class="nav" data-view="controls"><span>⏻</span><em>کنترل سامانه</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -31,6 +35,11 @@
     <article class="panel chart-panel"><div class="panel-head"><div><p class="eyebrow">نبض بازار</p><h2>حرکت دارایی‌های اصلی</h2></div><button class="text-btn" data-go="market">مشاهده بازار ←</button></div><div id="mini-chart" class="chart-wrap"><div class="empty">داده بازار در حال بارگذاری است</div></div></article>
     <article class="panel"><div class="panel-head"><div><p class="eyebrow">کنترل سریع</p><h2>عملیات پرتکرار</h2></div></div><div class="quick-grid"><button data-go="players">اعطای XP<small>مدیریت پیشرفت</small></button><button data-go="countries">تنظیم منابع<small>اقتصاد کشور</small></button><button data-go="news">ارسال خبر<small>صف انتشار</small></button><button data-go="market">قیمت بازار<small>ثبت نقطه جدید</small></button></div></article>
   </div>
+</section>
+<section class="view" id="view-engagement">
+  <div class="section-lead"><div><p class="eyebrow">چرخه بازگشت کاربر</p><h2>ماندگاری و مسیر شروع</h2><p>به‌جای عددهای تزئینی، گلوگاه‌های واقعی ورود، هدیه و کارهای روزانه را ببین.</p></div><button class="secondary" data-reload="engagement">تازه‌سازی</button></div>
+  <div id="engagement-metrics" class="metric-grid metric-grid-five"></div>
+  <div class="split"><article class="panel"><div class="panel-head"><div><p class="eyebrow">قیف امروز</p><h2>از ورود تا عادت روزانه</h2></div></div><div id="retention-funnel" class="funnel"></div></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">راهنمای اقدام</p><h2>چه چیزی را بهتر کنیم؟</h2></div></div><div id="engagement-insights" class="insight-list"></div></article></div>
 </section>
 <section class="view" id="view-market">
   <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>هر تغییر قیمت ثبت و وارد تاریخچه نمودار می‌شود.</p></div><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div>
@@ -68,6 +77,20 @@
   </article><article class="panel"><div class="panel-head"><div><p class="eyebrow">کمپین‌ها</p><h2>صف تبلیغات</h2></div></div><div id="ad-list" class="news-list"></div></article></div>
 </section>
 <section class="view" id="view-requests"><div class="section-lead"><div><p class="eyebrow">بازبینی پیش از پرداخت</p><h2>درخواست‌های تبلیغ</h2><p>جزئیات، تصویر و لینک را بررسی و ویرایش کن؛ فقط پس از تأیید، مهلت پرداخت ۴۸ساعته آغاز می‌شود.</p></div></div><div id="ad-requests" class="request-grid"></div></section>
+<section class="view" id="view-ledger">
+  <div class="section-lead"><div><p class="eyebrow">منبع حقیقت اقتصاد</p><h2>دفتر تراکنش‌ها</h2><p>گردش دارایی، موجودی پس از عملیات و کلیدهای قابل پیگیری.</p></div><label class="search"><span>⌕</span><input id="ledger-player" inputmode="numeric" placeholder="فیلتر با شناسه بازیکن…"></label></div>
+  <div id="integrity-metrics" class="metric-grid"></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>زمان / شناسه</th><th>مالک</th><th>علت</th><th>دارایی</th><th>تغییر</th><th>مانده</th></tr></thead><tbody id="ledger-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-audit">
+  <div class="section-lead"><div><p class="eyebrow">ردپای تغییرات حساس</p><h2>گزارش حسابرسی مدیران</h2><p>چه کسی، چه زمانی و روی کدام بازیکن یا کشور تغییر اعمال کرده است.</p></div><button class="secondary" data-reload="audit">تازه‌سازی</button></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>زمان</th><th>مدیر</th><th>عملیات</th><th>هدف</th><th>جزئیات</th><th>شناسه درخواست</th></tr></thead><tbody id="audit-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-controls">
+  <div class="section-lead"><div><p class="eyebrow">کلیدهای توقف امن</p><h2>کنترل سامانه</h2><p>هر تغییر ثبت حسابرسی می‌شود. توقف اضطراری را فقط هنگام رخداد واقعی فعال کن.</p></div></div>
+  <div id="flag-grid" class="control-grid"></div>
+  <article class="panel safety-note"><div class="safety-mark">!</div><div><h3>قاعده دو مرحله‌ای</h3><p>برای هر تغییر مخرب، پنجره تأیید نام عملیات و اثر آن را دوباره نشان می‌دهد. این اصطکاک کوچک جلوی کلیک‌های گران‌قیمت را می‌گیرد.</p></div></article>
+</section>
 </main>
 <dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
 {% endblock %}

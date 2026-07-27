@@ -11,7 +11,7 @@ from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -69,10 +69,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration", "rate", "reserve"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -130,7 +130,17 @@ async def economy_page(update, context):
     if not row: raise ValueError("country_not_found")
     resources = await country_repo.resources(row["id"])
     lines = "\n".join(f"• {ASSET.get(str(x['asset_code']), 'دارایی')}: {fmt.number(x['quantity'])}" for x in resources) or "هنوز منبعی ثبت نشده است."
-    await show(update, context, fa.ECONOMY.format(treasury=fmt.toman(row["treasury_toman"]), income=fmt.toman(row["daily_income_toman"]), expense=fmt.toman(row["daily_expense_toman"]), resources=lines), kb.back())
+    from telegram import InlineKeyboardMarkup
+    markup=InlineKeyboardMarkup([[kb.b("🏦 بانک مرکزی و شاخص‌ها","centralbank","primary")],[kb.b("🏠 خانه جهان","home")]])
+    await show(update, context, fa.ECONOMY.format(treasury=fmt.toman(row["treasury_toman"]), income=fmt.toman(row["daily_income_toman"]), expense=fmt.toman(row["daily_expense_toman"]), resources=lines), markup)
+
+async def central_bank_page(update,context):
+    row,_,_=await facts(update.effective_chat.id)
+    if not row:raise ValueError("country_not_found")
+    v=await country_realism.policy_view(row["id"]);p=await player(update);president=row["president_player_id"]==p.id
+    indicators=("هنوز گزارش روزانه محاسبه نشده است." if not v["indicator_date"] else f"تورم: <b>{int(v['inflation_bp'])/100:.1f}٪</b> · بیکاری: <b>{int(v['unemployment_bp'])/100:.1f}٪</b>\nرشد: <b>{int(v['growth_bp'])/100:+.1f}٪</b> · رضایت: <b>{v['satisfaction']}/۱۰۰</b>")
+    text=f"🏦 <b>بانک مرکزی {escape(str(row['name']))}</b>\n\nنرخ بهره: <b>{int(v['interest_rate_bp'])/100:.1f}٪</b>\nهدف تورم: <b>{int(v['inflation_target_bp'])/100:.1f}٪</b>\nذخیره ارزی: <b>{fmt.usd(int(v['fx_reserve_cents']))}</b>\n\n{indicators}\n\nافزایش بهره معمولاً تورم را مهار می‌کند اما رشد را کندتر می‌کند. تصمیم امروز در گزارش فردا اثر می‌گذارد."
+    await show(update,context,text,kb.central_bank(president))
 
 async def citizens_page(update, context):
     row, count, _ = await facts(update.effective_chat.id)
@@ -194,6 +204,17 @@ async def callback(update, context):
             await answer(query, ); row, _, _ = await facts(update.effective_chat.id) if update.effective_chat.type in GROUPS else (None, 0, None); await show(update, context, fa.GUIDE if row else fa.GUIDE_EMPTY, kb.back())
         elif action == "country": await answer(query, ); await country_page(update, context)
         elif action == "economy": await answer(query, ); await economy_page(update, context)
+        elif action == "centralbank": await answer(query); await central_bank_page(update,context)
+        elif action.startswith("rate:"):
+            row,_,_=await facts(update.effective_chat.id);p=await player(update);delta=100 if action.endswith("up") else -100
+            value=await country_realism.set_interest(row["id"],p.id,delta)
+            if value is None:await answer(query,"فقط رهبر کشور می‌تواند نرخ را در محدوده مجاز تغییر دهد.",show_alert=True);return
+            await answer(query,f"نرخ بهره به {value/100:.1f}٪ تغییر کرد.",show_alert=True);await central_bank_page(update,context)
+        elif action == "reserve:buy":
+            row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            try:cents=await country_realism.buy_reserve(row["id"],p.id)
+            except ValueError:await answer(query,"فقط رهبر و با خزانه کافی می‌تواند ذخیره بخرد.",show_alert=True);return
+            await answer(query,f"{fmt.usd(cents)} به ذخیره ارزی افزوده شد.",show_alert=True);await central_bank_page(update,context)
         elif action == "citizens": await answer(query, ); await citizens_page(update, context)
         elif action == "politics": await answer(query, ); await politics_page(update, context)
         elif action == "project": await answer(query, ); await project_page(update, context)

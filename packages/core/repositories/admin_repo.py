@@ -129,3 +129,66 @@ async def operations_status() -> dict[str, object]:
     frozen=bool(await db.fetchval("SELECT COALESCE((SELECT enabled FROM feature_flags WHERE key='usd_market_frozen'),FALSE)"))
     return {"market":dict(market) if market else None,"jobs":[dict(x) for x in jobs],
             "queues":dict(queues) if queues else {},"market_frozen":frozen}
+async def engagement_overview() -> dict[str, object]:
+    """Retention and onboarding signals computed from canonical game tables."""
+    row = await db.fetchrow("""
+        SELECT
+          count(*) FILTER (WHERE created_at >= now()-interval '24 hours') AS new_24h,
+          count(*) FILTER (WHERE last_seen_at >= now()-interval '24 hours') AS active_24h,
+          count(*) FILTER (WHERE last_seen_at >= now()-interval '7 days') AS active_7d,
+          count(*) FILTER (WHERE last_seen_at >= now()-interval '30 days') AS active_30d,
+          count(*) FILTER (WHERE level >= 5) AS reached_jobs,
+          count(*) FILTER (WHERE level >= 10) AS reached_market,
+          count(*) AS total
+        FROM players
+    """)
+    claims = await db.fetchrow("""
+        SELECT
+          count(*) FILTER (WHERE last_claim_date=current_date) AS claimed_today,
+          count(*) FILTER (WHERE streak>=3) AS streak_3,
+          count(*) FILTER (WHERE streak>=7) AS streak_7,
+          COALESCE(avg(streak),0)::numeric(10,2) AS avg_streak
+        FROM daily_state
+    """)
+    missions = await db.fetchrow("""
+        SELECT
+          count(*) AS assigned_today,
+          count(*) FILTER (WHERE progress>=target) AS completed_today,
+          count(*) FILTER (WHERE claimed_at IS NOT NULL) AS claimed_today
+        FROM daily_missions WHERE mission_date=current_date
+    """)
+    onboarding = await db.fetchrow("""
+        SELECT
+          count(*) FILTER (WHERE onboarding_step>=4) AS completed,
+          count(*) FILTER (WHERE onboarding_step<4) AS incomplete
+        FROM player_ui_state
+    """)
+    return {
+        "activity": dict(row) if row else {},
+        "daily": dict(claims) if claims else {},
+        "missions": dict(missions) if missions else {},
+        "onboarding": dict(onboarding) if onboarding else {},
+    }
+
+async def feature_flags() -> list[asyncpg.Record]:
+    return await db.fetch("SELECT key,enabled,updated_by,updated_at FROM feature_flags ORDER BY key")
+
+async def ledger_rows(limit: int = 100, player_id: int | None = None) -> list[asyncpg.Record]:
+    return await db.fetch("""
+        SELECT l.id,l.player_id,l.country_id,l.reason,l.asset_code,l.account,l.amount,
+               l.balance_after,l.metadata,l.created_at,p.first_name,p.username
+        FROM ledger l LEFT JOIN players p ON p.id=l.player_id
+        WHERE $2::bigint IS NULL OR l.player_id=$2
+        ORDER BY l.created_at DESC LIMIT $1
+    """, limit, player_id)
+
+async def economy_integrity() -> dict[str, object]:
+    row = await db.fetchrow("""
+        SELECT
+          (SELECT count(*) FROM players WHERE wallet_toman<0 OR savings_toman<0 OR usd_cents<0) negative_players,
+          (SELECT count(*) FROM countries WHERE treasury_toman<0) negative_countries,
+          (SELECT count(*) FROM ledger WHERE balance_after<0) negative_ledger_rows,
+          (SELECT count(*) FROM ledger WHERE created_at>=now()-interval '24 hours') ledger_24h,
+          (SELECT COALESCE(sum(amount),0) FROM ledger WHERE asset_code='IRT' AND created_at>=now()-interval '24 hours') net_irt_24h
+    """)
+    return dict(row) if row else {}

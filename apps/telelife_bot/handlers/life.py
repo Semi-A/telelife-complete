@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC,datetime
 from uuid import uuid4
 from html import escape
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers.panel import show
@@ -11,7 +11,7 @@ from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp
+from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp,market_chart
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
@@ -62,7 +62,16 @@ async def jobs(ctx,c):
  else:body=("هنوز شغلی نداری. یکی را بر اساس نوع درآمدش انتخاب کن؛ انتخاب اولیه قابل تعویض نیست." if p.level>=5 else f"شغل از سطح ۵ باز می‌شود. اکنون سطح {fmt.number(p.level)} هستی؛ با کارهای امروز تجربه بگیر.")
  await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),p.level>=5))
 async def market(ctx,c):
- v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان";extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else "";await panel(ctx,c,fa.MARKET.format(buy=fmt.toman(v.buy_price),sell=fmt.toman(v.sell_price),health=fmt.number(v.health),status=status,usd=fmt.usd(p.usd_cents))+extra,kb.market(ctx.telegram_id,p.level>=10))
+ v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان"
+ extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else ""
+ rows=await market_chart.candles(24)
+ previous=c.user_data.get("market_chart_message_id")
+ if previous:
+  try:await c.bot.delete_message(chat_id=ctx.message.chat_id,message_id=previous)
+  except Exception:pass
+ chart_message=await c.bot.send_photo(chat_id=ctx.message.chat_id,photo=InputFile(market_chart.render(rows),filename="usdt_30m.png"),caption="نمودار واقعی USDT/IRT · کندل ۳۰ دقیقه‌ای · ۲۴ ساعت اخیر\nمنبع نرخ: Zipodo · فاصله‌های بدون داده پر نمی‌شوند.")
+ c.user_data["market_chart_message_id"]=chart_message.message_id
+ await panel(ctx,c,fa.MARKET.format(buy=fmt.toman(v.buy_price),sell=fmt.toman(v.sell_price),health=fmt.number(v.health),status=status,usd=fmt.usd(p.usd_cents))+extra,kb.market(ctx.telegram_id,p.level>=10))
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")

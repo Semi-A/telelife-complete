@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 200
+تعداد کل فایل‌ها: 215
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -92,7 +92,9 @@ telelife_complete/
 │   ├── 0008_world_access_lifecycle.sql
 │   ├── 0009_ads_governance_moderation.sql
 │   ├── 0010_stars_subscriptions_ad_marketplace.sql
-│   └── 0011_population_channels_migration.sql
+│   ├── 0011_population_channels_migration.sql
+│   ├── 0012_reliability_live_market_engagement.sql
+│   └── 0013_country_identity_candles_realism.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -150,11 +152,16 @@ telelife_complete/
 │   │   │   ├── content_filter.py
 │   │   │   ├── country.py
 │   │   │   ├── country_economy.py
+│   │   │   ├── country_identity.py
 │   │   │   ├── country_missions.py
+│   │   │   ├── country_realism.py
 │   │   │   ├── daily.py
 │   │   │   ├── economy.py
 │   │   │   ├── elections.py
+│   │   │   ├── engagement.py
 │   │   │   ├── governance.py
+│   │   │   ├── live_market.py
+│   │   │   ├── market_chart.py
 │   │   │   ├── migration.py
 │   │   │   ├── missions.py
 │   │   │   ├── national_project.py
@@ -162,6 +169,7 @@ telelife_complete/
 │   │   │   ├── personal_economy.py
 │   │   │   ├── production.py
 │   │   │   ├── progression.py
+│   │   │   ├── scheduler_ops.py
 │   │   │   ├── unlocks.py
 │   │   │   ├── usd_market.py
 │   │   │   ├── world_access.py
@@ -188,14 +196,18 @@ telelife_complete/
 │   ├── test_callbacks.py
 │   ├── test_clock.py
 │   ├── test_commerce.py
+│   ├── test_commerce_regressions.py
 │   ├── test_config.py
 │   ├── test_content_filter.py
+│   ├── test_country_realism_contracts.py
 │   ├── test_daily.py
 │   ├── test_fmt.py
 │   ├── test_glass_buttons.py
 │   ├── test_governance.py
 │   ├── test_hardening_contracts.py
 │   ├── test_interval_bindings.py
+│   ├── test_live_market.py
+│   ├── test_market_chart_contracts.py
 │   ├── test_message_driven_bots.py
 │   ├── test_migrator.py
 │   ├── test_missions.py
@@ -218,9 +230,11 @@ telelife_complete/
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
+├── AUDIT_AND_DEPLOY_FA_2026-07-27.md
 ├── AUDIT_STATUS.md
 ├── CHANGELOG_FA.md
 ├── CHANGELOG_FA_2026-07-27.md
+├── CHANGELOG_FA_2026-07-27_V2.md
 ├── DELIVERY.md
 ├── Dockerfile
 ├── dump.py
@@ -234,6 +248,7 @@ telelife_complete/
 ├── RELEASE_COMMERCE_FA.md
 ├── RELEASE_NOTES_FA.md
 ├── RELEASE_SCALING_MIGRATION_FA.md
+├── RELEASE_V2_FA.md
 ├── render.yaml
 ├── requirements.txt
 ├── run.py
@@ -274,6 +289,9 @@ ADMIN_PASSWORD=
 MEMORY_WARNING_MB=450
 # Telegram Stars uses currency XTR and an empty provider token.
 AD_REVIEW_NOTIFICATION_CHAT_ID=
+
+# Live USDT/IRT source (validated server-side; last good value is retained on failure).
+USDT_RATE_URL=https://api.zipodo.ir/usdt/
 ```
 
 ### `.gitignore`
@@ -407,7 +425,7 @@ from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, commerce
+from packages.core.services import admin, commerce, live_market, scheduler_ops, engagement
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[str, Depends(require_admin)]
@@ -456,6 +474,34 @@ def fail(exc: ValueError) -> HTTPException:
         "president_must_be_citizen": "رئیس‌جمهور باید شهروند همین کشور باشد.",
     }
     return HTTPException(400, messages.get(str(exc), "عملیات انجام نشد."))
+
+
+class FreezeBody(BaseModel):
+    enabled: bool
+
+@router.get("/operations")
+async def operations() -> dict[str, object]:
+    return await admin_repo.operations_status()
+
+@router.post("/operations/market/sync")
+async def sync_market(actor: AdminActor) -> dict[str, object]:
+    try:
+        result=await live_market.sync()
+    except Exception as exc:
+        raise HTTPException(502,"منبع Zipodo پاسخ معتبر نداد؛ آخرین نرخ معتبر حفظ شد.") from exc
+    return result
+
+@router.post("/operations/market/freeze")
+async def freeze_market(body: FreezeBody, actor: AdminActor) -> dict[str, bool]:
+    return {"applied":await admin.feature(actor,"usd_market_frozen",body.enabled,str(uuid4()))}
+
+@router.post("/operations/jobs/{job_name}/run")
+async def run_job(job_name: str, actor: AdminActor) -> dict[str, bool]:
+    allowed={"zipodo_rate":live_market.sync,"engagement":engagement.minute_tick,"market_snapshot":admin_repo.capture_market_snapshot}
+    if job_name not in allowed:raise HTTPException(400,"این Job برای اجرای دستی مجاز نیست.")
+    result=await scheduler_ops.run(f"manual:{job_name}",allowed[job_name])
+    if result is None:raise HTTPException(502,"Job اجرا نشد؛ جزئیات خطا در عملیات زنده ثبت شد.")
+    return {"completed":True}
 
 @router.get("/overview")
 async def overview() -> dict[str, object]:
@@ -617,6 +663,9 @@ async def refund_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 .request-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}.request-card{padding:0;overflow:hidden}.request-card>img{width:100%;height:190px;object-fit:cover;background:#061623}.request-card>div{padding:20px}.request-card h3{margin:4px 0 10px}.request-card p{color:var(--muted);font-size:12px;line-height:1.8}.request-card a{display:block;color:var(--cyan);font-size:11px;direction:ltr;text-align:left;overflow-wrap:anywhere;margin:10px 0}.request-card small{display:block;color:var(--dim);margin:12px 0}
+/* Operations room — inspired by an exchange tape, not a generic KPI dashboard. */
+.rate-ticker{position:relative;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px 32px;margin-bottom:16px;border-radius:6px;background:linear-gradient(100deg,#071824 0 62%,#0b2630 100%)}
+.rate-ticker:after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),var(--blue),transparent);animation:tape 4s linear infinite}.rate-ticker strong{display:block;font:500 clamp(32px,5vw,64px) JetBrains Mono,monospace;letter-spacing:-3px}.rate-ticker small{color:var(--muted)}.source-seal{font:700 10px JetBrains Mono,monospace;color:var(--cyan);letter-spacing:2px}.ticker-actions{display:flex;gap:8px;flex-wrap:wrap}.sparkline{position:absolute;inset:0 43% 0 0;opacity:.16;pointer-events:none}.ops-head{padding:22px 24px 0}.legend{font-size:10px;color:var(--muted);display:flex;gap:7px;align-items:center}.legend i{width:7px;height:7px;border-radius:50%}.legend .ok{background:var(--cyan)}.legend .bad{background:var(--rose)}.job-error{max-width:320px;white-space:normal;color:#ff9eb2}.source-stale{color:#ffbd70!important}.source-live{color:var(--cyan)!important}@keyframes tape{from{transform:translateX(100%)}to{transform:translateX(-100%)}}@media(max-width:650px){.rate-ticker{align-items:flex-start;flex-direction:column;padding:22px}.rate-ticker strong{letter-spacing:-2px}.sparkline{inset:0;opacity:.08}}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -625,12 +674,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const fa=new Intl.NumberFormat("fa-IR"), money=n=>`${fa.format(Number(n||0))} تومان`;
-const state={market:[],asset:"USD"};
+const state={market:[],asset:"USD",ops:null,opsTimer:null};
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";clearTimeout(el._t);el._t=setTimeout(()=>el.className="",3500)}
 async function api(url,options={}){const res=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
-function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات"}[name];history.replaceState(null,"",`#${name}`);load(name)}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 async function overview(){const [o,h]=await Promise.all([api('/api/admin/overview'),api('/healthz')]);$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i>${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';await market(true)}
 function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
@@ -658,7 +707,25 @@ async function reviewAction(id,action){let body={};if(action==='reject'){const r
 async function ads(){const rows=await api('/api/admin/ads?limit=100');$("#ad-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p><b>${esc(x.title)}</b></p><small>${esc(x.status)} · مقصد ${esc(x.destination_chat_id)} · ${date(x.scheduled_at||x.created_at)}</small></div><button class="small-btn" data-adqueue="${x.id}">ارسال حالا</button></div>`).join('')||'<div class="empty">هنوز کمپینی ساخته نشده است</div>';$$('[data-adqueue]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/ads/${b.dataset.adqueue}/queue`,{method:'POST',body:'{}'});toast("تبلیغ وارد صف شد");ads()}catch(e){toast(e.message,true)}})}
 $("#save-ad").onclick=async()=>{const title=$("#ad-title").value.trim(),text=$("#ad-text").value.trim(),destination=Number($("#ad-destination").value),raw=$("#ad-scheduled").value,repeat=$("#ad-repeat").value;if(title.length<3||text.length<3||!destination)return toast("عنوان، متن و گروه مقصد را کامل کن",true);try{await api('/api/admin/ads',{method:'POST',body:JSON.stringify({title,text,destination,scheduled_at:raw?new Date(raw).toISOString():null,repeat_minutes:repeat?Number(repeat):null})});$("#ad-title").value=$("#ad-text").value='';toast("کمپین ذخیره شد");ads()}catch(e){toast(e.message,true)}};
 
-function load(name){({overview,market,players,countries,news,ads,requests}[name]||overview)().catch(e=>toast(e.message,true))}
+
+function jobLabel(name){return ({commerce:'تجارت و تحویل تبلیغ',zipodo_rate:'همگام‌سازی نرخ Zipodo',publish_news:'انتشار Outbox',engagement:'تعامل گروه‌ها',market_snapshot:'ثبت تاریخچه بازار',elections:'انتخابات',legacy_ads:'کمپین‌های مستقیم',cooldown_cleanup:'پاک‌سازی محدودیت‌ها'})[name]||name}
+function relativeAge(value){if(!value)return 'نامشخص';const sec=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(sec<90)return `${Math.round(sec)} ثانیه پیش`;if(sec<5400)return `${Math.round(sec/60)} دقیقه پیش`;return date(value)}
+async function operations(){
+ const data=await api('/api/admin/operations');state.ops=data;
+ const m=data.market||{},stale=!m.source_checked_at||(Date.now()-new Date(m.source_checked_at).getTime()>180000)||m.source_error;
+ $('#live-rate').textContent=m.current_price_toman?money(m.current_price_toman):'—';
+ const source=$('#rate-source');source.textContent=m.source_error?`آخرین نرخ معتبر · خطای منبع: ${m.source_error}`:`Zipodo · دریافت ${relativeAge(m.source_checked_at)}`;source.className=stale?'source-stale':'source-live';
+ $('#freeze-market').textContent=data.market_frozen?'بازکردن بازار':'توقف اضطراری بازار';
+ const q=data.queues||{};$('#queue-metrics').innerHTML=[['صف انتشار',q.outbox_pending],['خطای انتشار',q.outbox_failed],['تبلیغ زمان‌بندی‌شده',q.ads_scheduled],['خطای تبلیغ',q.ads_failed],['رویداد زنده',q.live_events]].map(([k,v])=>`<article><span>${k}</span><strong>${fa.format(v||0)}</strong><small>وضعیت همین لحظه</small></article>`).join('');
+ $('#jobs-body').innerHTML=(data.jobs||[]).map(j=>`<tr><td><b>${esc(jobLabel(j.job_name))}</b><small>${esc(j.job_name)}</small></td><td><span class="badge ${j.status==='failed'?'danger':''}">${j.status==='succeeded'?'سالم':j.status==='failed'?'خطا':'در حال اجرا'}</span></td><td>${relativeAge(j.finished_at||j.started_at)}</td><td>${fa.format(j.duration_ms||0)} ms</td><td class="${j.error_message?'job-error':''}">${esc(j.error_message||JSON.stringify(j.result||{}))}</td><td>${['zipodo_rate','engagement','market_snapshot'].includes(j.job_name)?`<button class="small-btn" data-runjob="${j.job_name}">اجرای مجدد</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="6">هنوز Job ثبت‌شده‌ای وجود ندارد.</td></tr>';
+ $$('[data-runjob]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/operations/jobs/${b.dataset.runjob}/run`,{method:'POST',body:'{}'});toast('Job اجرا شد');operations()}catch(e){toast(e.message,true)}});
+ await market(true).catch(()=>{});
+}
+$('#ops-refresh').onclick=()=>operations().catch(e=>toast(e.message,true));
+$('#sync-rate').onclick=async()=>{try{await api('/api/admin/operations/market/sync',{method:'POST',body:'{}'});toast('نرخ معتبر Zipodo ثبت شد');operations()}catch(e){toast(e.message,true)}};
+$('#freeze-market').onclick=async()=>{try{await api('/api/admin/operations/market/freeze',{method:'POST',body:JSON.stringify({enabled:!state.ops?.market_frozen})});toast(state.ops?.market_frozen?'بازار باز شد':'بازار متوقف شد');operations()}catch(e){toast(e.message,true)}};
+document.addEventListener('visibilitychange',()=>{clearInterval(state.opsTimer);if(!document.hidden)state.opsTimer=setInterval(()=>{if(location.hash==='#operations')operations().catch(()=>{})},30000)});state.opsTimer=setInterval(()=>{if(!document.hidden&&location.hash==='#operations')operations().catch(()=>{})},30000);
+function load(name){({overview,market,operations,players,countries,news,ads,requests}[name]||overview)().catch(e=>toast(e.message,true))}
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
 ```
 
@@ -682,6 +749,7 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
   <nav>
     <button class="nav active" data-view="overview"><span>◈</span><em>نمای کلی</em></button>
     <button class="nav" data-view="market"><span>⌁</span><em>بازار</em></button>
+    <button class="nav" data-view="operations"><span>≋</span><em>عملیات زنده</em></button>
     <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
@@ -714,6 +782,14 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
   <article class="panel market-stage"><div id="market-tabs" class="asset-tabs"></div><div id="market-chart" class="chart-wrap large"><div class="empty">در حال دریافت قیمت‌ها…</div></div></article>
   <div id="market-cards" class="market-cards"></div>
 </section>
+
+<section class="view" id="view-operations">
+  <div class="section-lead"><div><p class="eyebrow">اتاق کنترل زیرساخت</p><h2>عملیات زنده</h2><p>منبع نرخ، صف‌ها و آخرین اجرای هر Job؛ بدون حدس و بدون عدد ساختگی.</p></div><button id="ops-refresh" class="secondary">تازه‌سازی وضعیت</button></div>
+  <article class="rate-ticker panel"><div><span class="source-seal">USDT / IRT</span><strong id="live-rate">—</strong><small id="rate-source">در حال بررسی منبع…</small></div><div class="ticker-actions"><button id="sync-rate" class="primary">دریافت نرخ Zipodo</button><button id="freeze-market" class="secondary">توقف بازار</button></div><div id="sparkline" class="sparkline" aria-label="روند نرخ تتر"></div></article>
+  <div id="queue-metrics" class="metric-grid"></div>
+  <article class="panel table-panel"><div class="panel-head ops-head"><div><p class="eyebrow">اجرای زمان‌بند</p><h2>آخرین وضعیت Jobها</h2></div><span class="legend"><i class="ok"></i> سالم <i class="bad"></i> خطا</span></div><div class="table-scroll"><table><thead><tr><th>Job</th><th>وضعیت</th><th>آخرین اجرا</th><th>زمان اجرا</th><th>جزئیات</th><th>عملیات</th></tr></thead><tbody id="jobs-body"></tbody></table></div></article>
+</section>
+
 <section class="view" id="view-players">
   <div class="section-lead"><div><p class="eyebrow">مدیریت هویت</p><h2>بازیکنان</h2><p>جست‌وجو، اعطای XP و کنترل دسترسی.</p></div><label class="search"><span>⌕</span><input id="player-search" placeholder="نام، نام کاربری یا شناسه…"></label></div>
   <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>بازیکن</th><th>سطح / XP</th><th>دارایی</th><th>آخرین حضور</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="players-body"></tbody></table></div></article>
@@ -787,7 +863,7 @@ __all__ = ["country_jobs", "daily_reset"]
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
 from telegram import Bot
-from packages.core.services import country_economy,elections,news,commerce
+from packages.core.services import country_economy,elections,news,commerce,country_identity
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
 async def daily_events()->int:
  await country_economy.catch_up()
@@ -813,6 +889,12 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
    await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
    return
   text=str(payload.get('text') or payload.get('event_code') or payload.get('mission_key') or event_type)
+  destination=await country_identity.destination(chat_id)
+  if destination:
+   if not destination['country_id']:
+    if await country_identity.should_send_setup_notice(chat_id):await bot.send_message(chat_id=chat_id,text=country_identity.SETUP_TEXT)
+    return
+   text=country_identity.masthead(str(destination['country_name']),text)
   await bot.send_message(chat_id=chat_id,text=text)
  return await news.publish_batch(sender)
 
@@ -917,7 +999,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism
 
 logger = logging.getLogger(__name__)
 
@@ -948,18 +1030,24 @@ class SchedulerService:
     async def minute_loop(self, stop: asyncio.Event, bot: Bot, life_bot: Bot) -> None:
         while not stop.is_set():
             try:
-                await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
-                await country_jobs.resolve_due()
-                await country_jobs.queue_due_ads()
-                await country_jobs.run_commerce()
-                await country_jobs.publish_news(bot, life_bot)
-                await usd_market.stabilize()
-                await admin_repo.capture_market_snapshot()
+                jobs = (
+                    ("cooldown_cleanup", lambda: db.execute("DELETE FROM cooldowns WHERE expires_at < now()")),
+                    ("elections", country_jobs.resolve_due),
+                    ("legacy_ads", country_jobs.queue_due_ads),
+                    ("commerce", country_jobs.run_commerce),
+                    ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
+                    ("zipodo_rate", live_market.sync),
+                    ("engagement", engagement.minute_tick),
+                    ("market_snapshot", admin_repo.capture_market_snapshot),
+                )
+                for name, job in jobs:
+                    if stop.is_set(): break
+                    await scheduler_ops.run(name, job)
                 self._heartbeat = asyncio.get_running_loop().time()
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("minute jobs failed; next cycle remains scheduled")
+                logger.exception("minute loop infrastructure failed; next cycle remains scheduled")
             await _sleep_or_stop(stop, 60)
 
     async def daily_loop(self, stop: asyncio.Event) -> None:
@@ -970,6 +1058,7 @@ class SchedulerService:
                 await daily_reset.run()
                 await usd_market.daily_rollover()
                 await country_jobs.daily_events()
+                await scheduler_ops.run("country_realism", country_realism.daily_tick)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -1282,7 +1371,7 @@ from __future__ import annotations
 from datetime import UTC,datetime
 from uuid import uuid4
 from html import escape
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers.panel import show
@@ -1290,7 +1379,7 @@ from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp
+from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp,market_chart
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
@@ -1341,7 +1430,16 @@ async def jobs(ctx,c):
  else:body=("هنوز شغلی نداری. یکی را بر اساس نوع درآمدش انتخاب کن؛ انتخاب اولیه قابل تعویض نیست." if p.level>=5 else f"شغل از سطح ۵ باز می‌شود. اکنون سطح {fmt.number(p.level)} هستی؛ با کارهای امروز تجربه بگیر.")
  await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),p.level>=5))
 async def market(ctx,c):
- v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان";extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else "";await panel(ctx,c,fa.MARKET.format(buy=fmt.toman(v.buy_price),sell=fmt.toman(v.sell_price),health=fmt.number(v.health),status=status,usd=fmt.usd(p.usd_cents))+extra,kb.market(ctx.telegram_id,p.level>=10))
+ v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان"
+ extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else ""
+ rows=await market_chart.candles(24)
+ previous=c.user_data.get("market_chart_message_id")
+ if previous:
+  try:await c.bot.delete_message(chat_id=ctx.message.chat_id,message_id=previous)
+  except Exception:pass
+ chart_message=await c.bot.send_photo(chat_id=ctx.message.chat_id,photo=InputFile(market_chart.render(rows),filename="usdt_30m.png"),caption="نمودار واقعی USDT/IRT · کندل ۳۰ دقیقه‌ای · ۲۴ ساعت اخیر\nمنبع نرخ: Zipodo · فاصله‌های بدون داده پر نمی‌شوند.")
+ c.user_data["market_chart_message_id"]=chart_message.message_id
+ await panel(ctx,c,fa.MARKET.format(buy=fmt.toman(v.buy_price),sell=fmt.toman(v.sell_price),health=fmt.number(v.health),status=status,usd=fmt.usd(p.usd_cents))+extra,kb.market(ctx.telegram_id,p.level>=10))
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
@@ -2731,7 +2829,7 @@ from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -2789,10 +2887,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration", "rate", "reserve"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -2850,7 +2948,17 @@ async def economy_page(update, context):
     if not row: raise ValueError("country_not_found")
     resources = await country_repo.resources(row["id"])
     lines = "\n".join(f"• {ASSET.get(str(x['asset_code']), 'دارایی')}: {fmt.number(x['quantity'])}" for x in resources) or "هنوز منبعی ثبت نشده است."
-    await show(update, context, fa.ECONOMY.format(treasury=fmt.toman(row["treasury_toman"]), income=fmt.toman(row["daily_income_toman"]), expense=fmt.toman(row["daily_expense_toman"]), resources=lines), kb.back())
+    from telegram import InlineKeyboardMarkup
+    markup=InlineKeyboardMarkup([[kb.b("🏦 بانک مرکزی و شاخص‌ها","centralbank","primary")],[kb.b("🏠 خانه جهان","home")]])
+    await show(update, context, fa.ECONOMY.format(treasury=fmt.toman(row["treasury_toman"]), income=fmt.toman(row["daily_income_toman"]), expense=fmt.toman(row["daily_expense_toman"]), resources=lines), markup)
+
+async def central_bank_page(update,context):
+    row,_,_=await facts(update.effective_chat.id)
+    if not row:raise ValueError("country_not_found")
+    v=await country_realism.policy_view(row["id"]);p=await player(update);president=row["president_player_id"]==p.id
+    indicators=("هنوز گزارش روزانه محاسبه نشده است." if not v["indicator_date"] else f"تورم: <b>{int(v['inflation_bp'])/100:.1f}٪</b> · بیکاری: <b>{int(v['unemployment_bp'])/100:.1f}٪</b>\nرشد: <b>{int(v['growth_bp'])/100:+.1f}٪</b> · رضایت: <b>{v['satisfaction']}/۱۰۰</b>")
+    text=f"🏦 <b>بانک مرکزی {escape(str(row['name']))}</b>\n\nنرخ بهره: <b>{int(v['interest_rate_bp'])/100:.1f}٪</b>\nهدف تورم: <b>{int(v['inflation_target_bp'])/100:.1f}٪</b>\nذخیره ارزی: <b>{fmt.usd(int(v['fx_reserve_cents']))}</b>\n\n{indicators}\n\nافزایش بهره معمولاً تورم را مهار می‌کند اما رشد را کندتر می‌کند. تصمیم امروز در گزارش فردا اثر می‌گذارد."
+    await show(update,context,text,kb.central_bank(president))
 
 async def citizens_page(update, context):
     row, count, _ = await facts(update.effective_chat.id)
@@ -2914,6 +3022,17 @@ async def callback(update, context):
             await answer(query, ); row, _, _ = await facts(update.effective_chat.id) if update.effective_chat.type in GROUPS else (None, 0, None); await show(update, context, fa.GUIDE if row else fa.GUIDE_EMPTY, kb.back())
         elif action == "country": await answer(query, ); await country_page(update, context)
         elif action == "economy": await answer(query, ); await economy_page(update, context)
+        elif action == "centralbank": await answer(query); await central_bank_page(update,context)
+        elif action.startswith("rate:"):
+            row,_,_=await facts(update.effective_chat.id);p=await player(update);delta=100 if action.endswith("up") else -100
+            value=await country_realism.set_interest(row["id"],p.id,delta)
+            if value is None:await answer(query,"فقط رهبر کشور می‌تواند نرخ را در محدوده مجاز تغییر دهد.",show_alert=True);return
+            await answer(query,f"نرخ بهره به {value/100:.1f}٪ تغییر کرد.",show_alert=True);await central_bank_page(update,context)
+        elif action == "reserve:buy":
+            row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            try:cents=await country_realism.buy_reserve(row["id"],p.id)
+            except ValueError:await answer(query,"فقط رهبر و با خزانه کافی می‌تواند ذخیره بخرد.",show_alert=True);return
+            await answer(query,f"{fmt.usd(cents)} به ذخیره ارزی افزوده شد.",show_alert=True);await central_bank_page(update,context)
         elif action == "citizens": await answer(query, ); await citizens_page(update, context)
         elif action == "politics": await answer(query, ); await politics_page(update, context)
         elif action == "project": await answer(query, ); await project_page(update, context)
@@ -3163,6 +3282,14 @@ def migration_review(rows):
  buttons=[]
  for r in rows:buttons.extend([[b(f"✅ پذیرش {r['first_name']}",f"migaccept:{r['id']}","success"),b("رد",f"migreject:{r['id']}","danger")]])
  buttons.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(buttons)
+
+def central_bank(president=False):
+    rows=[]
+    if president:
+        rows.append([b("➕ افزایش بهره ۱٪","rate:up","primary"),b("➖ کاهش بهره ۱٪","rate:down")])
+        rows.append([b("💵 خرید ذخیره ارزی ۱۰M","reserve:buy","success")])
+    rows.append([b("↩️ اقتصاد کشور","economy"),b("🏠 خانه جهان","home")])
+    return InlineKeyboardMarkup(rows)
 ```
 
 ### `apps\teleworld_bot\main.py`
@@ -3222,6 +3349,60 @@ GOVERNMENT_DETAILS={
 'oligarchy':('الیگارشی','شورای نخبگان محدود رهبر را انتخاب می‌کند؛ شهروندان رأی مستقیم ندارند.'),
 }
 GOV_CONFIRM='<b>{title}</b>\n\n{description}\n\nاین مدل فقط برچسب نیست و قواعد انتخابات و انتقال قدرت را در بازی تغییر می‌دهد. این نوع حکومت را تأیید می‌کنی؟'
+```
+
+### `AUDIT_AND_DEPLOY_FA_2026-07-27.md`
+
+```markdown
+# ممیزی و استقرار TeleLife — ۲۰۲۶/۰۵/۰۵
+
+## اصلاح‌های بحرانی
+
+1. قفل `FOR UPDATE OF g` از سمت nullable در `LEFT JOIN` حذف شد؛ فقط ردیف‌های `ad_deliveries` با `SKIP LOCKED` رزرو می‌شوند و به‌روزرسانی گروه اتمیک باقی مانده است.
+2. محدودیت قیمت تبلیغ از فهرست چهار قیمت پایه به بازه امن ۱ تا ۱۰٬۰۰۰ ستاره تغییر کرد. قیمت‌های کانال World و Both مثل ۱۸۰ و ۴۴۰ اکنون معتبرند.
+3. محدودیت قدیمی اشتراک (`target_stars=10`) با منطق فعلی ۱۰ تا ۷۵ ستاره سازگار شد؛ داده‌ای حذف نمی‌شود.
+4. Jobهای دقیقه‌ای ایزوله شدند؛ شکست یک Job مانع نرخ، خبر، انتخابات یا Job بعدی نمی‌شود.
+5. آخرین نتیجه، مدت اجرا و خطای Jobها در `scheduler_job_runs` ثبت می‌شود.
+
+## نرخ واقعی USDT
+
+- منبع: `https://api.zipodo.ir/usdt/`
+- دریافت فقط سمت سرور با timeout، محدودیت حجم، اعتبارسنجی JSON/text و بازه معقول انجام می‌شود.
+- نرخ معتبر در `market_prices` و `market_price_snapshots` ذخیره می‌شود.
+- در خطای منبع، آخرین نرخ معتبر حفظ و وضعیت stale در پنل نمایش داده می‌شود؛ عدد تصادفی به‌عنوان نرخ واقعی تولید نمی‌شود.
+
+## پنل مدیریت
+
+- اتاق عملیات زنده، وضعیت منبع نرخ و صف‌ها
+- تاریخچه واقعی بازار و تازه‌سازی ۳۰ ثانیه‌ای فقط هنگام فعال‌بودن تب
+- توقف اضطراری بازار
+- مشاهده آخرین اجرای Jobها و اجرای دستی فهرست سفید
+- نمایش خطای واقعی به‌جای پنهان‌کردن شکست
+
+## تعامل گروه
+
+- streak روزانه گروه
+- تصمیم کوتاه ۴۵ دقیقه‌ای هر ۴۸ ساعت برای گروه فعال
+- هشدار بازار در تغییر حداقل ۰٫۵٪
+- خلاصه روزانه ساعت ۱۸ UTC
+- همه پیام‌ها از Outbox با کلید idempotency عبور می‌کنند.
+
+## ترتیب استقرار
+
+1. از دیتابیس پشتیبان بگیرید.
+2. نسخه را Deploy کنید؛ migrator فایل `0012_reliability_live_market_engagement.sql` را افزایشی اجرا می‌کند.
+3. در پنل «عملیات زنده»، Job نرخ Zipodo و صف‌ها را کنترل کنید.
+4. یک درخواست تبلیغ `campaign/world` با قیمت ۱۸۰ ستاره ثبت کنید.
+5. ابتدا بازار را در حالت freeze نگه دارید، نرخ را بررسی و سپس باز کنید.
+
+## اعتبارسنجی انجام‌شده
+
+- Compile تمام ۱۰۳ فایل Python: موفق
+- Syntax فایل JavaScript: موفق
+- ساختار HTML: ۴۶ شناسه بدون تکرار، ۸ view
+- اسکن قفل nullable: مورد خطادار باقی نمانده
+- تست‌های رگرسیون قیمت و parser نرخ اضافه شد
+- اجرای کامل pytest در محیط تحویل ممکن نبود، چون محیط آفلاین ابزار `pytest` و وابستگی‌های پروژه را نصب نداشت. در CI/محیط پروژه اجرا شود: `python -m pytest -q`.
 ```
 
 ### `AUDIT_STATUS.md`
@@ -3287,6 +3468,22 @@ GOV_CONFIRM='<b>{title}</b>\n\n{description}\n\nاین مدل فقط برچسب 
 - مهاجرت `0008_world_access_lifecycle.sql` افزوده شد؛ فقط ساخت افزایشی و تکرارپذیر دارد.
 
 - سازگاری checksum برای مهاجرت‌های تاریخی 0001 تا 0007 افزوده شد: رکورد دیتابیس حفظ و SQL قدیمی دوباره اجرا نمی‌شود؛ از 0008 به بعد کنترل checksum همچنان سخت‌گیرانه است.
+```
+
+### `CHANGELOG_FA_2026-07-27_V2.md`
+
+```markdown
+# تغییرات V2 — هویت کشور و بازار واقعی
+
+- تمام پیام‌های سیستمی گروه در مرز انتشار Outbox با نام کشور سربرگ می‌گیرند.
+- برای گروه ثبت‌شده بدون کشور، انتشار سیستمی متوقف و راهنمای ساخت کشور فقط یک بار نمایش داده می‌شود.
+- خلاصه، رویداد و هشدار بازار دیگر از عنوان گروه تلگرام استفاده نمی‌کنند.
+- نمودار واقعی USDT/IRT با OHLC سی‌دقیقه‌ای و بازه ۲۴ساعته به TeleLife افزوده شد.
+- نمودار از snapshotهای Zipodo ساخته می‌شود و فاصله‌های بدون داده را جعل نمی‌کند.
+- بانک مرکزی با نرخ بهره و خرید ذخیره ارزی برای رئیس کشور اضافه شد.
+- شاخص‌های روزانه تورم، بیکاری، رشد، رضایت و GDP اضافه شدند.
+- شوک‌های کمیاب و قطعی بر اساس کشور/تاریخ و روزنامه اختصاصی کشور اضافه شدند.
+- ذخیره ارزی شدت شوک منفی را کم می‌کند و نرخ بهره بالا تورم و رشد را تحت تأثیر قرار می‌دهد.
 ```
 
 ### `DELIVERY.md`
@@ -4513,6 +4710,123 @@ CREATE TABLE IF NOT EXISTS migration_requests (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_migration_pending ON migration_requests(player_id) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS idx_migration_destination_pending ON migration_requests(destination_country_id,expires_at) WHERE status='pending';
+```
+
+### `migrations\0012_reliability_live_market_engagement.sql`
+
+```sql
+-- Reliability, live market provenance, and group engagement. Additive and rollback-safe.
+DO $$
+DECLARE constraint_name text;
+BEGIN
+  SELECT c.conname INTO constraint_name
+  FROM pg_constraint c
+  WHERE c.conrelid='ad_requests'::regclass AND c.contype='c'
+    AND pg_get_constraintdef(c.oid) ILIKE '%price_stars%';
+  IF constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE ad_requests DROP CONSTRAINT %I', constraint_name);
+  END IF;
+END $$;
+ALTER TABLE ad_requests ADD CONSTRAINT ad_requests_price_stars_check
+  CHECK (price_stars BETWEEN 1 AND 10000) NOT VALID;
+ALTER TABLE ad_requests VALIDATE CONSTRAINT ad_requests_price_stars_check;
+
+
+-- 0010 used a fixed 10-star round, while application pricing scales to 75 stars.
+ALTER TABLE subscription_rounds DROP CONSTRAINT IF EXISTS subscription_rounds_target_stars_check;
+ALTER TABLE subscription_rounds DROP CONSTRAINT IF EXISTS subscription_rounds_collected_stars_check;
+ALTER TABLE subscription_rounds ADD CONSTRAINT subscription_rounds_target_stars_check
+  CHECK(target_stars BETWEEN 1 AND 1000) NOT VALID;
+ALTER TABLE subscription_rounds ADD CONSTRAINT subscription_rounds_collected_stars_check
+  CHECK(collected_stars BETWEEN 0 AND target_stars) NOT VALID;
+ALTER TABLE subscription_rounds VALIDATE CONSTRAINT subscription_rounds_target_stars_check;
+ALTER TABLE subscription_rounds VALIDATE CONSTRAINT subscription_rounds_collected_stars_check;
+
+ALTER TABLE market_prices ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'internal';
+ALTER TABLE market_prices ADD COLUMN IF NOT EXISTS source_checked_at TIMESTAMPTZ;
+ALTER TABLE market_prices ADD COLUMN IF NOT EXISTS source_error TEXT;
+
+CREATE TABLE IF NOT EXISTS scheduler_job_runs (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ job_name TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('running','succeeded','failed')),
+ started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ finished_at TIMESTAMPTZ,
+ duration_ms INTEGER,
+ result JSONB NOT NULL DEFAULT '{}'::jsonb,
+ error_type TEXT,
+ error_message TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_scheduler_job_runs_name_time
+ ON scheduler_job_runs(job_name,started_at DESC);
+
+CREATE TABLE IF NOT EXISTS group_engagement_state (
+ group_id BIGINT PRIMARY KEY REFERENCES groups(id) ON DELETE CASCADE,
+ streak INTEGER NOT NULL DEFAULT 0 CHECK(streak>=0),
+ best_streak INTEGER NOT NULL DEFAULT 0 CHECK(best_streak>=0),
+ last_active_date DATE,
+ last_digest_date DATE,
+ last_event_at TIMESTAMPTZ,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS group_live_events (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ group_id BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+ event_code TEXT NOT NULL,
+ title TEXT NOT NULL,
+ payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved','expired')),
+ starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ ends_at TIMESTAMPTZ NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_group_open_event
+ ON group_live_events(group_id) WHERE status='open';
+```
+
+### `migrations\0013_country_identity_candles_realism.sql`
+
+```sql
+-- Country identity, central-bank policy, macro indicators, shocks and national newspaper.
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS interest_rate_bp INTEGER NOT NULL DEFAULT 1200 CHECK(interest_rate_bp BETWEEN 0 AND 10000);
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS fx_reserve_cents BIGINT NOT NULL DEFAULT 0 CHECK(fx_reserve_cents>=0);
+ALTER TABLE countries ADD COLUMN IF NOT EXISTS inflation_target_bp INTEGER NOT NULL DEFAULT 800 CHECK(inflation_target_bp BETWEEN 0 AND 5000);
+
+CREATE TABLE IF NOT EXISTS country_indicator_daily (
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ indicator_date DATE NOT NULL,
+ inflation_bp INTEGER NOT NULL CHECK(inflation_bp BETWEEN -5000 AND 100000),
+ unemployment_bp INTEGER NOT NULL CHECK(unemployment_bp BETWEEN 0 AND 10000),
+ satisfaction INTEGER NOT NULL CHECK(satisfaction BETWEEN 0 AND 100),
+ growth_bp INTEGER NOT NULL CHECK(growth_bp BETWEEN -10000 AND 10000),
+ gdp_toman BIGINT NOT NULL CHECK(gdp_toman>=0),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(country_id,indicator_date)
+);
+CREATE TABLE IF NOT EXISTS country_shocks (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ shock_code TEXT NOT NULL CHECK(shock_code IN ('sanctions','drought','export_boom')),
+ title TEXT NOT NULL,
+ effects JSONB NOT NULL DEFAULT '{}'::jsonb,
+ starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ ends_at TIMESTAMPTZ NOT NULL,
+ announced_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ UNIQUE(country_id,shock_code,starts_at)
+);
+CREATE INDEX IF NOT EXISTS idx_country_shocks_active ON country_shocks(country_id,ends_at) WHERE announced_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS country_newspapers (
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ issue_date DATE NOT NULL,
+ headline TEXT NOT NULL,
+ body TEXT NOT NULL,
+ indicators JSONB NOT NULL DEFAULT '{}'::jsonb,
+ shock_id BIGINT REFERENCES country_shocks(id) ON DELETE SET NULL,
+ published_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(country_id,issue_date)
+);
 ```
 
 ### `packages\__init__.py`
@@ -5855,14 +6169,14 @@ async def news_rows(limit: int = 100) -> list[asyncpg.Record]:
 
 async def market_history(hours: int = 24) -> list[asyncpg.Record]:
     return await db.fetch("""
-        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,
+        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error,
                COALESCE(jsonb_agg(jsonb_build_object(
                  'time',s.captured_at,'price',s.price_toman) ORDER BY s.captured_at)
                  FILTER (WHERE s.captured_at IS NOT NULL),'[]'::jsonb) AS points
         FROM market_prices p
         LEFT JOIN market_price_snapshots s ON s.asset_code=p.asset_code
           AND s.captured_at >= now()-($1::int * interval '1 hour')
-        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at
+        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error
         ORDER BY CASE p.asset_code WHEN 'USD' THEN 0 ELSE 1 END,p.asset_code
     """, hours)
 
@@ -5879,6 +6193,24 @@ async def ads(limit: int = 100) -> list[asyncpg.Record]:
 
 async def ad_owner(ad_id:int):
  return await db.fetchrow("SELECT p.telegram_id,p.first_name FROM ad_requests a JOIN players p ON p.id=a.requester_player_id WHERE a.id=$1",ad_id)
+
+
+async def operations_status() -> dict[str, object]:
+    market=await db.fetchrow("""SELECT asset_code,current_price_toman,source,source_checked_at,
+      source_error,updated_at,now()-source_checked_at AS source_age
+      FROM market_prices WHERE asset_code='USD'""")
+    jobs=await db.fetch("""SELECT DISTINCT ON(job_name) job_name,status,started_at,finished_at,
+      duration_ms,result,error_type,error_message FROM scheduler_job_runs
+      ORDER BY job_name,started_at DESC""")
+    queues=await db.fetchrow("""SELECT
+      (SELECT count(*) FROM news_outbox WHERE published_at IS NULL) outbox_pending,
+      (SELECT count(*) FROM news_outbox WHERE published_at IS NULL AND last_error_code IS NOT NULL) outbox_failed,
+      (SELECT count(*) FROM ad_deliveries WHERE status='scheduled') ads_scheduled,
+      (SELECT count(*) FROM ad_deliveries WHERE status='failed') ads_failed,
+      (SELECT count(*) FROM group_live_events WHERE status='open') live_events""")
+    frozen=bool(await db.fetchval("SELECT COALESCE((SELECT enabled FROM feature_flags WHERE key='usd_market_frozen'),FALSE)"))
+    return {"market":dict(market) if market else None,"jobs":[dict(x) for x in jobs],
+            "queues":dict(queues) if queues else {},"market_frozen":frozen}
 ```
 
 ### `packages\core\repositories\country_repo.py`
@@ -7488,7 +7820,7 @@ async def queue_due_deliveries()->int:
  from packages.core.repositories import outbox_repo
  count=0
  async with db.transaction() as conn:
-  rows=await conn.fetch("""SELECT d.*,g.ad_free_until,g.ads_delivered_today,g.ads_delivery_day,a.priority FROM ad_deliveries d JOIN ad_requests a ON a.id=d.ad_request_id LEFT JOIN groups g ON g.id=d.group_id WHERE d.status='scheduled' AND d.scheduled_at<=now() AND a.status='active' ORDER BY a.priority DESC,d.scheduled_at FOR UPDATE OF d,g SKIP LOCKED LIMIT 200""")
+  rows=await conn.fetch("""SELECT d.*,g.ad_free_until,g.ads_delivered_today,g.ads_delivery_day,a.priority FROM ad_deliveries d JOIN ad_requests a ON a.id=d.ad_request_id LEFT JOIN groups g ON g.id=d.group_id WHERE d.status='scheduled' AND d.scheduled_at<=now() AND a.status='active' ORDER BY a.priority DESC,d.scheduled_at FOR UPDATE OF d SKIP LOCKED LIMIT 200""")
   for row in rows:
    today=datetime.now(UTC).date()
    if row["destination_type"]=='world':
@@ -7772,6 +8104,34 @@ async def catch_up(today: date | None = None) -> int:
     return settled
 ```
 
+### `packages\core\services\country_identity.py`
+
+```python
+"""Canonical country identity for every group-facing system message."""
+from __future__ import annotations
+from html import escape
+from packages.core import db
+
+SETUP_TEXT="🏗 این گروه هنوز کشور ثبت‌شده ندارد.\n\nیکی از مدیران گروه وارد TeleWorld شود و از «ساخت کشور» نام، حکومت و مشخصات کشور را کامل کند. تا آن زمان خبرها و رویدادهای سیستمی این گروه منتشر نمی‌شوند."
+
+async def destination(chat_id:int):
+ """Return None for non-world destinations, or a row with nullable country fields."""
+ return await db.fetchrow("""SELECT g.id group_id,g.telegram_id,c.id country_id,c.name country_name,c.status
+  FROM groups g LEFT JOIN countries c ON c.group_id=g.id WHERE g.telegram_id=$1""",chat_id)
+
+async def by_chat(chat_id:int):
+ row=await destination(chat_id)
+ return row if row and row["country_id"] else None
+
+def masthead(country_name:str, text:str)->str:
+ return f"🏛 <b>خبرگزاری {escape(country_name)}</b>\n\n{text}"
+
+async def should_send_setup_notice(chat_id:int)->bool:
+ key=f"missing-country-notice:{chat_id}"
+ return bool(await db.fetchval("""INSERT INTO product_audit_log(event_key,event_type,chat_id,details)
+  VALUES($1,'missing_country_notice',$2,'{}'::jsonb) ON CONFLICT DO NOTHING RETURNING id""",key,chat_id))
+```
+
 ### `packages\core\services\country_missions.py`
 
 ```python
@@ -7858,6 +8218,86 @@ async def report(country_id: int, action: str, asset: str, amount: int) -> bool:
             destination,
         )
         return True
+```
+
+### `packages\core\services\country_realism.py`
+
+```python
+"""Deterministic daily macro economy, rare shocks, and country newspaper."""
+from __future__ import annotations
+import hashlib
+from datetime import UTC,datetime
+from packages.core import db
+from packages.core.repositories import outbox_repo
+
+def _roll(country_id:int, day, salt:str, modulo:int)->int:
+ return int.from_bytes(hashlib.sha256(f"{country_id}:{day}:{salt}".encode()).digest()[:4],"big")%modulo
+
+async def daily_tick()->dict[str,int]:
+ day=datetime.now(UTC).date();indicators=shocks=papers=0
+ async with db.transaction() as conn:
+  countries=await conn.fetch("""SELECT c.*,g.telegram_id,
+   COALESCE((SELECT sum(quantity) FROM country_resources r WHERE r.country_id=c.id),0) resources,
+   (SELECT count(*) FROM citizenships z WHERE z.country_id=c.id AND z.is_active) citizens
+   FROM countries c JOIN groups g ON g.id=c.group_id WHERE g.is_active""")
+  for c in countries:
+   citizens=int(c['citizens'] or 0);resources=int(c['resources'] or 0);treasury=int(c['treasury_toman'])
+   prev=await conn.fetchrow("SELECT * FROM country_indicator_daily WHERE country_id=$1 ORDER BY indicator_date DESC LIMIT 1",c['id'])
+   active=await conn.fetchrow("SELECT * FROM country_shocks WHERE country_id=$1 AND ends_at>now() ORDER BY starts_at DESC LIMIT 1",c['id'])
+   adverse=bool(active and active['shock_code'] in {'sanctions','drought'})
+   reserve_buffer=min(250,int(c['fx_reserve_cents'])//1_000_000) if adverse else 0
+   shock_inflation=max(100,500-reserve_buffer) if adverse else -150 if active else 0
+   shock_growth=min(-75,-350+reserve_buffer) if adverse else 450 if active else 0
+   base_inflation=int(prev['inflation_bp']) if prev else 1800
+   policy_gap=int(c['interest_rate_bp'])-int(c['inflation_target_bp'])
+   inflation=max(-500,min(100000,base_inflation-policy_gap//20+shock_inflation+_roll(c['id'],day,'inflation',101)-50))
+   unemployment=max(0,min(10000,(int(prev['unemployment_bp']) if prev else 1200)-shock_growth//4+_roll(c['id'],day,'jobs',61)-30))
+   interest_drag=max(0,policy_gap)//25
+   organic_growth=250+resources//max(1000,citizens*100)-unemployment//20-interest_drag
+   growth=max(-10000,min(10000,organic_growth+shock_growth))
+   satisfaction=max(0,min(100,70-inflation//150-unemployment//200+min(15,treasury//max(1,50_000_000))))
+   gdp=max(0,citizens*5_000_000+resources*1000+treasury//10)
+   result=await conn.execute("""INSERT INTO country_indicator_daily(country_id,indicator_date,inflation_bp,unemployment_bp,satisfaction,growth_bp,gdp_toman)
+    VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING""",c['id'],day,inflation,unemployment,satisfaction,growth,gdp)
+   indicators+=int(result.rsplit(' ',1)[-1])
+   shock=None
+   if not active and _roll(c['id'],day,'shock',1000)<8:
+    code=('sanctions','drought','export_boom')[_roll(c['id'],day,'kind',3)]
+    title={'sanctions':'موج تازه تحریم تجاری','drought':'خشکسالی در مناطق تولیدی','export_boom':'رونق ناگهانی صادرات'}[code]
+    effects={'inflation_bp':500,'growth_bp':-350} if code!='export_boom' else {'inflation_bp':-150,'growth_bp':450}
+    shock=await conn.fetchrow("""INSERT INTO country_shocks(country_id,shock_code,title,effects,ends_at,announced_at)
+      VALUES($1,$2,$3,$4,now()+interval '3 days',now()) RETURNING id,title""",c['id'],code,title,effects);shocks+=1
+   headline=(shock['title'] if shock else f"نبض اقتصاد {c['name']}: رشد {growth/100:+.1f}٪")
+   body=f"تورم {inflation/100:.1f}٪ · بیکاری {unemployment/100:.1f}٪ · رشد {growth/100:+.1f}٪ · رضایت {satisfaction} از ۱۰۰\nنرخ بهره بانک مرکزی {int(c['interest_rate_bp'])/100:.1f}٪ و ذخیره ارزی {int(c['fx_reserve_cents'])/100:,.0f} دلار است."
+   row=await conn.fetchrow("""INSERT INTO country_newspapers(country_id,issue_date,headline,body,indicators,shock_id)
+    VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING country_id""",c['id'],day,headline,body,{'inflation_bp':inflation,'unemployment_bp':unemployment,'growth_bp':growth,'satisfaction':satisfaction},shock['id'] if shock else None)
+   if row:
+    text=f"🗞 <b>{headline}</b>\n\n{body}"
+    if await outbox_repo.enqueue(conn,f"country-paper:{c['id']}:{day}","country_newspaper",{'text':text},c['telegram_id']):papers+=1
+ return {'indicators':indicators,'shocks':shocks,'newspapers':papers}
+
+
+async def policy_view(country_id:int):
+ return await db.fetchrow("""SELECT c.interest_rate_bp,c.inflation_target_bp,c.fx_reserve_cents,c.treasury_toman,
+  i.inflation_bp,i.unemployment_bp,i.satisfaction,i.growth_bp,i.gdp_toman,i.indicator_date
+  FROM countries c LEFT JOIN LATERAL(SELECT * FROM country_indicator_daily WHERE country_id=c.id ORDER BY indicator_date DESC LIMIT 1)i ON TRUE
+  WHERE c.id=$1""",country_id)
+
+async def set_interest(country_id:int,player_id:int,delta_bp:int):
+ if delta_bp not in {-100,100}:raise ValueError('invalid_policy_step')
+ return await db.fetchval("""UPDATE countries SET interest_rate_bp=interest_rate_bp+$3,updated_at=now()
+  WHERE id=$1 AND president_player_id=$2 AND interest_rate_bp+$3 BETWEEN 0 AND 10000 RETURNING interest_rate_bp""",country_id,player_id,delta_bp)
+
+async def buy_reserve(country_id:int,player_id:int,toman:int=10_000_000):
+ if toman<=0:raise ValueError('invalid_amount')
+ async with db.transaction() as conn:
+  price=int(await conn.fetchval("SELECT current_price_toman FROM market_prices WHERE asset_code='USD'") or 0)
+  if price<=0:raise ValueError('market_not_initialized')
+  cents=toman*100//price
+  row=await conn.fetchrow("""UPDATE countries SET treasury_toman=treasury_toman-$3,fx_reserve_cents=fx_reserve_cents+$4,updated_at=now()
+   WHERE id=$1 AND president_player_id=$2 AND treasury_toman>=$3 RETURNING fx_reserve_cents""",country_id,player_id,toman,cents)
+  if not row:raise ValueError('president_or_balance_required')
+  return cents
 ```
 
 ### `packages\core\services\daily.py`
@@ -8240,6 +8680,79 @@ async def override_result(election_id:int,leader_id:int,winner_id:int)->bool:
     return True
 ```
 
+### `packages\core\services\engagement.py`
+
+```python
+"""Idempotent group engagement: streaks, timed decisions, market alerts and daily digests."""
+from __future__ import annotations
+from datetime import UTC, datetime
+from packages.core import db
+from packages.core.repositories import outbox_repo
+
+async def _update_streaks(conn)->int:
+    result=await conn.execute("""INSERT INTO group_engagement_state(group_id,streak,best_streak,last_active_date)
+      SELECT id,1,1,current_date FROM groups WHERE is_active AND last_active_at>=now()-interval '1 day'
+      ON CONFLICT(group_id) DO UPDATE SET
+       streak=CASE WHEN group_engagement_state.last_active_date=current_date THEN group_engagement_state.streak
+                   WHEN group_engagement_state.last_active_date=current_date-1 THEN group_engagement_state.streak+1 ELSE 1 END,
+       best_streak=GREATEST(group_engagement_state.best_streak,
+                   CASE WHEN group_engagement_state.last_active_date=current_date-1 THEN group_engagement_state.streak+1 ELSE 1 END),
+       last_active_date=current_date,updated_at=now()
+      WHERE group_engagement_state.last_active_date IS DISTINCT FROM current_date""")
+    return int(result.rsplit(' ',1)[-1])
+
+async def _queue_digest(conn)->int:
+    count=0
+    rows=await conn.fetch("""SELECT g.id,g.telegram_id,c.name country_name,e.streak,
+      (SELECT count(*) FROM citizenships cs WHERE cs.country_id=c.id AND cs.is_active) citizens,
+      (SELECT current_price_toman FROM market_prices WHERE asset_code='USD') usd
+      FROM groups g JOIN countries c ON c.group_id=g.id JOIN group_engagement_state e ON e.group_id=g.id
+      WHERE g.is_active AND EXTRACT(HOUR FROM now() AT TIME ZONE 'UTC')=18
+       AND e.last_digest_date IS DISTINCT FROM current_date""")
+    for row in rows:
+      payload={"text":f"📊 خلاصه امروز {row['country_name']}\n\n🔥 زنجیره فعالیت: {row['streak']} روز\n👥 شهروند فعال: {row['citizens']}\n💱 نرخ تتر: {int(row['usd'] or 0):,} تومان\n\nبرای ادامه زنجیره، امروز یک تصمیم گروهی بگیرید."}
+      if await outbox_repo.enqueue(conn,f"group-digest:{row['id']}:{datetime.now(UTC).date()}","group_digest",payload,row['telegram_id']):count+=1
+      await conn.execute("UPDATE group_engagement_state SET last_digest_date=current_date WHERE group_id=$1",row['id'])
+    return count
+
+async def _queue_events(conn)->int:
+    count=0
+    # One short collective decision per active group every 48h; resolution can be extended later.
+    rows=await conn.fetch("""SELECT g.id,g.telegram_id,c.name country_name FROM groups g
+      JOIN countries c ON c.group_id=g.id JOIN group_engagement_state s ON s.group_id=g.id
+      WHERE g.is_active AND g.last_active_at>=now()-interval '1 day'
+       AND (s.last_event_at IS NULL OR s.last_event_at<=now()-interval '48 hours')
+       AND NOT EXISTS(SELECT 1 FROM group_live_events e WHERE e.group_id=g.id AND e.status='open') LIMIT 20""")
+    for row in rows:
+      event=await conn.fetchrow("""INSERT INTO group_live_events(group_id,event_code,title,payload,ends_at)
+       VALUES($1,'market_reserve','تصمیم فوری ذخیره ارزی','{"choices":["تقویت خزانه","سرمایه‌گذاری فناوری"]}',now()+interval '45 minutes') RETURNING id,ends_at""",row['id'])
+      text=f"⚡ تصمیم فوری برای {row['country_name']}\n\nذخیره تازه‌ای آزاد شده است. اعضا تا ۴۵ دقیقه فرصت دارند درباره «تقویت خزانه» یا «سرمایه‌گذاری فناوری» گفتگو کنند. رئیس‌جمهور تصمیم نهایی را ثبت می‌کند."
+      if await outbox_repo.enqueue(conn,f"live-event:{event['id']}","group_live_event",{"text":text,"event_id":event['id']},row['telegram_id']):count+=1
+      await conn.execute("UPDATE group_engagement_state SET last_event_at=now() WHERE group_id=$1",row['id'])
+    return count
+
+async def _market_alert(conn)->int:
+    row=await conn.fetchrow("""SELECT price_toman,captured_at,previous FROM (
+      SELECT s.price_toman,s.captured_at,lag(s.price_toman) OVER(ORDER BY s.captured_at) previous
+      FROM market_price_snapshots s WHERE s.asset_code='USD') history
+      ORDER BY captured_at DESC LIMIT 1""")
+    if not row or not row['previous'] or int(row['previous'])==0:return 0
+    change=(int(row['price_toman'])-int(row['previous']))*100/int(row['previous'])
+    if abs(change)<0.5:return 0
+    count=0
+    groups=await conn.fetch("SELECT g.id,g.telegram_id,c.name country_name FROM groups g JOIN countries c ON c.group_id=g.id WHERE g.is_active AND g.last_active_at>=now()-interval '7 days'")
+    bucket=row['captured_at'].strftime('%Y%m%d%H%M')
+    for group in groups:
+      text=f"📈 هشدار بازار: تتر {change:+.2f}٪ تغییر کرد و به {int(row['price_toman']):,} تومان رسید."
+      if await outbox_repo.enqueue(conn,f"market-alert:{group['id']}:{bucket}","market_alert",{"text":text},group['telegram_id']):count+=1
+    return count
+
+async def minute_tick()->dict[str,int]:
+    async with db.transaction() as conn:
+      await conn.execute("UPDATE group_live_events SET status='expired' WHERE status='open' AND ends_at<=now()")
+      return {"streaks":await _update_streaks(conn),"digests":await _queue_digest(conn),"events":await _queue_events(conn),"alerts":await _market_alert(conn)}
+```
+
 ### `packages\core\services\governance.py`
 
 ```python
@@ -8271,6 +8784,126 @@ RULES={
  "oligarchy":Rules("elite_council",False,"none"),
 }
 def rules_for(code:str)->Rules:return RULES.get(code,RULES["republic"])
+```
+
+### `packages\core\services\live_market.py`
+
+```python
+"""Validated server-side synchronization with Zipodo's live USDT/IRT endpoint."""
+from __future__ import annotations
+import asyncio, json, logging, math
+from datetime import UTC, datetime
+from urllib.request import Request, urlopen
+from packages.core import db
+
+logger=logging.getLogger(__name__)
+URL="https://api.zipodo.ir/usdt/"
+
+def extract_price(payload: object) -> int:
+    """Accept common JSON envelopes while rejecting booleans, NaN, and implausible rates."""
+    keys=("price","last","value","rate","sell","close")
+    candidates=[]
+    def walk(value, depth=0):
+        if depth>4:return
+        if isinstance(value,dict):
+            for key in keys:
+                if key in value:candidates.append(value[key])
+            for child in value.values():walk(child,depth+1)
+        elif isinstance(value,list):
+            for child in value[:20]:walk(child,depth+1)
+    walk(payload)
+    if not candidates and isinstance(payload,(int,float,str)):candidates=[payload]
+    for raw in candidates:
+        if isinstance(raw,bool):continue
+        try:
+            number=float(str(raw).replace(",","").strip())
+        except (TypeError,ValueError):continue
+        if math.isfinite(number):
+            price=round(number)
+            # USDT/IRT guardrail: intentionally broad enough for inflation, narrow enough for corrupt JSON.
+            if 1_000 <= price <= 100_000_000:return price
+    raise ValueError("zipodo_price_missing_or_implausible")
+
+def _fetch(timeout: float=7.0)->int:
+    req=Request(URL,headers={"Accept":"application/json","User-Agent":"TeleLife/1.0"})
+    with urlopen(req,timeout=timeout) as response:
+        if response.status!=200:raise RuntimeError(f"zipodo_http_{response.status}")
+        raw=response.read(256_000)
+    text=raw.decode("utf-8-sig").strip()
+    try: payload=json.loads(text)
+    except json.JSONDecodeError: payload=text
+    return extract_price(payload)
+
+async def sync()->dict[str,object]:
+    checked=datetime.now(UTC)
+    try:
+        price=await asyncio.to_thread(_fetch)
+        async with db.transaction() as conn:
+            await conn.execute("""UPDATE usd_market_state SET reference_price_toman=$1,updated_at=now()
+                WHERE singleton=TRUE""",price)
+            await conn.execute("""UPDATE market_prices SET current_price_toman=$1,source='zipodo',
+                source_checked_at=$2,source_error=NULL,updated_by='zipodo-live',updated_at=now()
+                WHERE asset_code='USD'""",price,checked)
+            await conn.execute("""INSERT INTO market_price_snapshots(asset_code,price_toman,captured_at)
+                VALUES('USD',$1,date_trunc('minute',now()))
+                ON CONFLICT(asset_code,captured_at) DO UPDATE SET price_toman=EXCLUDED.price_toman""",price)
+        return {"price":price,"source":"zipodo","stale":False}
+    except Exception as exc:
+        logger.warning("live USDT sync failed; keeping last valid price",exc_info=True)
+        await db.execute("""UPDATE market_prices SET source_checked_at=$2,source_error=$1
+            WHERE asset_code='USD'""",f"{type(exc).__name__}: {str(exc)[:300]}",checked)
+        raise
+```
+
+### `packages\core\services\market_chart.py`
+
+```python
+"""Real 30-minute OHLC chart rendered as a Telegram-ready PNG."""
+from __future__ import annotations
+from dataclasses import dataclass
+from io import BytesIO
+from packages.core import db
+
+@dataclass(frozen=True,slots=True)
+class Candle:
+ time:object;open:int;high:int;low:int;close:int;trades:int
+
+async def candles(hours:int=24)->list[Candle]:
+ rows=await db.fetch("""WITH price AS (
+   SELECT date_bin(interval '30 minutes',captured_at,TIMESTAMPTZ '2000-01-01') bucket,
+          (array_agg(price_toman ORDER BY captured_at))[1] open,
+          max(price_toman) high,min(price_toman) low,
+          (array_agg(price_toman ORDER BY captured_at DESC))[1] close
+   FROM market_price_snapshots WHERE asset_code='USD' AND captured_at>=now()-($1::int*interval '1 hour') GROUP BY 1),
+ trades AS (SELECT date_bin(interval '30 minutes',created_at,TIMESTAMPTZ '2000-01-01') bucket,count(*) trades
+   FROM usd_trades WHERE created_at>=now()-($1::int*interval '1 hour') GROUP BY 1)
+ SELECT p.bucket,p.open,p.high,p.low,p.close,COALESCE(t.trades,0) trades
+ FROM price p LEFT JOIN trades t USING(bucket) ORDER BY p.bucket""",hours)
+ return [Candle(r['bucket'],int(r['open']),int(r['high']),int(r['low']),int(r['close']),int(r['trades'])) for r in rows]
+
+def render(rows:list[Candle])->BytesIO:
+ from PIL import Image,ImageDraw,ImageFont
+ w,h=1200,660;left,right,top,bottom=92,36,68,96
+ image=Image.new('RGB',(w,h),'#07131f');d=ImageDraw.Draw(image)
+ try:font=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',22);small=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',17);title=ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',27)
+ except OSError:font=small=title=ImageFont.load_default()
+ d.text((left,20),'USDT / IRT  |  REAL 30M OHLC  |  LAST 24H',fill='#eaf5ff',font=title)
+ if not rows:
+  d.text((left,280),'No valid market snapshots yet',fill='#8ca6b8',font=font);out=BytesIO();image.save(out,'PNG',optimize=True);out.seek(0);out.name='usdt_30m.png';return out
+ lo=min(x.low for x in rows);hi=max(x.high for x in rows);span=max(hi-lo,1);plot_h=h-top-bottom
+ def y(v):return top+(hi-v)*plot_h/span
+ for i in range(5):
+  yy=top+i*plot_h/4;price=round(hi-i*span/4);d.line((left,yy,w-right,yy),fill='#183144',width=1);d.text((8,yy-10),f'{price:,}',fill='#7893a7',font=small)
+ slot=(w-left-right)/max(48,len(rows));body=max(5,min(15,int(slot*.55)))
+ for i,c in enumerate(rows):
+  x=left+(i+.5)*slot;up=c.close>=c.open;color='#35d7c0' if up else '#ff6f91'
+  d.line((x,y(c.high),x,y(c.low)),fill=color,width=2)
+  y1,y2=y(c.open),y(c.close);d.rectangle((x-body/2,min(y1,y2),x+body/2,max(y1,y2)+1),fill=color)
+  if i%8==0:d.text((x-25,h-bottom+18),c.time.strftime('%H:%M'),fill='#7893a7',font=small)
+ change=(rows[-1].close-rows[0].open)*100/rows[0].open
+ d.text((left,h-38),f'O {rows[0].open:,}   H {hi:,}   L {lo:,}   C {rows[-1].close:,}   {change:+.2f}%',fill='#b9cad6',font=font)
+ d.text((w-300,24),f'{rows[-1].close:,} IRT',fill='#35d7c0' if change>=0 else '#ff6f91',font=title)
+ out=BytesIO();image.save(out,'PNG',optimize=True);out.seek(0);out.name='usdt_30m.png';return out
 ```
 
 ### `packages\core\services\migration.py`
@@ -9077,6 +9710,30 @@ def level_progress(level: int, xp: int) -> tuple[int, int]:
     if level >= max_level():
         return xp, max(xp, 1)
     return xp, xp_required(level)
+```
+
+### `packages\core\services\scheduler_ops.py`
+
+```python
+"""Isolated, observable execution for scheduler jobs."""
+from __future__ import annotations
+import logging, time
+from typing import Awaitable, Callable, TypeVar
+from packages.core import db
+logger=logging.getLogger(__name__)
+T=TypeVar("T")
+async def run(name:str, fn:Callable[[],Awaitable[T]])->T|None:
+    started=time.perf_counter()
+    row_id=await db.fetchval("INSERT INTO scheduler_job_runs(job_name,status) VALUES($1,'running') RETURNING id",name)
+    try:
+        result=await fn()
+        payload=result if isinstance(result,dict) else {"value":result} if result is not None else {}
+        await db.execute("UPDATE scheduler_job_runs SET status='succeeded',finished_at=now(),duration_ms=$2,result=$3 WHERE id=$1",row_id,round((time.perf_counter()-started)*1000),payload)
+        return result
+    except Exception as exc:
+        await db.execute("UPDATE scheduler_job_runs SET status='failed',finished_at=now(),duration_ms=$2,error_type=$3,error_message=$4 WHERE id=$1",row_id,round((time.perf_counter()-started)*1000),type(exc).__name__,str(exc)[:1000])
+        logger.exception("scheduler job failed",extra={"job_name":name})
+        return None
 ```
 
 ### `packages\core\services\unlocks.py`
@@ -10321,6 +10978,60 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - ثبت دوطرفه عوارض در دفتر کل و انقضای خودکار درخواست‌ها.
 ```
 
+### `RELEASE_V2_FA.md`
+
+```markdown
+# TeleLife V2 — هویت کشور، نمودار واقعی و اقتصاد کلان
+
+## رفتار هویت کشور
+
+- پیام‌های سیستمی Outbox که مقصدشان یک گروه TeleWorld است، پیش از ارسال کشور مقصد را از دیتابیس می‌خوانند.
+- سربرگ پیام با «خبرگزاری {نام کشور}» ساخته می‌شود و عنوان تلگرامی گروه در متن استفاده نمی‌شود.
+- خلاصه روزانه، رویدادهای کوتاه و هشدارهای بازار فقط برای گروه‌های دارای کشور ساخته می‌شوند.
+- اگر گروه ثبت شده اما کشور ندارد، پیام سیستمی ارسال نمی‌شود و راهنمای ساخت کشور فقط یک بار نمایش داده می‌شود.
+- پیام‌های شخصی TeleLife و مقصدهای عمومی خارج از TeleWorld بدون سربرگ کشور باقی می‌مانند.
+
+## نمودار بازار TeleLife
+
+- نمودار PNG واقعی USDT/IRT با ۴۸ کندل نیم‌ساعته برای ۲۴ ساعت اخیر.
+- OHLC مستقیماً از `market_price_snapshots` ساخته می‌شود.
+- snapshotها از نرخ اعتبارسنجی‌شده Zipodo تغذیه می‌شوند.
+- فاصله‌های بدون snapshot جعل یا با نوسان تصادفی پر نمی‌شوند.
+- نمودار قبلی کاربر هنگام تازه‌سازی حذف می‌شود تا گفت‌وگوی خصوصی شلوغ نشود.
+- Pillow به وابستگی‌های Docker افزوده شده است.
+
+## اقتصاد واقعی‌تر کشور
+
+- بانک مرکزی: نرخ بهره، هدف تورم و ذخیره ارزی.
+- رئیس کشور می‌تواند نرخ بهره را هر بار یک درصد بالا/پایین ببرد.
+- رئیس می‌تواند ۱۰ میلیون تومان خزانه را با نرخ زنده بازار به ذخیره ارزی تبدیل کند.
+- شاخص‌های روزانه: تورم، بیکاری، رشد، رضایت و GDP.
+- نرخ بهره بالاتر فشار تورمی را کم می‌کند، اما روی رشد هزینه دارد.
+- ذخیره ارزی اثر تحریم و خشکسالی را کاهش می‌دهد.
+- شوک‌های کمیاب با seed کشور/تاریخ تعیین می‌شوند؛ ری‌استارت نتیجه را عوض نمی‌کند.
+- روزنامه اختصاصی هر کشور از داده‌های واقعی همان کشور تولید و با نام کشور منتشر می‌شود.
+
+## استقرار
+
+1. از PostgreSQL پشتیبان بگیرید.
+2. نسخه جدید را Deploy کنید تا Migration شماره `0013` اجرا شود.
+3. ساخت image جدید ضروری است، چون وابستگی Pillow افزوده شده است.
+4. صبر کنید حداقل چند snapshot نرخ ثبت شود؛ نمودار از داده موجود استفاده می‌کند.
+5. در TeleLife وارد «بازار ارز» شوید و تصویر کندلی را بررسی کنید.
+6. در TeleWorld وارد «اقتصاد و منابع ← بانک مرکزی و شاخص‌ها» شوید.
+7. یک گروه بدون کشور را بررسی کنید؛ تنها راهنمای ساخت کشور باید نمایش داده شود.
+
+## اعتبارسنجی
+
+- AST و compile روی ۱۴۱ فایل Python: موفق
+- Syntax پنل JavaScript: موفق
+- تولید آزمایشی PNG با ۴۸ کندل: موفق، ۱۲۰۰×۶۶۰
+- قرارداد Migration 0013: موفق
+- نبود استفاده از عنوان گروه در engagement و ارسال سیستمی: تأیید شد
+- قفل نامعتبر قدیمی `FOR UPDATE OF d,g`: وجود ندارد
+- اجرای کامل pytest در sandbox ممکن نبود، چون pytest و وابستگی‌های پروژه در محیط آفلاین نصب نیستند. پس از build اجرا شود: `python -m pytest -q`.
+```
+
 ### `render.yaml`
 
 ```yaml
@@ -10363,6 +11074,7 @@ fastapi>=0.115,<1
 jinja2>=3.1.4,<4
 orjson>=3.10.7,<4
 python-multipart>=0.0.12,<1
+Pillow>=10.4,<12
 ```
 
 ### `run.py`
@@ -10768,6 +11480,20 @@ def test_only_http_links():
  assert not valid_url('javascript:alert(1)')
 ```
 
+### `tests\test_commerce_regressions.py`
+
+```python
+from packages.core.services.commerce import ad_price
+
+def test_all_channel_adjusted_prices_are_positive_and_schema_safe():
+ for package in ("economy","standard","campaign","featured"):
+  for channel in ("life","world","both"):
+   assert 1 <= ad_price(package,channel) <= 10_000
+
+def test_world_campaign_regression_price():assert ad_price("campaign","world")==180
+def test_both_featured_price():assert ad_price("featured","both")==440
+```
+
 ### `tests\test_config.py`
 
 ```python
@@ -10814,6 +11540,27 @@ def test_boundary_avoids_substring_false_positive():
 
 def test_clean_persian_content():
     assert inspect("جمهوری روشن فردا").allowed
+```
+
+### `tests\test_country_realism_contracts.py`
+
+```python
+from pathlib import Path
+
+def test_country_identity_is_used_at_outbox_delivery_boundary():
+ text=Path("apps/scheduler/jobs/country_jobs.py").read_text()
+ assert "country_identity.destination" in text
+ assert "country_identity.masthead" in text
+
+def test_group_engagement_uses_country_not_telegram_title():
+ text=Path("packages/core/services/engagement.py").read_text()
+ assert "c.name country_name" in text
+ assert "row['title']" not in text
+
+def test_realism_schema_is_additive():
+ text=Path("migrations/0013_country_identity_candles_realism.sql").read_text()
+ for table in ("country_indicator_daily","country_shocks","country_newspapers"):
+  assert f"CREATE TABLE IF NOT EXISTS {table}" in text
 ```
 
 ### `tests\test_daily.py`
@@ -10993,6 +11740,33 @@ def test_integer_intervals_use_numeric_bind_casts() -> None:
     assert "::text || ' hours'" not in text
     assert "$1 || ' days'" not in text
     assert "interval '1 day'" in text
+```
+
+### `tests\test_live_market.py`
+
+```python
+import math
+import pytest
+from packages.core.services.live_market import extract_price
+@pytest.mark.parametrize(("payload","expected"),[
+ ({"price":91234},91234),({"data":{"price":"91,234"}},91234),
+ ({"result":[{"last":91234.4}]},91234),
+])
+def test_extract_zipodo_price(payload,expected):assert extract_price(payload)==expected
+@pytest.mark.parametrize("payload",[{}, {"price":True},{"price":"nan"},{"price":12},{"price":999999999999}])
+def test_rejects_invalid_or_implausible_price(payload):
+ with pytest.raises(ValueError):extract_price(payload)
+```
+
+### `tests\test_market_chart_contracts.py`
+
+```python
+from datetime import UTC,datetime
+from packages.core.services.market_chart import Candle,render
+
+def test_market_chart_is_png():
+ rows=[Candle(datetime.now(UTC),90000,91000,89500,90500,2)]
+ assert render(rows).read(8)==b"\\x89PNG\\r\\n\\x1a\\n"
 ```
 
 ### `tests\test_message_driven_bots.py`

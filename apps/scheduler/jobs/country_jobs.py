@@ -1,7 +1,7 @@
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
 from telegram import Bot
-from packages.core.services import country_economy,elections,news,commerce
+from packages.core.services import country_economy,elections,news,commerce,country_identity
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
 async def daily_events()->int:
  await country_economy.catch_up()
@@ -27,6 +27,12 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
    await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
    return
   text=str(payload.get('text') or payload.get('event_code') or payload.get('mission_key') or event_type)
+  destination=await country_identity.destination(chat_id)
+  if destination:
+   if not destination['country_id']:
+    if await country_identity.should_send_setup_notice(chat_id):await bot.send_message(chat_id=chat_id,text=country_identity.SETUP_TEXT)
+    return
+   text=country_identity.masthead(str(destination['country_name']),text)
   await bot.send_message(chat_id=chat_id,text=text)
  return await news.publish_batch(sender)
 

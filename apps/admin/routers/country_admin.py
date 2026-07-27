@@ -63,6 +63,33 @@ def fail(exc: ValueError) -> HTTPException:
 class FreezeBody(BaseModel):
     enabled: bool
 
+class FeatureBody(BaseModel):
+    enabled: bool
+
+@router.get("/engagement")
+async def engagement_overview() -> dict[str, object]:
+    return await admin_repo.engagement_overview()
+
+@router.get("/feature-flags")
+async def feature_flags() -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.feature_flags()]
+
+@router.put("/feature-flags/{key}")
+async def set_feature_flag(key: str, body: FeatureBody, actor: AdminActor) -> dict[str, bool]:
+    allowed = {"economy_frozen", "usd_market_frozen", "ads_frozen", "registrations_frozen"}
+    if key not in allowed:
+        raise HTTPException(400, "این کلید مدیریتی مجاز نیست.")
+    return {"applied": await admin.feature(actor, key, body.enabled, str(uuid4()))}
+
+@router.get("/ledger")
+async def ledger(limit: Annotated[int, Query(ge=1, le=500)] = 100,
+                 player_id: Annotated[int | None, Query(gt=0)] = None) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.ledger_rows(limit, player_id)]
+
+@router.get("/economy-integrity")
+async def economy_integrity() -> dict[str, object]:
+    return await admin_repo.economy_integrity()
+
 @router.get("/operations")
 async def operations() -> dict[str, object]:
     return await admin_repo.operations_status()

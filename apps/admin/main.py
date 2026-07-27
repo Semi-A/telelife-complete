@@ -1,7 +1,7 @@
 """Authenticated, lightweight administration command center."""
 from __future__ import annotations
 from pathlib import Path
-from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,6 +19,12 @@ app.include_router(country_admin_router)
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    # JSON APIs already trigger CORS preflight; this also protects legacy form routes.
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        host = request.headers.get("host")
+        if origin and host and origin.split("://", 1)[-1] != host:
+            return JSONResponse({"detail": "درخواست از مبدأ نامعتبر رد شد."}, status_code=403)
     response: Response = await call_next(request)
     response.headers.update({
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
