@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from apps.admin.auth import AdminPrincipal, require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, admin_accounts, admin_security, commerce, live_market, scheduler_ops, engagement
+from packages.core.services import admin, admin_accounts, admin_security, commerce, live_market, scheduler_ops, engagement, social
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[AdminPrincipal, Depends(require_admin)]
@@ -148,6 +148,21 @@ async def incidents(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,
 async def incident_update(incident_id:int,body:IncidentBody,actor:AdminActor)->dict[str,object]:
     row=await admin_repo.update_incident(incident_id,body.status,actor.username,body.note)
     if not row:raise HTTPException(404,"رخداد پیدا نشد.")
+    return dict(row)
+
+class SocialReportBody(BaseModel):
+    status: Literal["reviewed","closed"]
+
+@router.get("/social-reports")
+async def social_reports(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return [dict(x) for x in await social.admin_reports(limit)]
+
+@router.patch("/social-reports/{report_id}")
+async def social_report_update(report_id:int,body:SocialReportBody,actor:AdminActor)->dict[str,object]:
+    row=await social.review_report(report_id,body.status)
+    if not row:raise HTTPException(404,"گزارش پیدا نشد.")
+    from packages.core import db
+    await db.execute("INSERT INTO audit_log(actor,action,target_id,payload) VALUES($1,'social_report_review',$2,jsonb_build_object('status',$3::text))",actor.username,report_id,body.status)
     return dict(row)
 
 @router.get("/anomalies")

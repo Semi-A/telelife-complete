@@ -27,6 +27,7 @@ def home(country, admin, citizen=False, official_role=None):
                     [b("📘 قوانین شهروندی", "migration_rules"), b("🔄 تازه‌سازی", "home")]]
             return InlineKeyboardMarkup(rows)
         rows = [[b("☀️ وضعیت امروز کشور", "country_today", "primary")],
+                [b("🏘 جامعه کشور", "society"), b("👥 شهروندان", "citizens")],
                 [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")],
                 [b("🏗 پروژه ملی", "project"), b("🌐 تجارت و دیپلماسی", "trade")],
                 [b("✈️ مهاجرت", "migration"), b("🏛 شناسنامه", "country")]]
@@ -185,3 +186,47 @@ def outgoing_trade(rows):
 def pending_relations(rows):
  buttons=[[b(f"✅ پذیرش {r['counterparty_name']}",f"relaccept:{r['counterparty_id']}","success")] for r in rows]
  buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)
+# ---------- جامعه کشور ----------
+def society_home(pending=(), competitions=(), married=False):
+ rows=[[b("🤝 کمک به شهروند","socpeople:help","success"),b("🫂 دوستی‌ها","socpeople:friend")],
+       [b("💍 ازدواج و خانواده","socmarriage","primary"),b("🏆 رقابت دوستانه","socpeople:compete")],
+       [b("⚖️ دادگاه شهروندی","soccases"),b("🛡 گزارش امن","socpeople:report")]]
+ for r in pending:
+  label="💍" if r["kind"]=="marriage" else "🫂"
+  rows.append([b(f"{label} قبول پیشنهاد {r['proposer_name']}",f"socaccept:{r['id']}","success"),b("رد",f"socreject:{r['id']}","danger")])
+ for c in competitions:
+  if c["status"]=="pending":rows.append([b(f"🏆 قبول رقابت {c['opponent_name']}",f"compaccept:{c['id']}","success"),b("رد",f"compreject:{c['id']}")])
+  elif c["status"]=="active":rows.append([b(f"🎯 ادامه رقابت با {c['opponent_name']}",f"compview:{c['id']}")])
+ if married:rows.append([b("💔 درخواست جدایی","divorceask","danger")])
+ rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
+
+def social_people(rows,mode):
+ labels={"help":"🤝 کمک به","friend":"🫂 دوستی با","marry":"💍 پیشنهاد به","compete":"🏆 رقابت با","report":"🛡 گزارش","case":"⚖️ شکایت از"}
+ buttons=[[b(f"{labels.get(mode,'انتخاب')} {r['first_name']}",f"socperson:{mode}:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(buttons)
+
+def help_amount(target):
+ return InlineKeyboardMarkup([[b("۱۰ هزار",f"shelp:{target}:10000"),b("۵۰ هزار",f"shelp:{target}:50000","success")],
+ [b("۱۰۰ هزار",f"shelp:{target}:100000"),b("۲۰۰ هزار",f"shelp:{target}:200000")],[b("↩️ جامعه کشور","society")]])
+
+def social_categories(target,prefix):
+ labels=[("آزار","harassment"),("کلاهبرداری","fraud"),("تهدید","threat"),("اسپم","spam"),("سایر","other")]
+ return InlineKeyboardMarkup([[b(label,f"{prefix}:{target}:{code}") for label,code in labels[i:i+2]] for i in range(0,len(labels),2)]+[[b("↩️ جامعه کشور","society")]])
+
+def competition(cid,can_play=True):
+ rows=[]
+ if can_play:rows.append([b("🎯 حرکت مطمئن +۲",f"compplay:{cid}:focus","primary"),b("🎲 حرکت پرریسک ۰/۳",f"compplay:{cid}:risk")])
+ rows.append([b("🔄 تازه‌سازی رقابت",f"compview:{cid}"),b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(rows)
+
+def court_cases(rows):
+ buttons=[]
+ for r in rows:
+  buttons.append([b(f"⚖️ پرونده #{r['id']}: {r['plaintiff_name']} / {r['defendant_name']}",f"caseview:{r['id']}")])
+ buttons.append([b("➕ ثبت شکایت رسمی","socpeople:case","primary"),b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(buttons)
+
+def court_vote(case_id):
+ return InlineKeyboardMarkup([[b("رأی: تخلف رخ داده",f"casevote:{case_id}:guilty","danger")],
+ [b("رأی: اثبات نشده",f"casevote:{case_id}:not_guilty","success")],[b("↩️ پرونده‌ها","soccases")]])
+
+def divorce_confirm():
+ return InlineKeyboardMarkup([[b("تأیید جدایی و شروع انتظار ۷روزه","divorceok","danger")],[b("انصراف","society","primary")]])

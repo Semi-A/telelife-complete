@@ -13,12 +13,13 @@ from packages.core import db
 from packages.core.bot.start_limit import allow_start
 from packages.core.ui import schedule_cleanup
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade, social
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
 FLOW = "world_creation"
+SOCIAL_FLOW = "social_case_flow"
 STATUS = {"forming":"در حال ساخت", "temporary":"موقت", "official":"رسمی"}
 GOV = {code: item[0] for code, item in fa.GOVERNMENT_DETAILS.items()}
 ASSET = {"IRT":"تومان", "food":"غذا", "minerals":"مواد معدنی", "oil":"نفت", "energy":"انرژی", "technology":"فناوری"}
@@ -31,6 +32,14 @@ ERRORS = {
     "country_already_exists":"این گروه از قبل کشور دارد.", "insufficient_balance":"موجودی کافی نیست.",
     "insufficient_player_balance":"موجودی کیف پولت کافی نیست.", "country_not_found":"کشوری پیدا نشد.",
     "asset_not_required":"این دارایی برای پروژه لازم نیست.", "project_exists":"از قبل پروژه فعالی وجود دارد.",
+    "same_country_required":"این تعامل فقط بین شهروندان همین کشور ممکن است.", "self_interaction":"نمی‌توانی خودت را انتخاب کنی.",
+    "relationship_exists":"این رابطه یا درخواست از قبل وجود دارد.", "marriage_unavailable":"یکی از طرفین ازدواج یا پیشنهاد فعال دارد.",
+    "request_not_found":"این درخواست دیگر فعال نیست.", "request_target_required":"فقط دریافت‌کننده درخواست می‌تواند پاسخ دهد.",
+    "help_daily_limit":"سقف سه کمک در امروز پر شده است.", "competition_exists":"بین شما یک رقابت باز وجود دارد.",
+    "competition_not_found":"این رقابت پایان یافته یا در دسترس نیست.", "not_your_turn":"الان نوبت طرف مقابل است.",
+    "report_rate_limit":"برای همین فرد در ۲۴ ساعت گذشته گزارش ثبت کرده‌ای.", "case_rate_limit":"سقف دو شکایت در هفته پر شده است.",
+    "case_party_cannot_vote":"طرفین پرونده نمی‌توانند رأی بدهند.", "already_voted":"رأی تو قبلاً ثبت شده است.",
+    "case_not_found":"پرونده برای رأی‌گیری در دسترس نیست.", "marriage_not_found":"ازدواج فعالی ثبت نشده است.",
 }
 
 async def answer(query, text=None, show_alert=False):
@@ -83,7 +92,7 @@ async def facts(chat_id):
 MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve", "offices", "tradenew", "aid"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:", "shelp:", "socprop:", "socaccept:", "socreject:", "compnew:", "compaccept:", "compreject:", "compplay:", "reportcat:", "casecat:", "casevote:", "divorceok"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -255,6 +264,41 @@ async def trade_page(update,context):
        "منابع پیشنهاددهنده هنگام ساخت قرارداد وارد Escrow می‌شوند. پذیرش، هر دو دارایی را در یک تراکنش جابه‌جا می‌کند؛ انقضا هم دارایی را خودکار پس می‌دهد.")
  await show(update,context,text,kb.trade_home(can_manage))
 
+async def society_page(update,context):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ if not row:raise ValueError("country_not_found")
+ citizenship=await country_repo.citizenship(p.id)
+ if not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
+ view=await social.dashboard(int(row["id"]),p.id)
+ marriage=view["marriage"];partner=(f"💍 همسر: <b>{escape(str(marriage['partner_name']))}</b>" if marriage else "💍 هنوز ازدواج فعالی نداری.")
+ text=(f"🏘 <b>جامعه {escape(str(row['name']))}</b>\n\n{partner}\n"
+       f"🫂 دوستی‌های فعال: <b>{fmt.number(view['friends'])}</b>\n"
+       f"⚖️ پرونده‌های باز: <b>{fmt.number(view['cases'])}</b>\n\n"
+       "کمک و رابطه فقط با رضایت انجام می‌شود. رقابت ضرر مالی ندارد و گزارش‌ها نام فرد را در گروه منتشر نمی‌کنند.")
+ await show(update,context,text,kb.society_home(view["pending"],view["competitions"],bool(marriage)))
+
+async def social_people_page(update,context,mode):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ citizenship=await country_repo.citizenship(p.id)
+ if not row or not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
+ rows=await social.citizens(int(row["id"]),p.id)
+ await show(update,context,"👥 <b>یک شهروند را انتخاب کن</b>\n\nنام‌ها فقط از شهروندان فعال همین کشور هستند.",kb.social_people(rows,mode))
+
+async def cases_page(update,context):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ if not row or not await db.fetchval("SELECT 1 FROM citizenships WHERE player_id=$1 AND country_id=$2 AND is_active",p.id,row["id"]):raise PermissionError("citizen_required")
+ rows=await social.cases(int(row["id"]))
+ await show(update,context,"⚖️ <b>دادگاه شهروندی</b>\n\nرأی‌گیری ۲۴ ساعت باز است. طرفین حق رأی ندارند و هر شهروند فقط یک رأی دارد. رأی عمومی جای گزارش فوری به مدیران تلگرام را نمی‌گیرد.",kb.court_cases(rows))
+
+async def competition_page(update,context,cid):
+ p=await player(update);row=await db.fetchrow("""SELECT c.*,a.first_name challenger_name,b.first_name opponent_name FROM social_competitions c JOIN players a ON a.id=c.challenger_id JOIN players b ON b.id=c.opponent_id WHERE c.id=$1 AND $2 IN(c.challenger_id,c.opponent_id)""",cid,p.id)
+ if not row:raise ValueError("competition_not_found")
+ turn=int(row["turn_player_id"] or 0)==p.id
+ text=(f"🏆 <b>رقابت دوستانه</b>\n\n{escape(str(row['challenger_name']))}: <b>{fmt.number(row['challenger_score'])}</b>\n"
+       f"{escape(str(row['opponent_name']))}: <b>{fmt.number(row['opponent_score'])}</b>\nدور: {fmt.number(row['round_no'])}/۳\n\n"
+       +("🎯 نوبت توست." if turn else "⏳ نوبت طرف مقابل است."))
+ await show(update,context,text,kb.competition(cid,turn and row["status"]=="active"))
+
 async def callback(update, context):
     query = update.callback_query
     if not query: return
@@ -280,6 +324,49 @@ async def callback(update, context):
                 await answer(query, "عملیات قفل است: " + access.missing_fa(), show_alert=True)
                 await access_page(update, context)
                 return
+        if action == "society": await answer(query); await society_page(update,context); return
+        if action.startswith("socpeople:"):
+            await answer(query);await social_people_page(update,context,action.split(":",1)[1]);return
+        if action.startswith("socperson:"):
+            _,mode,target=action.split(":",2);target=int(target);await answer(query)
+            if mode=="help":await show(update,context,"🤝 <b>کمک امن</b>\n\nمبلغ از کیف پول تو مستقیم به شهروند منتقل می‌شود. فقط دو کمک اول روز اعتبار می‌دهد و سقف روزانه سه کمک است.",kb.help_amount(target))
+            elif mode=="friend":
+                p=await player(update);await social.propose("friendship",p.id,target);await answer(query,"پیشنهاد دوستی ثبت شد.",show_alert=True);await society_page(update,context)
+            elif mode=="marry":
+                p=await player(update);await social.propose("marriage",p.id,target);await answer(query,"پیشنهاد ازدواج ثبت شد؛ فقط با قبول طرف مقابل فعال می‌شود.",show_alert=True);await society_page(update,context)
+            elif mode=="compete":
+                p=await player(update);await social.challenge(p.id,target);await answer(query,"دعوت رقابت دوستانه ثبت شد.",show_alert=True);await society_page(update,context)
+            elif mode in {"report","case"}:await show(update,context,"دسته‌بندی را انتخاب کن. جزئیات حساس را در گروه عمومی ننویس.",kb.social_categories(target,"reportcat" if mode=="report" else "casecat"))
+            return
+        if action=="socmarriage":await answer(query);await social_people_page(update,context,"marry");return
+        if action.startswith("shelp:"):
+            _,target,amount=action.split(":");p=await player(update);r=await social.help(p.id,int(target),int(amount),f"help:{p.id}:{query.id}")
+            await answer(query,f"کمک انجام شد؛ +{r['reputation_awarded']} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
+        if action.startswith("socaccept:") or action.startswith("socreject:"):
+            rid=int(action.split(":")[1]);p=await player(update);ok=action.startswith("socaccept:");r=await social.respond(rid,p.id,ok)
+            await answer(query,"رابطه با رضایت دوطرفه فعال شد." if ok else "درخواست رد شد.",show_alert=True);await society_page(update,context);return
+        if action.startswith("compaccept:") or action.startswith("compreject:"):
+            cid=int(action.split(":")[1]);p=await player(update);ok=action.startswith("compaccept:");await social.competition_respond(cid,p.id,ok)
+            await answer(query,"رقابت آغاز شد." if ok else "دعوت رقابت رد شد.",show_alert=True);await competition_page(update,context,cid) if ok else await society_page(update,context);return
+        if action.startswith("compview:"):await answer(query);await competition_page(update,context,int(action.split(":")[1]));return
+        if action.startswith("compplay:"):
+            _,cid,move=action.split(":");p=await player(update);r=await social.play(int(cid),p.id,move)
+            await answer(query,f"این حرکت {r['score']} امتیاز گرفت."+(" رقابت تمام شد." if r['done'] else ""),show_alert=True);await competition_page(update,context,int(cid));return
+        if action.startswith("reportcat:"):
+            _,target,category=action.split(":");p=await player(update);await social.report(p.id,int(target),category)
+            await answer(query,"گزارش محرمانه ثبت شد و برای بررسی مدیریتی محفوظ است.",show_alert=True);await society_page(update,context);return
+        if action.startswith("casecat:"):
+            _,target,category=action.split(":");p=await player(update);context.chat_data[SOCIAL_FLOW]={"owner":update.effective_user.id,"player_id":p.id,"target":int(target),"category":category,"panel":query.message.message_id}
+            await answer(query);await show(update,context,"✍️ <b>شرح پرونده را بفرست</b>\n\nبین ۱۰ تا ۵۰۰ نویسه، بدون توهین و بدون اطلاعات خصوصی. پیام پس از دریافت حذف می‌شود.",kb.back("soccases"));return
+        if action=="soccases":await answer(query);await cases_page(update,context);return
+        if action.startswith("caseview:"):
+            cid=int(action.split(":")[1]);row=await db.fetchrow("""SELECT c.*,a.first_name plaintiff_name,b.first_name defendant_name FROM citizen_cases c JOIN players a ON a.id=c.plaintiff_id JOIN players b ON b.id=c.defendant_id WHERE c.id=$1""",cid)
+            if not row:raise ValueError("case_not_found")
+            await answer(query);await show(update,context,f"⚖️ <b>پرونده #{cid}</b>\n\nشاکی: {escape(str(row['plaintiff_name']))}\nطرف شکایت: {escape(str(row['defendant_name']))}\nموضوع: {escape(str(row['summary']))}\n\nرأی تخلف: {fmt.number(row['guilty_votes'])}\nرأی اثبات‌نشده: {fmt.number(row['not_guilty_votes'])}",kb.court_vote(cid));return
+        if action.startswith("casevote:"):
+            _,cid,vote=action.split(":");p=await player(update);await social.vote(int(cid),p.id,vote);await answer(query,"رأی محرمانه و یک‌باره ثبت شد.",show_alert=True);await cases_page(update,context);return
+        if action=="divorceask":await answer(query);await show(update,context,"💔 <b>تأیید جدایی</b>\n\nازدواج پایان می‌یابد و یک دوره انتظار ۷روزه ثبت می‌شود. دارایی شخصی هیچ‌کدام تغییر نمی‌کند.",kb.divorce_confirm());return
+        if action=="divorceok":p=await player(update);await social.divorce(p.id);await answer(query,"جدایی ثبت شد.",show_alert=True);await society_page(update,context);return
         if action == "home":
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
         elif action == "guide":
@@ -525,6 +612,16 @@ async def text(update, context):
     message, chat = update.effective_message, update.effective_chat
     if not message or not chat: return
     if chat.type not in GROUPS: await home(update, context); return
+    social_flow=context.chat_data.get(SOCIAL_FLOW)
+    if social_flow and update.effective_user.id==social_flow.get("owner"):
+        value=(message.text or "").strip()
+        from packages.core.services.content_filter import inspect
+        if not inspect(value).allowed or not 10<=len(value)<=500:
+            await message.reply_text("شرح باید ۱۰ تا ۵۰۰ نویسه و بدون محتوای توهین‌آمیز باشد.");return
+        try:await message.delete()
+        except (BadRequest,Forbidden):pass
+        await social.open_case(social_flow["player_id"],social_flow["target"],social_flow["category"],value)
+        context.chat_data.pop(SOCIAL_FLOW,None);await message.reply_text("✅ پرونده ثبت شد و رأی‌گیری ۲۴ساعته آغاز شد.");await cases_page(update,context);return
     flow = context.chat_data.get(FLOW)
     if not flow or update.effective_user.id != flow.get("owner"):
         await home(update, context); return
@@ -542,7 +639,7 @@ async def text(update, context):
     if flow["step"] == "name":
         from packages.core.services.content_filter import inspect
         if not inspect(value).allowed:
-            await msg.reply_text(fa.CONTENT_REJECTED); return
+            await message.reply_text(fa.CONTENT_REJECTED); return
         if not 3 <= len(value) <= 80:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="نام باید بین ۳ تا ۸۰ نویسه باشد. دوباره نام را بفرست.", reply_markup=kb.cancel()); return
         flow["name"] = value; flow["step"] = "government"
@@ -550,7 +647,7 @@ async def text(update, context):
     if flow["step"] == "description":
         from packages.core.services.content_filter import inspect
         if not inspect(value).allowed:
-            await msg.reply_text(fa.CONTENT_REJECTED); return
+            await message.reply_text(fa.CONTENT_REJECTED); return
         if not 10 <= len(value) <= 500:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="معرفی باید بین ۱۰ تا ۵۰۰ نویسه باشد. دوباره معرفی را بفرست.", reply_markup=kb.cancel()); return
         p = await player(update)

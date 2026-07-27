@@ -11,7 +11,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance, social
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ class SchedulerService:
                     ("commerce", country_jobs.run_commerce),
                     ("country_trade_expiry", country_trade.expire_due),
                     ("country_relation_expiry", country_trade.expire_relations),
+                    ("country_social_resolution", social.resolve_due),
                     ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
                     ("telegram_actions", lambda: action_outbox.deliver_batch(life_bot, bot)),
                     ("maintenance", maintenance.minute_tick),

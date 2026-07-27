@@ -9,6 +9,7 @@ __all__ = [
     "Keyboard",
     "Style",
     "button",
+    "url_button",
     "cb",
     "schedule_cleanup",
     "timeout_for",
@@ -20,7 +21,7 @@ def __getattr__(name: str) -> Any:
         from packages.core.ui import callbacks
 
         return getattr(callbacks, name)
-    if name in {"Keyboard", "Style", "button"}:
+    if name in {"Keyboard", "Style", "button", "url_button"}:
         from packages.core.ui import buttons
 
         return getattr(buttons, name)
