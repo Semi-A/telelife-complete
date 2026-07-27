@@ -34,8 +34,14 @@ async def start(
         raise ValueError("country_not_found")
 
     president = country["president_player_id"]
-    if president is not None and int(president) != player_id:
-        raise PermissionError("president_required")
+    if president is not None:
+        if int(president) != player_id:
+            raise PermissionError("president_required")
+    elif not await db.fetchval(
+        "SELECT 1 FROM citizenships WHERE country_id=$1 AND player_id=$2 AND is_active",
+        country_id, player_id,
+    ):
+        raise PermissionError("citizen_required")
 
     requirements: dict[str, Any] = get_config().section(
         f"national_project.projects.{key}.requirements"
@@ -74,7 +80,7 @@ async def contribute(
 
         is_citizen = await conn.fetchval(
             "SELECT EXISTS(SELECT 1 FROM citizenships "
-            "WHERE player_id = $1 AND country_id = $2)",
+            "WHERE player_id = $1 AND country_id = $2 AND is_active)",
             player_id,
             project["country_id"],
         )

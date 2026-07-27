@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 
 from telegram import Message, Update
 from telegram.error import BadRequest
@@ -37,7 +38,7 @@ async def resolve(update: Update) -> Ctx | None:
 
     if not player.playable:
         text = (
-            fa.BANNED.format(reason=player.ban_reason or fa.NO_REASON)
+            fa.BANNED.format(reason=escape(player.ban_reason or fa.NO_REASON))
             if player.is_banned
             else fa.FROZEN
         )

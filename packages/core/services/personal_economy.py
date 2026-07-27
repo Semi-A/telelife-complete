@@ -16,8 +16,11 @@ async def view(player_id:int)->EconomyView:
     player=await db.fetchrow("SELECT wallet_toman,savings_toman FROM players WHERE id=$1",player_id)
     if player is None: raise ValueError("player_not_found")
     house=await db.fetchrow("SELECT * FROM player_housing WHERE player_id=$1",player_id)
+    today=clock.game_today()
+    if house and house["tenure"] == "rent" and (house["rent_paid_until"] is None or house["rent_paid_until"] < today):
+        house=None
     state=await db.fetchrow("SELECT last_living_charge_date FROM player_life_economy WHERE player_id=$1",player_id)
-    today=clock.game_today(); last=state["last_living_charge_date"] if state else None
+    last=state["last_living_charge_date"] if state else None
     days=1 if last is None else max(0,min((today-last).days,get_config().int_("phase3.living.max_catch_up_days")))
     daily=get_config().int_("phase3.living.base_daily_cost_toman")
     if house: daily+=get_config().int_(f"phase3.housing.options.{house['housing_code']}.daily_living_toman")
@@ -69,7 +72,11 @@ async def pay_living(player_id:int,key:str)->tuple[int,int]:
         state=await conn.fetchrow("SELECT * FROM player_life_economy WHERE player_id=$1 FOR UPDATE",player_id)
         last=state["last_living_charge_date"]; days=1 if last is None else max(0,min((today-last).days,cfg.int_("phase3.living.max_catch_up_days")))
         if days==0:return 0,int(player["wallet_toman"])
-        house=await conn.fetchrow("SELECT housing_code FROM player_housing WHERE player_id=$1",player_id)
+        house=await conn.fetchrow("SELECT housing_code,tenure,rent_paid_until FROM player_housing WHERE player_id=$1 FOR UPDATE",player_id)
+        # Expired rentals stop adding housing costs and are removed atomically.
+        if house and house["tenure"] == "rent" and (house["rent_paid_until"] is None or house["rent_paid_until"] < today):
+            await conn.execute("DELETE FROM player_housing WHERE player_id=$1", player_id)
+            house = None
         daily=cfg.int_("phase3.living.base_daily_cost_toman")+(cfg.int_(f"phase3.housing.options.{house['housing_code']}.daily_living_toman") if house else 0)
         amount=daily*days
         if int(player["wallet_toman"])<amount: raise ValueError("insufficient_balance")

@@ -5,14 +5,11 @@ def test_phase_3_4_migration_contract():
     for table in ("player_housing","player_life_economy","usd_market_state","usd_trades","usd_daily_limits"):
         assert table in text
 
-def test_user_bots_only_register_start_command():
-    roots=[Path("apps/telelife_bot"),Path("apps/teleworld_bot")]
-    registrations=[]
-    for root in roots:
-        for p in root.rglob("*.py"):
-            for line in p.read_text().splitlines():
-                if "add_handler(CommandHandler" in line: registrations.append(line)
-    assert registrations and all('"start"' in line for line in registrations)
+def test_user_bots_register_no_slash_commands():
+    for path in (Path("apps/telelife_bot/handlers/life.py"),Path("apps/teleworld_bot/handlers/world.py")):
+        text=path.read_text()
+        assert "CommandHandler" not in text
+        assert "MessageHandler" in text
 
 def test_market_is_bounded_and_idempotent():
     text=Path("packages/core/services/usd_market.py").read_text()
