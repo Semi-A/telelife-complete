@@ -7,6 +7,14 @@ def b(text, action, style=None):
         kwargs["style"] = style
     return InlineKeyboardButton(**kwargs)
 
+def access(ready=False):
+    if ready:
+        return InlineKeyboardMarkup([[b("✅ ورود به جهان", "access:check", "primary")],
+                                     [b("🩺 بررسی وضعیت", "health")]])
+    return InlineKeyboardMarkup([[b("🔄 بررسی دوباره دسترسی", "access:check", "primary")],
+                                 [b("📘 چرا دسترسی مدیر لازم است؟", "access:why")],
+                                 [b("🩺 وضعیت و علت قفل", "health")]])
+
 def private(username):
     return InlineKeyboardMarkup([[InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{username}?startgroup=true", style="primary")], [b("📘 راهنمای استفاده", "guide")]])
 

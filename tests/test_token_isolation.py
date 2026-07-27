@@ -4,7 +4,7 @@ from pydantic import ValidationError
 from packages.core.settings import Settings
 
 BASE = {
-    "DATABASE_URL": "postgresql://user:pass@localhost/db",
+    "DATABASE_URL": "postgresql://test_user:test_password@127.0.0.1/test_db",
     "ADMIN_USERNAME": "admin",
     "ADMIN_PASSWORD": "a-strong-password",
     "RUN_MODE": "polling",

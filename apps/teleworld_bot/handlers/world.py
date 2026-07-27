@@ -8,8 +8,9 @@ from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
-from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo
+from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
 from packages.core.services import country as countries, economy, elections, national_project
+from packages.core.services import world_access
 from packages.core.utils import fmt
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
@@ -66,12 +67,45 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
+MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart"}
+
+def is_mutating(action: str) -> bool:
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:"))
+
+async def access_page(update, context, *, force: bool = False):
+    access = await world_access.check(context.bot, update.effective_chat.id, force=force)
+    if access.ready:
+        await show(update, context, "✅ <b>دسترسی کامل است</b>\n\nبات مدیر است و اجازه حذف پیام‌های مرحله‌ای را دارد. جهان آماده استفاده است.", kb.access(True))
+    else:
+        await show(update, context, "🔒 <b>جهان در حالت محدود است</b>\n\nکمبود: " + access.missing_fa() + "\n\nاز تنظیمات گروه، بات را مدیر کنید و اجازه «حذف پیام‌ها» را فعال کنید. اجازه افزودن مدیر یا تغییر اطلاعات گروه لازم نیست.", kb.access(False))
+    return access
+
+async def health_page(update, context):
+    access = await world_access.check(context.bot, update.effective_chat.id, force=True)
+    country = await country_repo.by_chat(update.effective_chat.id)
+    panel = await ui_state_repo.world(update.effective_chat.id)
+    election = await election_repo.open_for_country(country["id"]) if country else None
+    project = await project_repo.active(country["id"]) if country else None
+    lines = [
+        f"• دسترسی بات: {'کامل' if access.ready else 'ناقص — ' + access.missing_fa()}",
+        f"• اتصال کشور: {'سالم' if country else 'هنوز کشوری ساخته نشده'}",
+        f"• صفحه اصلی: {'ثبت شده' if panel else 'با نخستین نمایش ساخته می‌شود'}",
+        f"• انتخابات فعال: {'بله' if election else 'خیر'}",
+        f"• پروژه فعال: {'بله' if project else 'خیر'}",
+        f"• قابلیت‌های اصلی: {'آماده' if access.ready else 'قفل ایمن'}",
+    ]
+    await show(update, context, "🩺 <b>بررسی وضعیت جهان</b>\n\n" + "\n".join(lines), kb.access(access.ready))
+
 async def home(update, context):
     chat = update.effective_chat
     if chat.type not in GROUPS:
         await show(update, context, fa.PRIVATE, kb.private(context.bot.username or ""))
         return
     await group_repo.get_or_create(chat.id, chat.title or "سرزمین بی‌نام")
+    access = await world_access.check(context.bot, chat.id)
+    if not access.ready:
+        await access_page(update, context)
+        return
     row, count, leader = await facts(chat.id)
     p = await player(update)
     citizenship = await country_repo.citizenship(p.id) if row else None
@@ -130,6 +164,26 @@ async def callback(update, context):
     if not query: return
     action = (query.data or "")[3:]
     try:
+        if action == "access:why":
+            await answer(query)
+            await show(update, context, "📘 <b>چرا مدیر؟</b>\n\nفقط برای حذف پیام‌های مرحله‌ای باید بات مدیر باشد. ویرایش پیام‌های خود بات نیاز به مجوز جداگانه ندارد.\n\nمسیر: اطلاعات گروه ← ویرایش ← مدیران ← افزودن مدیر ← فعال‌کردن «حذف پیام‌ها».\n\nتلگرام پیوند قابل‌اتکایی برای بازکردن مستقیم صفحه ارتقای مدیر ارائه نمی‌کند؛ بنابراین دکمه جعلی نمایش داده نمی‌شود.", kb.access(False))
+            return
+        if action == "access:check":
+            await answer(query)
+            access = await access_page(update, context, force=True)
+            if access.ready:
+                await home(update, context)
+            return
+        if action == "health":
+            await answer(query)
+            await health_page(update, context)
+            return
+        if update.effective_chat.type in GROUPS and is_mutating(action):
+            access = await world_access.check(context.bot, update.effective_chat.id)
+            if not access.ready:
+                await answer(query, "عملیات قفل است: " + access.missing_fa(), show_alert=True)
+                await access_page(update, context)
+                return
         if action == "home":
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
         elif action == "guide":
@@ -159,7 +213,7 @@ async def callback(update, context):
             if not row: raise ValueError("country_not_found")
             citizenship = await country_repo.citizenship(p.id)
             if not citizenship or not citizenship["is_active"] or int(citizenship["country_id"]) != int(row["id"]): raise PermissionError("citizen_required")
-            await economy.transfer(p.id, row["id"], "IRT", int(action.split(":", 1)[1]), reason="donation", idempotency_key=f"world:{p.id}:{uuid4().hex}")
+            await economy.transfer(p.id, row["id"], "IRT", int(action.split(":", 1)[1]), reason="donation", idempotency_key=f"world-donate:{p.id}:{query.id}")
             await answer(query, "کمک مالی ثبت شد.", show_alert=True); await country_page(update, context)
         elif action == "estart":
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
@@ -197,7 +251,7 @@ async def callback(update, context):
             project = await project_repo.active(row["id"])
             if not project: await answer(query, "پروژه فعالی وجود ندارد.", show_alert=True); return
             _, asset, amount = action.split(":")
-            accepted, done = await national_project.contribute(project["id"], p.id, asset, int(amount), f"world-project:{p.id}:{uuid4().hex}")
+            accepted, done = await national_project.contribute(project["id"], p.id, asset, int(amount), f"world-project:{p.id}:{query.id}")
             await answer(query, (f"{fmt.number(accepted)} واحد ثبت شد." if accepted else "نیاز این بخش قبلاً تکمیل شده است.") + (" پروژه تکمیل شد!" if done else ""), show_alert=True); await project_page(update, context) if not done else await home(update, context)
         elif action == "polls": await answer(query, "هنوز نظرسنجی فعالی نیست.", show_alert=True)
         else: await answer(query, "این دکمه قدیمی شده است؛ صفحه را تازه‌سازی کن.", show_alert=True)
@@ -212,8 +266,16 @@ async def text(update, context):
     if not flow or update.effective_user.id != flow.get("owner"):
         await home(update, context); return
     value = (message.text or "").strip()
-    try: await message.delete()
-    except (BadRequest, Forbidden): pass
+    access = await world_access.check(context.bot, chat.id)
+    if not access.ready:
+        context.chat_data.pop(FLOW, None)
+        await access_page(update, context)
+        return
+    try:
+        await message.delete()
+    except (BadRequest, Forbidden):
+        if await world_access_repo.claim_warning(chat.id, "delete-failed"):
+            await message.reply_text("پیام مرحله‌ای حذف نشد؛ فرایند ادامه دارد و دسترسی در بررسی بعدی دوباره کنترل می‌شود.")
     if flow["step"] == "name":
         if not 3 <= len(value) <= 80:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="نام باید بین ۳ تا ۸۰ نویسه باشد. دوباره نام را بفرست.", reply_markup=kb.cancel()); return
