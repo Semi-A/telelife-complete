@@ -1,22 +1,24 @@
 """کنترل‌گر یک‌پیامی، فارسی و دکمه‌محور جهان گروهی."""
 from __future__ import annotations
 from uuid import uuid4
+from datetime import UTC,datetime
 from html import escape
 from telegram.constants import ChatMemberStatus, ChatType
 from telegram.error import BadRequest, Forbidden
-from telegram.ext import CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import CallbackQueryHandler, MessageHandler, PreCheckoutQueryHandler, filters
+from telegram import LabeledPrice
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
 FLOW = "world_creation"
 STATUS = {"forming":"در حال ساخت", "temporary":"موقت", "official":"رسمی"}
-GOV = {"republic":"جمهوری", "monarchy":"پادشاهی", "federal":"فدرال", "council":"شورایی"}
+GOV = {code: item[0] for code, item in fa.GOVERNMENT_DETAILS.items()}
 ASSET = {"IRT":"تومان", "food":"غذا", "minerals":"مواد معدنی", "oil":"نفت", "energy":"انرژی", "technology":"فناوری"}
 ERRORS = {
     "citizen_required":"ابتدا شهروند این کشور شو.", "president_required":"فقط رهبر کشور می‌تواند این کار را انجام دهد.",
@@ -67,10 +69,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -133,8 +135,8 @@ async def economy_page(update, context):
 async def citizens_page(update, context):
     row, count, _ = await facts(update.effective_chat.id)
     if not row: raise ValueError("country_not_found")
-    ids = await country_repo.citizens(row["id"])
-    names = [f"• {escape(str(await db.fetchval('SELECT first_name FROM players WHERE id=$1', pid) or 'شهروند'))}" for pid in ids[:25]]
+    people=await db.fetch("SELECT p.first_name,cs.migrant_until FROM citizenships cs JOIN players p ON p.id=cs.player_id WHERE cs.country_id=$1 AND cs.is_active ORDER BY cs.joined_at LIMIT 25",row["id"])
+    names=[f"• {escape(str(x['first_name']))}"+(" · 🧳 مهاجر" if x["migrant_until"] and x["migrant_until"]>datetime.now(UTC) else "") for x in people]
     await show(update, context, fa.CITIZENS.format(count=fmt.number(count), members="\n".join(names) or "هنوز شهروندی ثبت نشده است."), kb.back("country"))
 
 async def politics_page(update, context):
@@ -142,8 +144,10 @@ async def politics_page(update, context):
     if not row: raise ValueError("country_not_found")
     election = await election_repo.open_for_country(row["id"])
     status = str(election["status"]) if election else None
-    state = "انتخابات بازی وجود ندارد." if not election else "مرحله نام‌نویسی نامزدها باز است." if status == "nominations" else "رأی‌گیری باز است."
-    await show(update, context, fa.POLITICS.format(state=state), kb.politics(status))
+    from packages.core.services.governance import rules_for
+    rules=rules_for(str(row["government_type"]))
+    state = "در این نظام، رهبر با انتخابات عمومی تعیین نمی‌شود." if not rules.public_elections else "انتخابات فعالی وجود ندارد." if not election else "مرحله نام‌نویسی نامزدها باز است." if status == "nominations" else "رأی‌گیری باز است."
+    await show(update, context, fa.POLITICS.format(state=state), kb.politics(status,allowed=rules.public_elections))
 
 async def project_page(update, context):
     row, _, _ = await facts(update.effective_chat.id)
@@ -203,11 +207,53 @@ async def callback(update, context):
             flow = context.chat_data.get(FLOW)
             if not flow or flow.get("owner") != query.from_user.id or flow.get("step") != "government":
                 await answer(query, "فرایند ساخت منقضی شده است؛ دوباره آغاز کن.", show_alert=True); return
-            await answer(query, ); flow["government"] = action.split(":", 1)[1]; flow["step"] = "description"; await show(update, context, fa.WIZARD_DESC, kb.cancel())
+            code=action.split(":",1)[1]; detail=fa.GOVERNMENT_DETAILS.get(code)
+            if not detail: await answer(query,"نوع حکومت معتبر نیست.",show_alert=True);return
+            await answer(query); await show(update,context,fa.GOV_CONFIRM.format(title=detail[0],description=detail[1]),kb.government_confirm(code))
+        elif action == "govback":
+            flow=context.chat_data.get(FLOW)
+            if not flow or flow.get("owner") != query.from_user.id: await answer(query,"فرایند ساخت منقضی شده است.",show_alert=True);return
+            await answer(query);flow["step"]="government";await show(update,context,fa.WIZARD_GOV,kb.governments())
+        elif action.startswith("govok:"):
+            flow=context.chat_data.get(FLOW);code=action.split(":",1)[1]
+            if not flow or flow.get("owner") != query.from_user.id or flow.get("step") != "government" or code not in fa.GOVERNMENT_DETAILS:
+                await answer(query,"فرایند ساخت منقضی شده است؛ دوباره آغاز کن.",show_alert=True);return
+            await answer(query);flow["government"]=code;flow["step"]="description";await show(update,context,fa.WIZARD_DESC,kb.cancel())
+        elif action == "migration":
+            p=await player(update);current=await country_repo.citizenship(p.id)
+            if not current:await answer(query,"ابتدا شهروند یک کشور شو.",show_alert=True);return
+            rows=await db.fetch("SELECT id,name FROM countries ORDER BY name LIMIT 100");await answer(query)
+            await show(update,context,"✈️ <b>تغییر کشور</b>\n\nعوارض هنگام تکمیل مهاجرت: ۵٪ دارایی شخصی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان؛ مبلغ به خزانه کشور مبدأ می‌رود.\n\nمحدودیت تغییر: هر ۳۰ روز. اگر مقصد رهبر داشته باشد، درخواست ۷۲ ساعت برای تأیید اعتبار دارد. پس از مهاجرت، نشان مهاجر ۳۰ روز و محدودیت سیاسی ۱۴ روز فعال است.",kb.migration_countries(rows,current["country_id"]))
+        elif action.startswith("migrate:"):
+            p=await player(update);dest=int(action.split(":")[1]);qte=await migration.quote(p.id,dest)
+            if not qte:await answer(query,"مقصد معتبر نیست.",show_alert=True);return
+            fee=migration.exit_fee(int(qte["wallet_toman"])+int(qte["savings_toman"]));row=await migration.request(p.id,dest)
+            await answer(query,(f"مهاجرت انجام شد و {fmt.toman(fee)} به خزانه کشور مبدأ رفت." if row["status"]=='approved' else f"درخواست ثبت شد؛ رهبر مقصد تا ۷۲ ساعت فرصت تأیید دارد. عوارض {fmt.toman(fee)} فقط هنگام تأیید کسر می‌شود."),show_alert=True);await home(update,context)
+        elif action == "migration_review":
+            p=await player(update);row=await country_repo.by_chat(update.effective_chat.id)
+            if not row or row["president_player_id"]!=p.id:await answer(query,"فقط رهبر مقصد دسترسی دارد.",show_alert=True);return
+            rows=await migration.pending_for_country(row["id"]);await answer(query);await show(update,context,"📥 <b>درخواست‌های مهاجرت</b>\n\n"+("درخواستی وجود ندارد." if not rows else "پذیرش، عوارض را به کشور مبدأ منتقل و مهاجر را وارد کشور می‌کند."),kb.migration_review(rows))
+        elif action.startswith("migaccept:"):
+            p=await player(update);await migration.approve(int(action.split(":")[1]),p.id);await answer(query,"مهاجر پذیرفته شد.",show_alert=True);await home(update,context)
+        elif action.startswith("migreject:"):
+            p=await player(update);ok=await migration.reject(int(action.split(":")[1]),p.id);await answer(query,"درخواست رد شد." if ok else "درخواست قابل رد نیست.",show_alert=True);await home(update,context)
+        elif action == "subscription":
+            await answer(query); view=await commerce.subscription_view(update.effective_chat.id)
+            if not view: raise ValueError("group_not_found")
+            if view["ad_free_until"] and view["ad_free_until"]>datetime.now(UTC):
+                await show(update,context,f"🛡 <b>اشتراک بدون تبلیغ فعال است</b>\n\nاعتبار تا: <b>{view['ad_free_until'].strftime('%Y-%m-%d %H:%M UTC')}</b>\n\nدر این مدت تبلیغ عمومی وارد گروه نمی‌شود.",kb.back());return
+            rnd=await commerce.ensure_round(update.effective_chat.id);target=int(rnd["target_stars"]);remaining=target-int(rnd["collected_stars"])
+            treasury=int(view["treasury_toman"] or 0);citizens=int(view["citizens"] or 0);price=commerce.treasury_price(treasury,citizens)
+            await show(update,context,f"🛡 <b>اشتراک ۳۰روزه بدون تبلیغ</b>\n\nجمعیت: <b>{citizens}</b> شهروند · قیمت: <b>{target} ⭐</b>\nپیشرفت مشارکت: <b>{rnd['collected_stars']} از {target} ⭐</b>\nهر عضو می‌تواند ۱، ۲، ۵، ۱۰، ۲۵ یا ۵۰ استار سهم بگذارد. با تکمیل قیمت جمعیت‌محور، اشتراک خودکار فعال می‌شود.\n\nخرید از خزانه: <b>{fmt.toman(price)}</b> (۲۰٪ خزانه + یک میلیون برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد).",kb.subscription(int(rnd["id"]),remaining))
+        elif action.startswith("substar:"):
+            _,rid,amount=action.split(":");payload,stars=await commerce.subscription_invoice(int(rid),query.from_user.id,int(amount));await answer(query)
+            await context.bot.send_invoice(chat_id=update.effective_chat.id,title="مشارکت اشتراک بدون تبلیغ",description=f"{stars} استار برای اشتراک ۳۰روزه گروه",payload=payload,currency="XTR",prices=[LabeledPrice("سهم اشتراک",stars)],provider_token="")
+        elif action == "subtreasury":
+            p=await player(update);price=await commerce.buy_with_treasury(update.effective_chat.id,p.id);await answer(query,f"اشتراک با {fmt.toman(price)} از خزانه فعال شد.",show_alert=True);await home(update,context)
         elif action == "join":
             p = await player(update); joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "شهروند شدی." if joined else "از قبل شهروندی.", show_alert=True); await home(update, context)
         elif action == "leave":
-            p = await player(update); left = await countries.leave_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "از کشور خارج شدی." if left else "شهروند این کشور نبودی.", show_alert=True); await home(update, context)
+            await answer(query,"برای جلوگیری از دورزدن عوارض و محدودیت زمانی، خروج مستقیم بسته است؛ از بخش «مهاجرت» کشور مقصد را انتخاب کن.",show_alert=True)
         elif action.startswith("donate:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
@@ -277,11 +323,17 @@ async def text(update, context):
         if await world_access_repo.claim_warning(chat.id, "delete-failed"):
             await message.reply_text("پیام مرحله‌ای حذف نشد؛ فرایند ادامه دارد و دسترسی در بررسی بعدی دوباره کنترل می‌شود.")
     if flow["step"] == "name":
+        from packages.core.services.content_filter import inspect
+        if not inspect(value).allowed:
+            await msg.reply_text(fa.CONTENT_REJECTED); return
         if not 3 <= len(value) <= 80:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="نام باید بین ۳ تا ۸۰ نویسه باشد. دوباره نام را بفرست.", reply_markup=kb.cancel()); return
         flow["name"] = value; flow["step"] = "government"
         await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text=fa.WIZARD_GOV, reply_markup=kb.governments()); return
     if flow["step"] == "description":
+        from packages.core.services.content_filter import inspect
+        if not inspect(value).allowed:
+            await msg.reply_text(fa.CONTENT_REJECTED); return
         if not 10 <= len(value) <= 500:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="معرفی باید بین ۱۰ تا ۵۰۰ نویسه باشد. دوباره معرفی را بفرست.", reply_markup=kb.cancel()); return
         p = await player(update)
@@ -292,6 +344,15 @@ async def text(update, context):
             await show(update, context, f"ساخت کشور انجام نشد: {ERRORS.get(str(exc), 'اطلاعات معتبر نبود.')}\n\nاز صفحه اصلی دوباره تلاش کن.", kb.back()); return
         context.chat_data.pop(FLOW, None); await home(update, context)
 
+async def precheckout(update,context):
+ q=update.pre_checkout_query;ok=await commerce.precheckout(q.invoice_payload,q.from_user.id,q.total_amount);await q.answer(ok=ok,error_message=None if ok else "صورتحساب نامعتبر یا منقضی شده است.")
+async def successful_payment(update,context):
+ payment=update.effective_message.successful_payment
+ if not payment:return
+ purpose=await commerce.settle(payment.invoice_payload,update.effective_user.id,payment.total_amount,payment.telegram_payment_charge_id,payment.provider_payment_charge_id or None)
+ await update.effective_message.reply_text("✅ سهم شما ثبت شد. با تکمیل هدف جمعیت‌محور، اشتراک ۳۰روزه گروه فعال می‌شود." if purpose=="subscription" else "✅ پرداخت ثبت شد.")
 def register(app):
     app.add_handler(CallbackQueryHandler(callback, pattern=r"^tw:"))
+    app.add_handler(PreCheckoutQueryHandler(precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT, text))

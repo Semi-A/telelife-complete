@@ -22,6 +22,14 @@ government_types:
   - dictatorship
   - federal
   - council
+  - constitutional_monarchy
+  - parliamentary
+  - presidential
+  - semi_presidential
+  - theocracy
+  - military_junta
+  - oligarchy
+  - direct_democracy
 
 citizenship:
   explicit_join_required: true

@@ -7,6 +7,8 @@
     <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
+    <button class="nav" data-view="ads"><span>✦</span><em>تبلیغات</em></button>
+    <button class="nav" data-view="requests"><span>▣</span><em>درخواست‌ها</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -45,6 +47,18 @@
   <div class="section-lead"><div><p class="eyebrow">انتشار سراسری</p><h2>اتاق خبر</h2><p>پیام را مستقیم وارد صف مطمئن Outbox کنید.</p></div></div>
   <div class="split news-layout"><article class="panel composer"><label>متن اطلاعیه<textarea id="news-text" maxlength="4000" placeholder="پیام رسمی شبکه را بنویسید…"></textarea></label><label>Chat ID مقصد <small>خالی = GLOBAL_NEWS_CHAT_ID</small><input id="news-destination" inputmode="numeric" placeholder="-1001234567890"></label><button id="send-news" class="primary">قرار دادن در صف انتشار</button></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">تاریخچه</p><h2>صف پیام‌ها</h2></div></div><div id="news-list" class="news-list"></div></article></div>
 </section>
+<section class="view" id="view-ads">
+  <div class="section-lead"><div><p class="eyebrow">کمپین و انتشار</p><h2>مرکز تبلیغات</h2><p>تبلیغ را برای گروه مشخص، فوری یا زمان‌بندی‌شده وارد صف امن انتشار کنید.</p></div></div>
+  <div class="split news-layout"><article class="panel composer">
+    <label>عنوان کمپین<input id="ad-title" maxlength="120" placeholder="مثلاً معرفی فصل تازه"></label>
+    <label>متن تبلیغ<textarea id="ad-text" maxlength="4000" placeholder="متن نهایی تبلیغ…"></textarea></label>
+    <label>Chat ID گروه مقصد<input id="ad-destination" inputmode="numeric" placeholder="-1001234567890"></label>
+    <label>زمان انتشار <small>اختیاری؛ خالی یعنی پیش‌نویس</small><input id="ad-scheduled" type="datetime-local"></label>
+    <label>تکرار هر چند دقیقه <small>اختیاری، حداقل ۱۵</small><input id="ad-repeat" type="number" min="15"></label>
+    <button id="save-ad" class="primary">ذخیره کمپین</button>
+  </article><article class="panel"><div class="panel-head"><div><p class="eyebrow">کمپین‌ها</p><h2>صف تبلیغات</h2></div></div><div id="ad-list" class="news-list"></div></article></div>
+</section>
+<section class="view" id="view-requests"><div class="section-lead"><div><p class="eyebrow">بازبینی پیش از پرداخت</p><h2>درخواست‌های تبلیغ</h2><p>جزئیات، تصویر و لینک را بررسی و ویرایش کن؛ فقط پس از تأیید، مهلت پرداخت ۴۸ساعته آغاز می‌شود.</p></div></div><div id="ad-requests" class="request-grid"></div></section>
 </main>
 <dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
 {% endblock %}

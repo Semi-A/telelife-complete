@@ -1,0 +1,20 @@
+subscription:
+  duration_days: 30
+  stars_tiers: {20: 10, 100: 15, 500: 30, 1000: 50, overflow: 75}
+  contribution_options: [1, 2, 5, 10, 25, 50]
+  round_expiry_days: 7
+  treasury_percent: 20
+  treasury_min_toman: 20000000
+  treasury_max_toman: 1000000000
+  treasury_per_citizen_toman: 1000000
+advertising:
+  payment_expiry_hours: 48
+  max_ads_per_group_per_day: 2
+  active_group_days: 14
+  packages:
+    economy: {title: "اقتصادی", base_stars: 25, impressions: 1, hours: 1, priority: 0}
+    standard: {title: "استاندارد", base_stars: 60, impressions: 3, hours: 24, priority: 1}
+    campaign: {title: "کمپین", base_stars: 120, impressions: 6, hours: 72, priority: 2}
+    featured: {title: "ویژه", base_stars: 200, impressions: 8, hours: 168, priority: 3}
+  channel_multipliers_percent: {life: 100, world: 150, both: 220}
+  life_active_days: 30

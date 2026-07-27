@@ -5,6 +5,7 @@ import asyncpg
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, group_repo, ledger_repo
+from packages.core.services.content_filter import require_clean
 
 
 def _resources(chat_id: int, name: str) -> dict[str, int]:
@@ -54,6 +55,8 @@ async def create_country(*, chat_id: int, chat_title: str, player_id: int,
                          name: str, government: str, description: str) -> asyncpg.Record:
     cfg=get_config(); name=name.strip(); description=description.strip()
     if government not in set(cfg.get("country.government_types")): raise ValueError("invalid_government")
+    require_clean(name, "name")
+    require_clean(description, "description")
     rules=cfg.section("country.validation")
     if not int(rules["name_min_length"]) <= len(name) <= int(rules["name_max_length"]): raise ValueError("invalid_name")
     if not int(rules["description_min_length"]) <= len(description) <= int(rules["description_max_length"]): raise ValueError("invalid_description")
@@ -84,7 +87,7 @@ async def join_country(*, chat_id: int, player_id: int) -> bool:
         current=await conn.fetchrow("SELECT country_id,is_active FROM citizenships WHERE player_id=$1 FOR UPDATE",player_id)
         if current and current["is_active"]:
             if int(current["country_id"]) == int(country["id"]): return False
-            raise ValueError("already_citizen_elsewhere")
+            raise ValueError("migration_required")
         if current:
             await conn.execute("UPDATE citizenships SET country_id=$2,is_active=TRUE,left_at=NULL,joined_at=now() WHERE player_id=$1",player_id,country["id"])
             joined=True

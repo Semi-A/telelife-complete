@@ -39,12 +39,14 @@ class SchedulerService:
     def healthy(self) -> bool:
         return self._running
 
-    async def minute_loop(self, stop: asyncio.Event, bot: Bot) -> None:
+    async def minute_loop(self, stop: asyncio.Event, bot: Bot, life_bot: Bot) -> None:
         while not stop.is_set():
             try:
                 await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
                 await country_jobs.resolve_due()
-                await country_jobs.publish_news(bot)
+                await country_jobs.queue_due_ads()
+                await country_jobs.run_commerce()
+                await country_jobs.publish_news(bot, life_bot)
                 await usd_market.stabilize()
                 await admin_repo.capture_market_snapshot()
                 self._heartbeat = asyncio.get_running_loop().time()
@@ -70,8 +72,8 @@ class SchedulerService:
     async def run(self, stop: asyncio.Event) -> None:
         self._running = True
         try:
-            async with Bot(self.settings.teleworld_bot_token) as bot:
-                minute = asyncio.create_task(self.minute_loop(stop, bot), name="scheduler:minute")
+            async with Bot(self.settings.teleworld_bot_token) as bot, Bot(self.settings.telelife_bot_token) as life_bot:
+                minute = asyncio.create_task(self.minute_loop(stop, bot, life_bot), name="scheduler:minute")
                 daily = asyncio.create_task(self.daily_loop(stop), name="scheduler:daily")
                 stop_waiter = asyncio.create_task(stop.wait(), name="scheduler:stop")
                 done, _ = await asyncio.wait(

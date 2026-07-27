@@ -109,3 +109,26 @@ async def enqueue_news(actor: str, text: str, destination: int,
             return False
         return await outbox_repo.enqueue(conn, f"admin-news:{request_id}",
                                          "admin_announcement", {"text": text}, destination)
+
+async def create_ad(actor: str, title: str, text: str, destination: int,
+                    scheduled_at, repeat_minutes: int | None, request_id: str) -> int:
+    from packages.core.services.content_filter import require_clean
+    require_clean(title, "name"); require_clean(text, "description")
+    status = "scheduled" if scheduled_at else "draft"
+    async with db.transaction() as conn:
+        if not await admin_repo.audit(conn, actor, "create_ad", request_id,
+                                      {"title": title, "destination": destination}): return 0
+        return int(await conn.fetchval("""INSERT INTO ad_campaigns
+          (title,body,destination_chat_id,status,scheduled_at,repeat_minutes,created_by)
+          VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id""",
+          title,text,destination,status,scheduled_at,repeat_minutes,actor))
+
+async def queue_ad(actor: str, ad_id: int, request_id: str) -> bool:
+    async with db.transaction() as conn:
+        row=await conn.fetchrow("SELECT * FROM ad_campaigns WHERE id=$1 FOR UPDATE",ad_id)
+        if row is None: raise ValueError("ad_not_found")
+        if not await admin_repo.audit(conn,actor,"queue_ad",request_id,{"ad_id":ad_id}): return False
+        queued=await outbox_repo.enqueue(conn,f"ad:{ad_id}:{request_id}","advertisement",
+                                         {"text":row["body"],"ad_id":ad_id},row["destination_chat_id"])
+        if queued: await conn.execute("UPDATE ad_campaigns SET status='queued',last_queued_at=now(),updated_at=now() WHERE id=$1",ad_id)
+        return queued

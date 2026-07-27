@@ -20,6 +20,7 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
     k.row(B("🪪 شخصیت من", "profile", owner), B("🗺 مسیر پیشرفت", "unlocks", owner))
+    k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
 def journey(owner, step):

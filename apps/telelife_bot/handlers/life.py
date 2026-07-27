@@ -36,6 +36,10 @@ async def journey(ctx,c):
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
  text=fa.PROFILE.format(name=escape(p.first_name),level=fmt.number(p.level),rank=fmt.number(rank),bar=fmt.progress_bar(cur,need),xp=fmt.number(cur),need=fmt.number(need),wallet=fmt.toman(p.wallet_toman),savings=fmt.toman(p.savings_toman),usd=fmt.usd(p.usd_cents),happy=fmt.number(p.happiness),rep=fmt.number(p.reputation),streak=fmt.number(streak))
+ from packages.core import db
+ mig=await db.fetchrow("SELECT migrant_until,political_hold_until FROM citizenships WHERE player_id=$1 AND is_active",p.id)
+ if mig and mig["migrant_until"] and mig["migrant_until"]>datetime.now(UTC):text+="\n\n🧳 <b>وضعیت: مهاجر</b>"
+ if mig and mig["political_hold_until"] and mig["political_hold_until"]>datetime.now(UTC):text+="\nمحدودیت فعالیت سیاسی تا: "+mig["political_hold_until"].strftime('%Y-%m-%d')
  await panel(ctx,c,text,kb.back(ctx.telegram_id))
 async def daily_page(ctx,c):
  streak,best,last=await daily.state(ctx.player.id);ready=daily.claimable(last)
@@ -67,6 +71,7 @@ async def start(update,c):
  ctx=await resolve(update)
  if ctx:await home(ctx,c)
 async def text_start(update,c):
+ if c.user_data.get('ad_request_flow'):return
  if update.effective_chat and update.effective_chat.type=='private':
   ctx=await resolve(update)
   if ctx:await home(ctx,c)
@@ -76,6 +81,9 @@ async def callback(update,c):
  ctx=await resolve(update)
  if not ctx:await answer(q,);return
  a=parsed.action
+ if a=='advertise':
+  from apps.telelife_bot.handlers.advertising import begin
+  await begin(update,c);return
  try:
   if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings'}:
    await answer(q,);fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page}[a];await fn(ctx,c);return

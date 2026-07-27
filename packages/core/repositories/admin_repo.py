@@ -105,3 +105,9 @@ async def capture_market_snapshot() -> int:
         ON CONFLICT DO NOTHING
     """)
     return int(result.rsplit(" ", 1)[-1])
+
+async def ads(limit: int = 100) -> list[asyncpg.Record]:
+    return await db.fetch("SELECT * FROM ad_campaigns ORDER BY created_at DESC LIMIT $1", limit)
+
+async def ad_owner(ad_id:int):
+ return await db.fetchrow("SELECT p.telegram_id,p.first_name FROM ad_requests a JOIN players p ON p.id=a.requester_player_id WHERE a.id=$1",ad_id)

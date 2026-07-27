@@ -6,6 +6,8 @@ from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, election_repo
 from packages.core.services import country as country_service
+from packages.core.services import migration
+from packages.core.services.governance import rules_for
 from packages.core.utils import clock
 
 async def _active_citizen(country_id:int, player_id:int)->bool:
@@ -16,7 +18,10 @@ async def start(country_id:int, player_id:int)->asyncpg.Record:
     if country is None: raise ValueError("country_not_found")
     if not await _active_citizen(country_id,player_id): raise PermissionError("citizen_required")
     president=country["president_player_id"]
-    if president is not None and int(president)!=player_id: raise PermissionError("president_required")
+    rules=rules_for(str(country["government_type"]))
+    if not rules.public_elections: raise PermissionError("elections_forbidden_by_government")
+    if rules.election_starter=="leader" and (president is None or int(president)!=player_id): raise PermissionError("president_required")
+    if rules.election_starter=="citizen" and president is not None and str(country["government_type"]) not in {"republic","presidential","parliamentary","semi_presidential","federal","direct_democracy","constitutional_monarchy","council"} and int(president)!=player_id: raise PermissionError("president_required")
     cfg=get_config(); now=clock.utcnow()
     nom=now+timedelta(hours=cfg.int_("elections.election.nomination_duration_hours"))
     vote=nom+timedelta(hours=cfg.int_("elections.election.voting_duration_hours"))
@@ -30,12 +35,14 @@ async def start(country_id:int, player_id:int)->asyncpg.Record:
         raise ValueError("election_already_open") from exc
 
 async def nominate(election_id:int, player_id:int, chat_id:int|None, message_id:int|None)->bool:
+    if await migration.political_hold(player_id): raise PermissionError("migrant_political_hold")
     row=await db.fetchrow("SELECT country_id FROM elections WHERE id=$1",election_id)
     if row is None: raise ValueError("election_not_found")
     if not await _active_citizen(int(row["country_id"]),player_id): raise PermissionError("citizen_required")
     return await election_repo.nominate(election_id,player_id,chat_id,message_id)
 
 async def vote(election_id:int, voter:int, candidate:int)->bool:
+    if await migration.political_hold(voter): raise PermissionError("migrant_political_hold")
     row=await db.fetchrow("SELECT country_id FROM elections WHERE id=$1",election_id)
     if row is None: raise ValueError("election_not_found")
     cid=int(row["country_id"])
@@ -66,3 +73,14 @@ async def resolve_due()->dict[str,int]:
             await election_repo.resolve_poll(conn,row["id"]);stats["polls"]+=1
     for cid in touched: await country_service.refresh_status(cid)
     return stats
+
+async def override_result(election_id:int,leader_id:int,winner_id:int)->bool:
+    row=await db.fetchrow("SELECT e.country_id,c.government_type,c.president_player_id,e.status FROM elections e JOIN countries c ON c.id=e.country_id WHERE e.id=$1",election_id)
+    if row is None:raise ValueError("election_not_found")
+    rules=rules_for(str(row["government_type"]))
+    if not rules.leader_may_override or row["president_player_id"] is None or int(row["president_player_id"])!=leader_id:raise PermissionError("override_forbidden")
+    if not await _active_citizen(int(row["country_id"]),winner_id):raise PermissionError("citizen_required")
+    async with db.transaction() as conn:
+        await conn.execute("UPDATE elections SET winner_player_id=$2,status='completed',resolved_at=now() WHERE id=$1",election_id,winner_id)
+        await conn.execute("UPDATE countries SET president_player_id=$2 WHERE id=$1",row["country_id"],winner_id)
+    return True

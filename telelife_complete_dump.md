@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 174
+تعداد کل فایل‌ها: 189
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -56,6 +56,7 @@ telelife_complete/
 │   ├── teleworld_bot/
 │   │   ├── handlers/
 │   │   │   ├── __init__.py
+│   │   │   ├── access.py
 │   │   │   ├── country.py
 │   │   │   ├── onboarding.py
 │   │   │   ├── politics.py
@@ -72,6 +73,7 @@ telelife_complete/
 ├── docs/
 │   ├── CONVENTIONS.md
 │   ├── DEPLOYMENT.md
+│   ├── DEPLOYMENT_FA.md
 │   ├── FOR_AI_AGENTS.md
 │   ├── PHASE_1.md
 │   ├── PHASE_2.md
@@ -85,7 +87,9 @@ telelife_complete/
 │   ├── 0004_admin_command_center.sql
 │   ├── 0005_life_world_hardening.sql
 │   ├── 0006_phase3_phase4_complete.sql
-│   └── 0007_unified_ui_onboarding.sql
+│   ├── 0007_unified_ui_onboarding.sql
+│   ├── 0008_world_access_lifecycle.sql
+│   └── 0009_ads_governance_moderation.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -132,16 +136,19 @@ telelife_complete/
 │   │   │   ├── production_repo.py
 │   │   │   ├── progression_repo.py
 │   │   │   ├── project_repo.py
-│   │   │   └── ui_state_repo.py
+│   │   │   ├── ui_state_repo.py
+│   │   │   └── world_access_repo.py
 │   │   ├── services/
 │   │   │   ├── __init__.py
 │   │   │   ├── admin.py
+│   │   │   ├── content_filter.py
 │   │   │   ├── country.py
 │   │   │   ├── country_economy.py
 │   │   │   ├── country_missions.py
 │   │   │   ├── daily.py
 │   │   │   ├── economy.py
 │   │   │   ├── elections.py
+│   │   │   ├── governance.py
 │   │   │   ├── missions.py
 │   │   │   ├── national_project.py
 │   │   │   ├── news.py
@@ -150,6 +157,7 @@ telelife_complete/
 │   │   │   ├── progression.py
 │   │   │   ├── unlocks.py
 │   │   │   ├── usd_market.py
+│   │   │   ├── world_access.py
 │   │   │   └── xp.py
 │   │   ├── ui/
 │   │   │   ├── __init__.py
@@ -173,9 +181,11 @@ telelife_complete/
 │   ├── test_callbacks.py
 │   ├── test_clock.py
 │   ├── test_config.py
+│   ├── test_content_filter.py
 │   ├── test_daily.py
 │   ├── test_fmt.py
 │   ├── test_glass_buttons.py
+│   ├── test_governance.py
 │   ├── test_hardening_contracts.py
 │   ├── test_interval_bindings.py
 │   ├── test_message_driven_bots.py
@@ -194,12 +204,14 @@ telelife_complete/
 │   ├── test_teleworld_start.py
 │   ├── test_token_isolation.py
 │   ├── test_unlocks.py
+│   ├── test_world_access_contracts.py
 │   └── test_xp.py
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
 ├── AUDIT_STATUS.md
 ├── CHANGELOG_FA.md
+├── CHANGELOG_FA_2026-07-27.md
 ├── DELIVERY.md
 ├── Dockerfile
 ├── dump.py
@@ -207,13 +219,16 @@ telelife_complete/
 ├── pyproject.toml
 ├── README.md
 ├── README_FA.md
+├── RELEASE_2026_07_27_FA.md
 ├── RELEASE_AUDIT_FA.md
+├── RELEASE_AUDIT_FA_2026-07-27.md
 ├── RELEASE_NOTES_FA.md
 ├── render.yaml
 ├── requirements.txt
 ├── run.py
 ├── telelife_complete_dump.md
 ├── TeleLife_Master_Plan.md
+├── TEST_RESULTS_FA_2026-07-27.md
 └── UI_REDESIGN_FA.md
 ```
 
@@ -372,6 +387,7 @@ async def dashboard(request: Request, _: str = Depends(require_admin)) -> HTMLRe
 from __future__ import annotations
 
 from typing import Annotated, Literal
+from datetime import datetime
 from uuid import uuid4
 from fastapi import APIRouter, Depends, Form, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -396,6 +412,14 @@ class CountryAssetBody(BaseModel):
     delta: int = Field(ge=-1_000_000_000, le=1_000_000_000)
 class PresidentBody(BaseModel):
     player_id: int | None = Field(default=None, gt=0)
+
+class AdBody(BaseModel):
+    title: str = Field(min_length=3,max_length=120)
+    text: str = Field(min_length=3,max_length=4000)
+    destination: int
+    scheduled_at: datetime | None = None
+    repeat_minutes: int | None = Field(default=None,ge=15,le=525600)
+
 class NewsBody(BaseModel):
     text: str = Field(min_length=3, max_length=4000)
     destination: int | None = None
@@ -503,12 +527,32 @@ async def grant_form(player_id: int, actor: AdminActor,
 async def feature(key: str, actor: AdminActor,
                   enabled: Annotated[bool, Form()]) -> dict[str, bool]:
     return {"applied": await admin.feature(actor, key, enabled, str(uuid4()))}
+
+@router.get("/ads")
+async def ads(limit: Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return [dict(row) for row in await admin_repo.ads(limit)]
+
+@router.post("/ads")
+async def create_ad(body:AdBody,actor:AdminActor)->dict[str,int]:
+    try:return {"id":await admin.create_ad(actor,body.title,body.text,body.destination,body.scheduled_at,body.repeat_minutes,str(uuid4()))}
+    except ValueError as exc:raise fail(exc) from exc
+
+@router.post("/ads/{ad_id}/queue")
+async def queue_ad(ad_id:int,actor:AdminActor)->dict[str,bool]:
+    try:return {"queued":await admin.queue_ad(actor,ad_id,str(uuid4()))}
+    except ValueError as exc:raise fail(exc) from exc
 ```
 
 ### `apps\admin\static\admin.css`
 
 ```css
 @font-face{font-family:TL;src:local("Vazirmatn"),local("Tahoma")}*{box-sizing:border-box}html{scroll-behavior:smooth}:root{color-scheme:dark;--ink:#eaf5ff;--muted:#7e99ad;--dim:#496477;--cyan:#3ee6d0;--blue:#4ba3ff;--violet:#8c7cff;--rose:#ff6685;--bg:#06111d;--panel:rgba(11,29,45,.72);--line:rgba(151,208,239,.13);--shadow:0 24px 80px rgba(0,0,0,.28)}body{margin:0;background:radial-gradient(circle at 72% -20%,#123c55 0,transparent 38%),radial-gradient(circle at 12% 92%,#151f4a 0,transparent 34%),var(--bg);color:var(--ink);font-family:TL,"Segoe UI",sans-serif;min-height:100vh}.noise{position:fixed;inset:0;pointer-events:none;opacity:.12;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E")}.rail{position:fixed;right:0;top:0;bottom:0;width:248px;border-left:1px solid var(--line);background:rgba(4,15,25,.78);backdrop-filter:blur(24px);padding:28px 18px;display:flex;flex-direction:column;z-index:10}.brand{display:flex;align-items:center;gap:12px;color:var(--ink);text-decoration:none;padding:0 10px 32px}.brand-mark{width:43px;height:43px;border:1px solid #5ce6dc66;border-radius:14px;display:grid;place-items:center;background:linear-gradient(145deg,#1d4f63,#0a2535);box-shadow:inset 0 1px #ffffff22,0 10px 30px #00b8ab18;color:var(--cyan);font:800 22px Georgia}.brand b{display:block;font-size:17px;letter-spacing:.4px}.brand small{color:var(--dim);letter-spacing:3px;font-size:8px}nav{display:grid;gap:7px}.nav{appearance:none;border:0;background:transparent;color:var(--muted);display:flex;align-items:center;gap:14px;border-radius:13px;padding:12px 14px;font:600 14px TL;cursor:pointer;text-align:right;transition:.2s}.nav span{font-size:19px;color:#6289a2;width:22px}.nav em{font-style:normal}.nav:hover,.nav.active{color:var(--ink);background:linear-gradient(90deg,rgba(62,230,208,.13),rgba(75,163,255,.04));box-shadow:inset -2px 0 var(--cyan)}.nav.active span{color:var(--cyan)}.rail-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 10px 0;display:grid;grid-template-columns:10px 1fr;align-items:center;gap:3px 9px;color:var(--muted);font-size:12px}.rail-foot small{grid-column:2;color:var(--dim);direction:ltr;text-align:right}.pulse,.live i{width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 14px var(--cyan);animation:pulse 2s infinite}@keyframes pulse{50%{opacity:.35;transform:scale(.75)}}.shell{margin-right:248px;min-height:100vh;padding:0 38px 60px}.topbar{height:112px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);margin-bottom:30px}.eyebrow{color:var(--cyan);font-size:10px;letter-spacing:1.6px;margin:0 0 8px;font-weight:700}.topbar h1,.section-lead h2{margin:0;font-size:27px;letter-spacing:-.8px}.top-actions{display:flex;gap:10px}.live,.icon-btn,select{border:1px solid var(--line);background:#0a1d2b99;color:var(--muted);border-radius:11px;height:38px;display:flex;align-items:center;gap:9px;padding:0 13px}.live{font:700 9px monospace;letter-spacing:2px}.live i{width:6px;height:6px}.icon-btn{font-size:20px;cursor:pointer}.view{display:none;animation:rise .35s ease}.view.active{display:block}@keyframes rise{from{opacity:0;transform:translateY(8px)}}.hero-grid{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(260px,.8fr);gap:18px}.hero-card,.signal-card,.panel,.metric-grid article,.country-card,.market-cards article{border:1px solid var(--line);background:linear-gradient(145deg,rgba(14,39,57,.8),rgba(7,21,34,.72));backdrop-filter:blur(18px);box-shadow:var(--shadow);border-radius:20px}.hero-card{min-height:230px;padding:34px;display:flex;align-items:center;justify-content:space-between;overflow:hidden;position:relative}.hero-card:before{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 40%,rgba(62,230,208,.06));pointer-events:none}.hero-card strong{display:block;font:300 clamp(38px,6vw,75px) TL;margin:8px 0;letter-spacing:-4px}.hero-card span{color:var(--muted);font-size:12px}.orbit{width:170px;height:170px;border:1px solid #68e8dc28;border-radius:50%;display:grid;place-items:center;position:relative;background:radial-gradient(circle,#39d8ca18,transparent 62%)}.orbit:before,.orbit:after{content:"";position:absolute;border:1px solid #75bfff1c;border-radius:50%;inset:18px}.orbit:after{inset:42px}.orbit b{font:700 24px Georgia;color:var(--cyan);text-shadow:0 0 25px #34e6d1}.orbit i{position:absolute;width:6px;height:6px;background:var(--cyan);border-radius:50%;box-shadow:0 0 12px var(--cyan)}.orbit i:nth-of-type(1){top:13px}.orbit i:nth-of-type(2){bottom:25px;left:17px;background:var(--blue)}.orbit i:nth-of-type(3){right:0;background:var(--violet)}.signal-card{padding:27px}.signal-card>p{font-size:12px;color:var(--muted);margin:0 0 20px}.service-radar{display:grid;gap:11px}.service-radar span{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#061623;border:1px solid var(--line);border-radius:10px;font-size:11px}.service-radar i{font-style:normal;color:var(--cyan)}.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:16px 0}.metric-grid article{padding:21px}.metric-grid span,.metric-grid small{display:block;color:var(--muted);font-size:11px}.metric-grid strong{display:block;font-size:28px;font-weight:500;margin:8px 0}.metric-grid small{color:var(--dim)}.split{display:grid;grid-template-columns:1.55fr 1fr;gap:16px}.panel{padding:24px}.panel-head,.section-lead{display:flex;align-items:center;justify-content:space-between;gap:20px}.panel-head{margin-bottom:18px}.panel-head h2{font-size:17px;margin:0}.text-btn{border:0;background:transparent;color:var(--cyan);cursor:pointer;font:11px TL}.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.quick-grid button{background:#081c2b;border:1px solid var(--line);border-radius:13px;padding:16px;color:var(--ink);font:700 12px TL;text-align:right;cursor:pointer}.quick-grid small{display:block;color:var(--dim);margin-top:7px;font-weight:400}.chart-wrap{height:250px;position:relative;direction:ltr}.chart-wrap.large{height:390px}.chart-wrap svg{width:100%;height:100%;overflow:visible}.chart-wrap .gridline{stroke:#bde4ff12}.chart-wrap .area{fill:url(#areaGradient)}.chart-wrap .line{fill:none;stroke:var(--cyan);stroke-width:2.4;filter:drop-shadow(0 0 7px #3ee6d077)}.chart-wrap .dot{fill:var(--cyan);stroke:#06111d;stroke-width:2}.chart-label{position:absolute;direction:rtl;color:var(--muted);font-size:10px}.empty{height:100%;display:grid;place-items:center;color:var(--dim);font-size:12px;border:1px dashed var(--line);border-radius:14px}.section-lead{margin-bottom:22px}.section-lead p:not(.eyebrow){color:var(--muted);margin:7px 0 0;font-size:12px}.section-lead select{font:12px TL}.market-stage{margin-bottom:16px}.asset-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}.asset-tabs button{border:1px solid var(--line);background:#081b29;color:var(--muted);border-radius:10px;padding:9px 13px;font:11px TL;cursor:pointer}.asset-tabs button.active{background:#0e3c46;color:var(--cyan);border-color:#3ee6d044}.market-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.market-cards article{padding:19px;display:grid;gap:7px}.market-cards strong{font-size:23px;font-weight:500}.market-cards span,.market-cards small{color:var(--muted);font-size:11px}.market-cards button{margin-top:6px}.search{display:flex;align-items:center;border:1px solid var(--line);background:#081b29;border-radius:12px;padding:0 13px;width:min(340px,100%)}input,textarea{width:100%;border:1px solid var(--line);background:#071824;color:var(--ink);border-radius:11px;padding:11px 13px;font:12px TL;outline:none}input:focus,textarea:focus{border-color:#3ee6d066;box-shadow:0 0 0 3px #3ee6d00c}.search input{border:0;background:transparent}.table-panel{padding:0;overflow:hidden}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:870px}th{color:var(--dim);font-size:10px;text-align:right;padding:16px;border-bottom:1px solid var(--line);font-weight:600}td{padding:16px;border-bottom:1px solid #bfe5ff0b;color:var(--muted);font-size:11px}td b{color:var(--ink);display:block;font-size:12px;margin-bottom:4px}.badge{display:inline-flex;padding:5px 8px;border-radius:20px;background:#29d6bd16;color:var(--cyan)}.badge.danger{background:#ff668518;color:var(--rose)}.row-actions{display:flex;gap:6px}.small-btn,.primary,.secondary{border:1px solid var(--line);border-radius:9px;background:#0b2433;color:var(--ink);padding:8px 11px;font:10px TL;cursor:pointer}.small-btn.danger{color:var(--rose)}.primary{background:linear-gradient(135deg,#2bc8b7,#268cd3);border:0;color:#02131d;font-weight:800;padding:11px 17px}.secondary{color:var(--muted)}.country-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}.country-card{padding:22px}.country-top{display:flex;justify-content:space-between;align-items:start}.country-card h3{margin:0;font-size:19px}.country-card p{color:var(--muted);font-size:11px}.treasury{font-size:24px;margin:20px 0 5px}.resource-row{display:flex;gap:7px;flex-wrap:wrap;margin:15px 0}.resource-row span{background:#071a28;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:10px;color:var(--muted)}.country-actions{display:flex;gap:7px;flex-wrap:wrap}.news-layout{grid-template-columns:.85fr 1.4fr}.composer{display:grid;gap:15px}.composer label{font-size:11px;color:var(--muted)}.composer label small{color:var(--dim);margin-right:5px}.composer textarea{height:180px;resize:vertical;margin-top:8px}.news-list{display:grid;gap:8px;max-height:440px;overflow:auto}.news-item{padding:12px;border:1px solid var(--line);border-radius:11px;background:#071824;display:grid;grid-template-columns:1fr auto;gap:6px}.news-item p{margin:0;color:var(--ink);font-size:11px}.news-item small{color:var(--dim);font-size:9px}dialog{border:1px solid var(--line);border-radius:20px;background:#081b29;color:var(--ink);box-shadow:0 30px 100px #000b;max-width:430px;width:calc(100% - 30px);padding:0}dialog::backdrop{background:#020a10cc;backdrop-filter:blur(6px)}dialog form{padding:27px;position:relative}dialog h2{margin:0 0 22px}.dialog-close{position:absolute;left:16px;top:14px;background:transparent;border:0;color:var(--muted);font-size:25px;cursor:pointer}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}#dialog-fields{display:grid;gap:11px}#dialog-fields label{color:var(--muted);font-size:11px;display:grid;gap:7px}#toast{position:fixed;left:25px;bottom:25px;z-index:50;background:#0c2836;border:1px solid #3ee6d044;border-radius:12px;padding:12px 18px;color:var(--ink);font-size:11px;box-shadow:var(--shadow);opacity:0;transform:translateY(12px);pointer-events:none;transition:.25s}#toast.show{opacity:1;transform:none}#toast.error{border-color:#ff668566;color:#ff9eb2}@media(max-width:1050px){.rail{width:82px;padding:25px 11px}.brand span:last-child,.nav em,.rail-foot span,.rail-foot small{display:none}.brand{padding:0 8px 28px}.nav{justify-content:center}.shell{margin-right:82px;padding:0 24px 50px}.hero-grid,.split{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:650px){.rail{right:0;left:0;top:auto;height:70px;width:auto;border-left:0;border-top:1px solid var(--line);padding:8px 10px;flex-direction:row}.brand,.rail-foot{display:none}.rail nav{display:flex;width:100%;justify-content:space-around}.nav{padding:8px 10px;display:grid;gap:2px;justify-items:center}.nav em{display:block;font-size:8px}.nav.active{box-shadow:inset 0 -2px var(--cyan)}.shell{margin:0;padding:0 15px 92px}.topbar{height:88px}.topbar h1{font-size:21px}.hero-card{padding:24px;min-height:190px}.orbit{width:95px;height:95px}.hero-card strong{font-size:36px;letter-spacing:-2px}.metric-grid{grid-template-columns:1fr 1fr}.metric-grid article{padding:16px}.market-cards,.country-grid{grid-template-columns:1fr}.section-lead{align-items:flex-start;flex-direction:column}.search{width:100%}.chart-wrap.large{height:300px}.panel{padding:18px}}
+/* Advertising workspace: denser editorial rhythm and clearer focus feedback. */
+#view-ads .composer{border-top:2px solid var(--violet)}
+#view-ads .news-item{transition:transform .18s ease,border-color .18s ease}
+#view-ads .news-item:hover{transform:translateY(-2px);border-color:#8c7cff55}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -522,7 +566,7 @@ function toast(message,error=false){const el=$("#toast");el.textContent=message;
 async function api(url,options={}){const res=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
-function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر"}[name];history.replaceState(null,"",`#${name}`);load(name)}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 async function overview(){const [o,h]=await Promise.all([api('/api/admin/overview'),api('/healthz')]);$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i>${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';await market(true)}
 function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
@@ -539,7 +583,11 @@ function presidentDialog(id){openDialog(`ریاست کشور #${id}`,"مدیری
 async function news(){const rows=await api('/api/admin/news?limit=100');$("#news-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p>${esc(x.payload?.text||x.payload?.event_code||x.event_type)}</p><small>${esc(x.event_type)} · ${date(x.created_at)}</small></div><span class="badge ${x.last_error_code?'danger':''}">${x.published_at?'منتشر شد':x.last_error_code?'خطا':'در صف'}</span></div>`).join('')||'<div class="empty">صف خبر خالی است</div>'}
 $("#send-news").onclick=async()=>{const text=$("#news-text").value.trim(),d=$("#news-destination").value.trim();if(text.length<3)return toast("متن خبر کوتاه است",true);try{await api('/api/admin/news',{method:'POST',body:JSON.stringify({text,destination:d?Number(d):null})});$("#news-text").value='';toast("خبر وارد صف انتشار شد");news()}catch(e){toast(e.message,true)}};
 let searchTimer;$("#player-search").oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(players,300)};$("#market-range").onchange=()=>market();$("#refresh").onclick=()=>load(location.hash.slice(1)||'overview');
-function load(name){({overview,market,players,countries,news}[name]||overview)().catch(e=>toast(e.message,true))}
+
+async function ads(){const rows=await api('/api/admin/ads?limit=100');$("#ad-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p><b>${esc(x.title)}</b></p><small>${esc(x.status)} · مقصد ${esc(x.destination_chat_id)} · ${date(x.scheduled_at||x.created_at)}</small></div><button class="small-btn" data-adqueue="${x.id}">ارسال حالا</button></div>`).join('')||'<div class="empty">هنوز کمپینی ساخته نشده است</div>';$$('[data-adqueue]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/ads/${b.dataset.adqueue}/queue`,{method:'POST',body:'{}'});toast("تبلیغ وارد صف شد");ads()}catch(e){toast(e.message,true)}})}
+$("#save-ad").onclick=async()=>{const title=$("#ad-title").value.trim(),text=$("#ad-text").value.trim(),destination=Number($("#ad-destination").value),raw=$("#ad-scheduled").value,repeat=$("#ad-repeat").value;if(title.length<3||text.length<3||!destination)return toast("عنوان، متن و گروه مقصد را کامل کن",true);try{await api('/api/admin/ads',{method:'POST',body:JSON.stringify({title,text,destination,scheduled_at:raw?new Date(raw).toISOString():null,repeat_minutes:repeat?Number(repeat):null})});$("#ad-title").value=$("#ad-text").value='';toast("کمپین ذخیره شد");ads()}catch(e){toast(e.message,true)}};
+
+function load(name){({overview,market,players,countries,news,ads}[name]||overview)().catch(e=>toast(e.message,true))}
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
 ```
 
@@ -566,6 +614,7 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
     <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
+    <button class="nav" data-view="ads"><span>✦</span><em>تبلیغات</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -603,6 +652,17 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
 <section class="view" id="view-news">
   <div class="section-lead"><div><p class="eyebrow">انتشار سراسری</p><h2>اتاق خبر</h2><p>پیام را مستقیم وارد صف مطمئن Outbox کنید.</p></div></div>
   <div class="split news-layout"><article class="panel composer"><label>متن اطلاعیه<textarea id="news-text" maxlength="4000" placeholder="پیام رسمی شبکه را بنویسید…"></textarea></label><label>Chat ID مقصد <small>خالی = GLOBAL_NEWS_CHAT_ID</small><input id="news-destination" inputmode="numeric" placeholder="-1001234567890"></label><button id="send-news" class="primary">قرار دادن در صف انتشار</button></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">تاریخچه</p><h2>صف پیام‌ها</h2></div></div><div id="news-list" class="news-list"></div></article></div>
+</section>
+<section class="view" id="view-ads">
+  <div class="section-lead"><div><p class="eyebrow">کمپین و انتشار</p><h2>مرکز تبلیغات</h2><p>تبلیغ را برای گروه مشخص، فوری یا زمان‌بندی‌شده وارد صف امن انتشار کنید.</p></div></div>
+  <div class="split news-layout"><article class="panel composer">
+    <label>عنوان کمپین<input id="ad-title" maxlength="120" placeholder="مثلاً معرفی فصل تازه"></label>
+    <label>متن تبلیغ<textarea id="ad-text" maxlength="4000" placeholder="متن نهایی تبلیغ…"></textarea></label>
+    <label>Chat ID گروه مقصد<input id="ad-destination" inputmode="numeric" placeholder="-1001234567890"></label>
+    <label>زمان انتشار <small>اختیاری؛ خالی یعنی پیش‌نویس</small><input id="ad-scheduled" type="datetime-local"></label>
+    <label>تکرار هر چند دقیقه <small>اختیاری، حداقل ۱۵</small><input id="ad-repeat" type="number" min="15"></label>
+    <button id="save-ad" class="primary">ذخیره کمپین</button>
+  </article><article class="panel"><div class="panel-head"><div><p class="eyebrow">کمپین‌ها</p><h2>صف تبلیغات</h2></div></div><div id="ad-list" class="news-list"></div></article></div>
 </section>
 </main>
 <dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
@@ -665,6 +725,20 @@ async def publish_news(bot:Bot)->dict[str,int]:
   text=str(payload.get('text') or payload.get('event_code') or payload.get('mission_key') or event_type)
   await bot.send_message(chat_id=chat_id,text=text)
  return await news.publish_batch(sender)
+
+async def queue_due_ads()->int:
+ from packages.core import db
+ from packages.core.repositories import outbox_repo
+ count=0
+ async with db.transaction() as conn:
+  rows=await conn.fetch("SELECT * FROM ad_campaigns WHERE status='scheduled' AND scheduled_at<=now() FOR UPDATE SKIP LOCKED LIMIT 50")
+  for row in rows:
+   key=f"ad-scheduled:{row['id']}:{row['scheduled_at'].isoformat()}"
+   if await outbox_repo.enqueue(conn,key,"advertisement",{"text":row["body"],"ad_id":row["id"]},row["destination_chat_id"]):count+=1
+   if row["repeat_minutes"]:
+    await conn.execute("UPDATE ad_campaigns SET scheduled_at=now()+($2::int*interval '1 minute'),last_queued_at=now(),updated_at=now() WHERE id=$1",row["id"],row["repeat_minutes"])
+   else: await conn.execute("UPDATE ad_campaigns SET status='queued',last_queued_at=now(),updated_at=now() WHERE id=$1",row["id"])
+ return count
 ```
 
 ### `apps\scheduler\jobs\daily_reset.py`
@@ -783,6 +857,7 @@ class SchedulerService:
             try:
                 await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
                 await country_jobs.resolve_due()
+                await country_jobs.queue_due_ads()
                 await country_jobs.publish_news(bot)
                 await usd_market.stabilize()
                 await admin_repo.capture_market_snapshot()
@@ -1842,6 +1917,69 @@ def level_up(result: XPResult) -> str:
 __all__ = ["country", "onboarding", "politics", "production", "status"]
 ```
 
+### `apps\teleworld_bot\handlers\access.py`
+
+```python
+"""Telegram my_chat_member lifecycle and the TeleWorld permission gate."""
+from __future__ import annotations
+from html import escape
+from telegram import Update
+from telegram.constants import ChatMemberStatus, ChatType
+from telegram.error import BadRequest, Forbidden
+from telegram.ext import ChatMemberHandler, ContextTypes
+from apps.teleworld_bot import keyboards as kb
+from packages.core.repositories import group_repo, world_access_repo
+from packages.core.services import world_access
+
+GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
+ACTIVE = {ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER}
+INACTIVE = {ChatMemberStatus.LEFT, ChatMemberStatus.BANNED}
+
+async def lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    change = update.my_chat_member
+    if not change or change.chat.type not in GROUPS:
+        return
+    chat = change.chat
+    old_status = change.old_chat_member.status
+    new_status = change.new_chat_member.status
+    active = new_status in ACTIVE
+    await world_access_repo.membership(chat.id, chat.title or "سرزمین بی‌نام", new_status, active)
+    world_access.invalidate(chat.id)
+    if not active:
+        await world_access_repo.audit(
+            f"bot-membership:{chat.id}:{change.date.isoformat()}:{new_status}", "bot_removed",
+            chat_id=chat.id, details={"status": new_status},
+        )
+        return
+    await group_repo.get_or_create(chat.id, chat.title or "سرزمین بی‌نام")
+    access = await world_access.check(context.bot, chat.id, force=True)
+    await world_access_repo.audit(
+        f"bot-membership:{chat.id}:{change.date.isoformat()}:{new_status}",
+        "bot_added" if old_status in INACTIVE else "bot_access_changed",
+        chat_id=chat.id, details={"ready": access.ready, "missing": list(access.missing)},
+    )
+    if old_status in INACTIVE and await world_access_repo.claim_welcome(chat.id):
+        state = "✅ دسترسی لازم کامل است." if access.ready else f"⚠️ دسترسی ناقص: {access.missing_fa()}"
+        text = (
+            f"🌍 <b>به {escape(chat.title or 'این گروه')} خوش آمدم</b>\n\n"
+            "اینجا می‌توانید کشور، شهروندی، اقتصاد عمومی، انتخابات و پروژه ملی بسازید.\n\n"
+            f"{state}"
+        )
+        sent = await context.bot.send_message(chat.id, text, reply_markup=kb.access(access.ready))
+        await world_access_repo.set_welcome_message(chat.id, sent.message_id)
+    elif not access.ready and await world_access_repo.claim_warning(chat.id, access.fingerprint):
+        try:
+            await context.bot.send_message(
+                chat.id, f"🔒 دسترسی بات تغییر کرده و عملیات کشور قفل شد.\nکمبود: {access.missing_fa()}",
+                reply_markup=kb.access(False),
+            )
+        except (BadRequest, Forbidden):
+            return
+
+def register(app) -> None:
+    app.add_handler(ChatMemberHandler(lifecycle, ChatMemberHandler.MY_CHAT_MEMBER), group=-10)
+```
+
 ### `apps\teleworld_bot\handlers\country.py`
 
 ```python
@@ -2402,14 +2540,15 @@ from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
-from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo
+from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
 from packages.core.services import country as countries, economy, elections, national_project
+from packages.core.services import world_access
 from packages.core.utils import fmt
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
 FLOW = "world_creation"
 STATUS = {"forming":"در حال ساخت", "temporary":"موقت", "official":"رسمی"}
-GOV = {"republic":"جمهوری", "monarchy":"پادشاهی", "federal":"فدرال", "council":"شورایی"}
+GOV = {code: item[0] for code, item in fa.GOVERNMENT_DETAILS.items()}
 ASSET = {"IRT":"تومان", "food":"غذا", "minerals":"مواد معدنی", "oil":"نفت", "energy":"انرژی", "technology":"فناوری"}
 ERRORS = {
     "citizen_required":"ابتدا شهروند این کشور شو.", "president_required":"فقط رهبر کشور می‌تواند این کار را انجام دهد.",
@@ -2460,12 +2599,45 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
+MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart"}
+
+def is_mutating(action: str) -> bool:
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:"))
+
+async def access_page(update, context, *, force: bool = False):
+    access = await world_access.check(context.bot, update.effective_chat.id, force=force)
+    if access.ready:
+        await show(update, context, "✅ <b>دسترسی کامل است</b>\n\nبات مدیر است و اجازه حذف پیام‌های مرحله‌ای را دارد. جهان آماده استفاده است.", kb.access(True))
+    else:
+        await show(update, context, "🔒 <b>جهان در حالت محدود است</b>\n\nکمبود: " + access.missing_fa() + "\n\nاز تنظیمات گروه، بات را مدیر کنید و اجازه «حذف پیام‌ها» را فعال کنید. اجازه افزودن مدیر یا تغییر اطلاعات گروه لازم نیست.", kb.access(False))
+    return access
+
+async def health_page(update, context):
+    access = await world_access.check(context.bot, update.effective_chat.id, force=True)
+    country = await country_repo.by_chat(update.effective_chat.id)
+    panel = await ui_state_repo.world(update.effective_chat.id)
+    election = await election_repo.open_for_country(country["id"]) if country else None
+    project = await project_repo.active(country["id"]) if country else None
+    lines = [
+        f"• دسترسی بات: {'کامل' if access.ready else 'ناقص — ' + access.missing_fa()}",
+        f"• اتصال کشور: {'سالم' if country else 'هنوز کشوری ساخته نشده'}",
+        f"• صفحه اصلی: {'ثبت شده' if panel else 'با نخستین نمایش ساخته می‌شود'}",
+        f"• انتخابات فعال: {'بله' if election else 'خیر'}",
+        f"• پروژه فعال: {'بله' if project else 'خیر'}",
+        f"• قابلیت‌های اصلی: {'آماده' if access.ready else 'قفل ایمن'}",
+    ]
+    await show(update, context, "🩺 <b>بررسی وضعیت جهان</b>\n\n" + "\n".join(lines), kb.access(access.ready))
+
 async def home(update, context):
     chat = update.effective_chat
     if chat.type not in GROUPS:
         await show(update, context, fa.PRIVATE, kb.private(context.bot.username or ""))
         return
     await group_repo.get_or_create(chat.id, chat.title or "سرزمین بی‌نام")
+    access = await world_access.check(context.bot, chat.id)
+    if not access.ready:
+        await access_page(update, context)
+        return
     row, count, leader = await facts(chat.id)
     p = await player(update)
     citizenship = await country_repo.citizenship(p.id) if row else None
@@ -2502,8 +2674,10 @@ async def politics_page(update, context):
     if not row: raise ValueError("country_not_found")
     election = await election_repo.open_for_country(row["id"])
     status = str(election["status"]) if election else None
-    state = "انتخابات بازی وجود ندارد." if not election else "مرحله نام‌نویسی نامزدها باز است." if status == "nominations" else "رأی‌گیری باز است."
-    await show(update, context, fa.POLITICS.format(state=state), kb.politics(status))
+    from packages.core.services.governance import rules_for
+    rules=rules_for(str(row["government_type"]))
+    state = "در این نظام، رهبر با انتخابات عمومی تعیین نمی‌شود." if not rules.public_elections else "انتخابات فعالی وجود ندارد." if not election else "مرحله نام‌نویسی نامزدها باز است." if status == "nominations" else "رأی‌گیری باز است."
+    await show(update, context, fa.POLITICS.format(state=state), kb.politics(status,allowed=rules.public_elections))
 
 async def project_page(update, context):
     row, _, _ = await facts(update.effective_chat.id)
@@ -2524,6 +2698,26 @@ async def callback(update, context):
     if not query: return
     action = (query.data or "")[3:]
     try:
+        if action == "access:why":
+            await answer(query)
+            await show(update, context, "📘 <b>چرا مدیر؟</b>\n\nفقط برای حذف پیام‌های مرحله‌ای باید بات مدیر باشد. ویرایش پیام‌های خود بات نیاز به مجوز جداگانه ندارد.\n\nمسیر: اطلاعات گروه ← ویرایش ← مدیران ← افزودن مدیر ← فعال‌کردن «حذف پیام‌ها».\n\nتلگرام پیوند قابل‌اتکایی برای بازکردن مستقیم صفحه ارتقای مدیر ارائه نمی‌کند؛ بنابراین دکمه جعلی نمایش داده نمی‌شود.", kb.access(False))
+            return
+        if action == "access:check":
+            await answer(query)
+            access = await access_page(update, context, force=True)
+            if access.ready:
+                await home(update, context)
+            return
+        if action == "health":
+            await answer(query)
+            await health_page(update, context)
+            return
+        if update.effective_chat.type in GROUPS and is_mutating(action):
+            access = await world_access.check(context.bot, update.effective_chat.id)
+            if not access.ready:
+                await answer(query, "عملیات قفل است: " + access.missing_fa(), show_alert=True)
+                await access_page(update, context)
+                return
         if action == "home":
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
         elif action == "guide":
@@ -2543,7 +2737,18 @@ async def callback(update, context):
             flow = context.chat_data.get(FLOW)
             if not flow or flow.get("owner") != query.from_user.id or flow.get("step") != "government":
                 await answer(query, "فرایند ساخت منقضی شده است؛ دوباره آغاز کن.", show_alert=True); return
-            await answer(query, ); flow["government"] = action.split(":", 1)[1]; flow["step"] = "description"; await show(update, context, fa.WIZARD_DESC, kb.cancel())
+            code=action.split(":",1)[1]; detail=fa.GOVERNMENT_DETAILS.get(code)
+            if not detail: await answer(query,"نوع حکومت معتبر نیست.",show_alert=True);return
+            await answer(query); await show(update,context,fa.GOV_CONFIRM.format(title=detail[0],description=detail[1]),kb.government_confirm(code))
+        elif action == "govback":
+            flow=context.chat_data.get(FLOW)
+            if not flow or flow.get("owner") != query.from_user.id: await answer(query,"فرایند ساخت منقضی شده است.",show_alert=True);return
+            await answer(query);flow["step"]="government";await show(update,context,fa.WIZARD_GOV,kb.governments())
+        elif action.startswith("govok:"):
+            flow=context.chat_data.get(FLOW);code=action.split(":",1)[1]
+            if not flow or flow.get("owner") != query.from_user.id or flow.get("step") != "government" or code not in fa.GOVERNMENT_DETAILS:
+                await answer(query,"فرایند ساخت منقضی شده است؛ دوباره آغاز کن.",show_alert=True);return
+            await answer(query);flow["government"]=code;flow["step"]="description";await show(update,context,fa.WIZARD_DESC,kb.cancel())
         elif action == "join":
             p = await player(update); joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "شهروند شدی." if joined else "از قبل شهروندی.", show_alert=True); await home(update, context)
         elif action == "leave":
@@ -2553,7 +2758,7 @@ async def callback(update, context):
             if not row: raise ValueError("country_not_found")
             citizenship = await country_repo.citizenship(p.id)
             if not citizenship or not citizenship["is_active"] or int(citizenship["country_id"]) != int(row["id"]): raise PermissionError("citizen_required")
-            await economy.transfer(p.id, row["id"], "IRT", int(action.split(":", 1)[1]), reason="donation", idempotency_key=f"world:{p.id}:{uuid4().hex}")
+            await economy.transfer(p.id, row["id"], "IRT", int(action.split(":", 1)[1]), reason="donation", idempotency_key=f"world-donate:{p.id}:{query.id}")
             await answer(query, "کمک مالی ثبت شد.", show_alert=True); await country_page(update, context)
         elif action == "estart":
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
@@ -2591,7 +2796,7 @@ async def callback(update, context):
             project = await project_repo.active(row["id"])
             if not project: await answer(query, "پروژه فعالی وجود ندارد.", show_alert=True); return
             _, asset, amount = action.split(":")
-            accepted, done = await national_project.contribute(project["id"], p.id, asset, int(amount), f"world-project:{p.id}:{uuid4().hex}")
+            accepted, done = await national_project.contribute(project["id"], p.id, asset, int(amount), f"world-project:{p.id}:{query.id}")
             await answer(query, (f"{fmt.number(accepted)} واحد ثبت شد." if accepted else "نیاز این بخش قبلاً تکمیل شده است.") + (" پروژه تکمیل شد!" if done else ""), show_alert=True); await project_page(update, context) if not done else await home(update, context)
         elif action == "polls": await answer(query, "هنوز نظرسنجی فعالی نیست.", show_alert=True)
         else: await answer(query, "این دکمه قدیمی شده است؛ صفحه را تازه‌سازی کن.", show_alert=True)
@@ -2606,14 +2811,28 @@ async def text(update, context):
     if not flow or update.effective_user.id != flow.get("owner"):
         await home(update, context); return
     value = (message.text or "").strip()
-    try: await message.delete()
-    except (BadRequest, Forbidden): pass
+    access = await world_access.check(context.bot, chat.id)
+    if not access.ready:
+        context.chat_data.pop(FLOW, None)
+        await access_page(update, context)
+        return
+    try:
+        await message.delete()
+    except (BadRequest, Forbidden):
+        if await world_access_repo.claim_warning(chat.id, "delete-failed"):
+            await message.reply_text("پیام مرحله‌ای حذف نشد؛ فرایند ادامه دارد و دسترسی در بررسی بعدی دوباره کنترل می‌شود.")
     if flow["step"] == "name":
+        from packages.core.services.content_filter import inspect
+        if not inspect(value).allowed:
+            await msg.reply_text(fa.CONTENT_REJECTED); return
         if not 3 <= len(value) <= 80:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="نام باید بین ۳ تا ۸۰ نویسه باشد. دوباره نام را بفرست.", reply_markup=kb.cancel()); return
         flow["name"] = value; flow["step"] = "government"
         await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text=fa.WIZARD_GOV, reply_markup=kb.governments()); return
     if flow["step"] == "description":
+        from packages.core.services.content_filter import inspect
+        if not inspect(value).allowed:
+            await msg.reply_text(fa.CONTENT_REJECTED); return
         if not 10 <= len(value) <= 500:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="معرفی باید بین ۱۰ تا ۵۰۰ نویسه باشد. دوباره معرفی را بفرست.", reply_markup=kb.cancel()); return
         p = await player(update)
@@ -2641,6 +2860,14 @@ def b(text, action, style=None):
         kwargs["style"] = style
     return InlineKeyboardButton(**kwargs)
 
+def access(ready=False):
+    if ready:
+        return InlineKeyboardMarkup([[b("✅ ورود به جهان", "access:check", "primary")],
+                                     [b("🩺 بررسی وضعیت", "health")]])
+    return InlineKeyboardMarkup([[b("🔄 بررسی دوباره دسترسی", "access:check", "primary")],
+                                 [b("📘 چرا دسترسی مدیر لازم است؟", "access:why")],
+                                 [b("🩺 وضعیت و علت قفل", "health")]])
+
 def private(username):
     return InlineKeyboardMarkup([[InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{username}?startgroup=true", style="primary")], [b("📘 راهنمای استفاده", "guide")]])
 
@@ -2656,14 +2883,19 @@ def home(country, admin, citizen=False):
     return InlineKeyboardMarkup([[b("📘 برای ساخت کشور چه کنیم؟", "guide", "primary")], [b("🔄 تازه‌سازی", "home")]])
 
 def governments():
-    return InlineKeyboardMarkup([[b("🏛 جمهوری", "gov:republic", "primary"), b("👑 پادشاهی", "gov:monarchy")],
-                                 [b("🤝 شورایی", "gov:council"), b("🏢 فدرال", "gov:federal")], [b("لغو ساخت کشور", "home")]])
+    items=[("🏛 جمهوری","republic"),("🗳 ریاستی","presidential"),("🏢 پارلمانی","parliamentary"),("⚖️ نیمه‌ریاستی","semi_presidential"),("👑 پادشاهی","monarchy"),("📜 مشروطه","constitutional_monarchy"),("🛡 دیکتاتوری","dictatorship"),("🧭 فدرال","federal"),("🤝 شورایی","council"),("👥 مستقیم","direct_democracy"),("⛪ دینی","theocracy"),("🎖 شورای نظامی","military_junta"),("💠 الیگارشی","oligarchy")]
+    rows=[[b(label,f"gov:{code}") for label,code in items[i:i+2]] for i in range(0,len(items),2)]
+    rows.append([b("لغو ساخت کشور","home")]);return InlineKeyboardMarkup(rows)
+
+def government_confirm(code):
+    return InlineKeyboardMarkup([[b("تأیید این حکومت",f"govok:{code}","primary")],[b("انتخاب نوع دیگر","govback")],[b("لغو ساخت کشور","home")]])
 
 def country():
     return InlineKeyboardMarkup([[b("💰 کمک ۵۰ هزار تومان", "donate:50000", "success"), b("💰 کمک ۲۰۰ هزار تومان", "donate:200000")],
                                  [b("🗳 انتخابات", "politics", "primary"), b("👥 شهروندان", "citizens")], [b("🏠 خانه جهان", "home")]])
 
-def politics(status=None):
+def politics(status=None, allowed=True):
+    if not allowed: return InlineKeyboardMarkup([[b("🏛 شناسنامه کشور","country","primary")],[b("🏠 خانه جهان","home")]])
     if status == "nominations":
         rows = [[b("🙋 نامزد می‌شوم", "nominate", "primary")], [b("⏳ زمان رأی‌گیری هنوز نرسیده", "politics")]]
     elif status == "voting":
@@ -2692,7 +2924,7 @@ def project(active):
 ```python
 from telegram import BotCommandScopeAllGroupChats,BotCommandScopeAllPrivateChats
 from telegram.ext import Application
-from apps.teleworld_bot.handlers import world
+from apps.teleworld_bot.handlers import access, world
 from apps.teleworld_bot.texts import fa
 from packages.core.bot import make_error_handler,run_bot
 from packages.core.settings import Service
@@ -2700,7 +2932,7 @@ from packages.core.settings import Service
 async def post_init(application:Application)->None:
  await application.bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
  await application.bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
-def register(application:Application):world.register(application);application.post_init=post_init;application.add_error_handler(make_error_handler(fa.ERROR))
+def register(application:Application):access.register(application);world.register(application);application.post_init=post_init;application.add_error_handler(make_error_handler(fa.ERROR))
 def main():run_bot(Service.TELEWORLD,register)
 if __name__=='__main__':main()
 ```
@@ -2727,6 +2959,23 @@ WIZARD_NAME='🏗 <b>ساخت کشور — گام ۱ از ۳</b>\n\nمدیر س�
 WIZARD_GOV='🏛 <b>ساخت کشور — گام ۲ از ۳</b>\n\nنوع حکومت را با یکی از دکمه‌ها انتخاب کن.'
 WIZARD_DESC='📝 <b>ساخت کشور — گام ۳ از ۳</b>\n\nیک معرفی روشن بین ۱۰ تا ۵۰۰ نویسه بفرست. پس از ساخت، صفحه اصلی کشور نمایش داده می‌شود.'
 PRIVATE='🌍 <b>جهان گروهی</b>\n\nاین بات برای بازی عمومی داخل گروه است. آن را به گروه اضافه کن؛ سپس در گروه یک پیام معمولی بفرست تا صفحه دکمه‌ای جهان باز شود.\n\nکار و دارایی شخصی در بات زندگی انجام می‌شوند.'
+CONTENT_REJECTED='⚠️ این متن شامل واژه‌ای است که در نام یا معرفی کشور مجاز نیست. لطفاً متن محترمانه‌تری بنویس؛ فرصتت برای ادامه ساخت محفوظ است.'
+GOVERNMENT_DETAILS={
+'republic':('جمهوری','رهبر با رأی شهروندان و برای دوره محدود انتخاب می‌شود. نتیجه رأی قابل تغییر نیست.'),
+'presidential':('جمهوری ریاستی','رئیس‌جمهور مستقیماً انتخاب می‌شود و اختیار اجرایی بالایی دارد؛ رأی و انتقال قدرت الزام‌آور است.'),
+'parliamentary':('جمهوری پارلمانی','شهروندان نمایندگان را انتخاب می‌کنند و اکثریت پارلمان دولت را می‌سازد.'),
+'semi_presidential':('نیمه‌ریاستی','قدرت اجرایی میان رئیس‌جمهور منتخب و نخست‌وزیر متکی به پارلمان تقسیم می‌شود.'),
+'monarchy':('پادشاهی مطلقه','جانشینی موروثی است؛ انتخابات سراسری رهبر وجود ندارد و پادشاه اختیار نهایی دارد.'),
+'constitutional_monarchy':('پادشاهی مشروطه','پادشاه نماد کشور است و دولت منتخب در چارچوب قانون اساسی اداره می‌کند.'),
+'dictatorship':('دیکتاتوری','رهبر اختیار آغاز انتخابات نمایشی، لغو آن و تغییر نتیجه را دارد؛ انتقال قدرت آزاد تضمین‌شده نیست.'),
+'federal':('فدرال','قدرت میان دولت مرکزی و ایالت‌ها تقسیم می‌شود؛ رهبر با انتخابات رقابتی تعیین می‌شود.'),
+'council':('شورایی','شورا به‌صورت جمعی تصمیم می‌گیرد و رئیس شورا اختیار یک‌جانبه محدود دارد.'),
+'direct_democracy':('دموکراسی مستقیم','شهروندان مستقیماً درباره تصمیم‌ها و رهبری رأی می‌دهند؛ نتیجه الزام‌آور است.'),
+'theocracy':('حکومت دینی','رهبر بر پایه ساختار مذهبی تعیین می‌شود و صلاحیت نامزدها پیش از رأی‌گیری بررسی می‌شود.'),
+'military_junta':('شورای نظامی','شورای فرماندهان رهبر را تعیین می‌کند؛ انتخابات عمومی رهبر برگزار نمی‌شود.'),
+'oligarchy':('الیگارشی','شورای نخبگان محدود رهبر را انتخاب می‌کند؛ شهروندان رأی مستقیم ندارند.'),
+}
+GOV_CONFIRM='<b>{title}</b>\n\n{description}\n\nاین مدل فقط برچسب نیست و قواعد انتخابات و انتقال قدرت را در بازی تغییر می‌دهد. این نوع حکومت را تأیید می‌کنی؟'
 ```
 
 ### `AUDIT_STATUS.md`
@@ -2773,6 +3022,25 @@ PRIVATE='🌍 <b>جهان گروهی</b>\n\nاین بات برای بازی عم
 - اصلاح پاسخ دوباره به یک دکمه در مسیر ساخت کشور.
 - افزودن پیام خطای فارسی برای موجودی ناکافی و وضعیت‌های ناقص.
 - افزودن آزمون‌های ایستا برای نحو پایتون، YAML، جداسازی مسئولیت بات‌ها و نبود فرمان در بات جهان.
+```
+
+### `CHANGELOG_FA_2026-07-27.md`
+
+```markdown
+# گزارش تغییرات نسخه سخت‌سازی جهان گروهی
+
+- مدیریت واقعی `my_chat_member` برای ورود، تغییر دسترسی و حذف بات افزوده شد.
+- خوش‌آمدگویی اتمیک و غیرتکراری، ذخیره شناسه پیام و وضعیت عضویت پیاده‌سازی شد.
+- سیاست حداقل مجوز شامل مدیر بودن و اجازه حذف پیام‌ها است.
+- کش کوتاه‌مدت بررسی دسترسی و بررسی اجباری با دکمه افزوده شد.
+- همه عملیات تغییردهنده جهان پشت قفل دسترسی قرار گرفتند.
+- صفحه سلامت بدون نمایش اطلاعات محرمانه افزوده شد.
+- کلید تکرارناپذیری کمک مالی و پروژه از شناسه ثابت Callback ساخته شد؛ دوبارکلیک پرداخت را تکرار نمی‌کند.
+- گزارش حسابرسی محصول با کلید یکتا و جلوگیری از سیل رخداد افزوده شد.
+- راهنمای فارسی BotFather، Privacy Mode و مجوز مدیر افزوده شد.
+- مهاجرت `0008_world_access_lifecycle.sql` افزوده شد؛ فقط ساخت افزایشی و تکرارپذیر دارد.
+
+- سازگاری checksum برای مهاجرت‌های تاریخی 0001 تا 0007 افزوده شد: رکورد دیتابیس حفظ و SQL قدیمی دوباره اجرا نمی‌شود؛ از 0008 به بعد کنترل checksum همچنان سخت‌گیرانه است.
 ```
 
 ### `DELIVERY.md`
@@ -2916,6 +3184,39 @@ CMD ["python", "run.py"]
 ---
 
 ## ۲. ساخت ربات‌ها در BotFather
+```
+
+### `docs\DEPLOYMENT_FA.md`
+
+```markdown
+# راهنمای استقرار فارسی تله‌لایف و جهان گروهی
+
+## پیش‌نیازها
+
+- Python 3.13، PostgreSQL و دو توکن مستقل برای بات «زندگی» و «جهان»
+- ساخت `.env` از روی `.env.example`؛ فایل واقعی `.env` را وارد مخزن یا بسته نکنید.
+- اجرای برنامه با `python run.py`؛ مهاجرت‌ها هنگام راه‌اندازی زیر قفل PostgreSQL اجرا می‌شوند.
+
+## تنظیم BotFather و حریم خصوصی گروه
+
+1. در BotFather فرمان `/mybots` را باز کنید و بات جهان را انتخاب کنید.
+2. به **Bot Settings → Group Privacy** بروید و Privacy Mode را **خاموش** کنید.
+3. وضعیت Privacy Mode از Telegram Bot API قابل تشخیص مستقیم نیست؛ برنامه ادعا نمی‌کند آن را تشخیص داده است.
+4. منوی فرمان‌های خصوصی و گروهی هنگام راه‌اندازی پاک می‌شود و استفاده عادی دکمه‌محور است.
+
+## حداقل دسترسی مدیر برای بات جهان
+
+در اطلاعات گروه، بخش «مدیران»، بات جهان را مدیر کنید و فقط **حذف پیام‌ها** را فعال کنید. این مجوز برای پاک‌کردن ورودی‌های مرحله‌ای ساخت کشور لازم است. ویرایش پیام‌های خود بات مجوز جداگانه نمی‌خواهد و شهروندی داخل بازی ثبت می‌شود؛ بنابراین افزودن مدیر، تغییر اطلاعات گروه و سایر مجوزهای خطرناک لازم نیست.
+
+Telegram API پیوند قابل‌اتکایی برای بازکردن مستقیم صفحه ارتقای یک بات به مدیر نمی‌دهد؛ رابط به‌جای دکمه جعلی، همین مسیر کوتاه را نشان می‌دهد.
+
+## بررسی پس از استقرار
+
+- بات جهان را به گروه آزمایشی اضافه کنید؛ پیام خوش‌آمد باید بدون فرمان ارسال شود.
+- پیش از مدیرشدن، فقط راهنما، بررسی دسترسی و سلامت فعال است.
+- پس از اعطای مجوز، «بررسی دوباره دسترسی» باید فوراً خانه جهان را باز کند.
+- با گرفتن مجوز حذف پیام، عملیات تغییردهنده باید دوباره قفل شود و داده کشور باقی بماند.
+- آزمون کامل: `pytest -q`. آزمون PostgreSQL را با نشانی پایگاه‌داده آزمایشی اجرا کنید؛ هرگز روی پایگاه‌داده تولید اجرا نکنید.
 ```
 
 ### `docs\FOR_AI_AGENTS.md`
@@ -3827,6 +4128,65 @@ CREATE TABLE IF NOT EXISTS world_ui_state (
 );
 ```
 
+### `migrations\0008_world_access_lifecycle.sql`
+
+```sql
+-- TeleWorld group lifecycle, permission gate and deduplicated product audit.
+CREATE TABLE IF NOT EXISTS world_group_access (
+    chat_id BIGINT PRIMARY KEY,
+    chat_title TEXT NOT NULL DEFAULT '',
+    membership_status TEXT NOT NULL DEFAULT 'unknown',
+    is_active BOOLEAN NOT NULL DEFAULT FALSE,
+    welcomed_at TIMESTAMPTZ,
+    welcome_message_id BIGINT,
+    status_message_id BIGINT,
+    is_administrator BOOLEAN NOT NULL DEFAULT FALSE,
+    can_delete_messages BOOLEAN NOT NULL DEFAULT FALSE,
+    missing_permissions TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    last_checked_at TIMESTAMPTZ,
+    last_warning_at TIMESTAMPTZ,
+    last_warning_fingerprint TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_world_group_access_active
+    ON world_group_access (is_active, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS product_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    event_key TEXT NOT NULL UNIQUE,
+    event_type TEXT NOT NULL,
+    chat_id BIGINT,
+    player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
+    country_id BIGINT REFERENCES countries(id) ON DELETE SET NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_product_audit_time
+    ON product_audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_audit_chat_time
+    ON product_audit_log (chat_id, created_at DESC);
+```
+
+### `migrations\0009_ads_governance_moderation.sql`
+
+```sql
+-- Advertising campaigns and governance controls.
+CREATE TABLE IF NOT EXISTS ad_campaigns (
+ id BIGSERIAL PRIMARY KEY,
+ title TEXT NOT NULL CHECK(length(title) BETWEEN 3 AND 120),
+ body TEXT NOT NULL CHECK(length(body) BETWEEN 3 AND 4000),
+ destination_chat_id BIGINT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','scheduled','queued','cancelled')),
+ scheduled_at TIMESTAMPTZ,
+ repeat_minutes INTEGER CHECK(repeat_minutes IS NULL OR repeat_minutes >= 15),
+ last_queued_at TIMESTAMPTZ,
+ created_by TEXT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ad_campaign_due ON ad_campaigns(status,scheduled_at) WHERE status='scheduled';
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -4037,6 +4397,14 @@ government_types:
   - dictatorship
   - federal
   - council
+  - constitutional_monarchy
+  - parliamentary
+  - presidential
+  - semi_presidential
+  - theocracy
+  - military_junta
+  - oligarchy
+  - direct_democracy
 
 citizenship:
   explicit_join_required: true
@@ -4705,6 +5073,19 @@ from packages.core.db import pool as dbpool
 logger = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+# Releases before 0008 were distributed without an immutable migration manifest.
+# Some installations therefore have the same legacy version with a different
+# checksum. Never re-run those migrations: accept the recorded installation and
+# keep strict checksum enforcement for every migration released from 0008 onward.
+LEGACY_CHECKSUM_VERSIONS = frozenset({
+    "0001_core_schema",
+    "0002_progression",
+    "0003_country_layer",
+    "0004_admin_command_center",
+    "0005_life_world_hardening",
+    "0006_phase3_phase4_complete",
+    "0007_unified_ui_onboarding",
+})
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -4741,6 +5122,13 @@ async def migrate() -> list[str]:
                 digest = _checksum(sql)
                 if version in done:
                     if done[version] != digest:
+                        if version in LEGACY_CHECKSUM_VERSIONS:
+                            logger.warning(
+                                "legacy migration checksum differs; preserving the "
+                                "database record and not re-running SQL: %s",
+                                version,
+                            )
+                            continue
                         raise RuntimeError(
                             f"Migration '{version}' changed after being applied. "
                             "Create a new migration instead of editing history."
@@ -5120,6 +5508,9 @@ async def capture_market_snapshot() -> int:
         ON CONFLICT DO NOTHING
     """)
     return int(result.rsplit(" ", 1)[-1])
+
+async def ads(limit: int = 100) -> list[asyncpg.Record]:
+    return await db.fetch("SELECT * FROM ad_campaigns ORDER BY created_at DESC LIMIT $1", limit)
 ```
 
 ### `packages\core\repositories\country_repo.py`
@@ -6297,6 +6688,70 @@ async def set_world(chat_id:int,message_id:int)->None:
  ON CONFLICT(chat_id) DO UPDATE SET message_id=$2,updated_at=now()""",chat_id,message_id)
 ```
 
+### `packages\core\repositories\world_access_repo.py`
+
+```python
+"""Persistence for TeleWorld membership, permission snapshots and warning dedupe."""
+from __future__ import annotations
+from collections.abc import Mapping
+from typing import Any
+from packages.core import db
+
+async def get(chat_id: int):
+    return await db.fetchrow("SELECT * FROM world_group_access WHERE chat_id=$1", chat_id)
+
+async def membership(chat_id: int, title: str, status: str, active: bool) -> None:
+    await db.execute(
+        """INSERT INTO world_group_access(chat_id,chat_title,membership_status,is_active)
+        VALUES($1,$2,$3,$4)
+        ON CONFLICT(chat_id) DO UPDATE SET chat_title=$2,membership_status=$3,
+        is_active=$4,updated_at=now()""", chat_id, title[:128], status, active,
+    )
+
+async def claim_welcome(chat_id: int) -> bool:
+    """Atomically claim the one lifetime welcome for a chat."""
+    claimed = await db.fetchval(
+        """UPDATE world_group_access SET welcomed_at=now(),updated_at=now()
+        WHERE chat_id=$1 AND welcomed_at IS NULL RETURNING chat_id""", chat_id
+    )
+    return claimed is not None
+
+async def set_welcome_message(chat_id: int, message_id: int) -> None:
+    await db.execute(
+        "UPDATE world_group_access SET welcome_message_id=$2,status_message_id=$2,updated_at=now() WHERE chat_id=$1",
+        chat_id, message_id,
+    )
+
+async def save_access(chat_id: int, administrator: bool, can_delete: bool,
+                      missing: list[str]) -> None:
+    await db.execute(
+        """INSERT INTO world_group_access(chat_id,is_administrator,can_delete_messages,
+        missing_permissions,last_checked_at) VALUES($1,$2,$3,$4,now())
+        ON CONFLICT(chat_id) DO UPDATE SET is_administrator=$2,can_delete_messages=$3,
+        missing_permissions=$4,last_checked_at=now(),updated_at=now()""",
+        chat_id, administrator, can_delete, missing,
+    )
+
+async def claim_warning(chat_id: int, fingerprint: str, cooldown_minutes: int = 30) -> bool:
+    claimed = await db.fetchval(
+        """UPDATE world_group_access SET last_warning_at=now(),last_warning_fingerprint=$2,
+        updated_at=now() WHERE chat_id=$1 AND (last_warning_fingerprint IS DISTINCT FROM $2
+        OR last_warning_at IS NULL OR last_warning_at < now()-($3::int*interval '1 minute'))
+        RETURNING chat_id""", chat_id, fingerprint, cooldown_minutes,
+    )
+    return claimed is not None
+
+async def audit(event_key: str, event_type: str, *, chat_id: int | None = None,
+                player_id: int | None = None, country_id: int | None = None,
+                details: Mapping[str, Any] | None = None) -> bool:
+    value = await db.fetchval(
+        """INSERT INTO product_audit_log(event_key,event_type,chat_id,player_id,country_id,details)
+        VALUES($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT(event_key) DO NOTHING RETURNING id""",
+        event_key, event_type, chat_id, player_id, country_id, dict(details or {}),
+    )
+    return value is not None
+```
+
 ### `packages\core\runtime_status.py`
 
 ```python
@@ -6480,6 +6935,85 @@ async def enqueue_news(actor: str, text: str, destination: int,
             return False
         return await outbox_repo.enqueue(conn, f"admin-news:{request_id}",
                                          "admin_announcement", {"text": text}, destination)
+
+async def create_ad(actor: str, title: str, text: str, destination: int,
+                    scheduled_at, repeat_minutes: int | None, request_id: str) -> int:
+    from packages.core.services.content_filter import require_clean
+    require_clean(title, "name"); require_clean(text, "description")
+    status = "scheduled" if scheduled_at else "draft"
+    async with db.transaction() as conn:
+        if not await admin_repo.audit(conn, actor, "create_ad", request_id,
+                                      {"title": title, "destination": destination}): return 0
+        return int(await conn.fetchval("""INSERT INTO ad_campaigns
+          (title,body,destination_chat_id,status,scheduled_at,repeat_minutes,created_by)
+          VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id""",
+          title,text,destination,status,scheduled_at,repeat_minutes,actor))
+
+async def queue_ad(actor: str, ad_id: int, request_id: str) -> bool:
+    async with db.transaction() as conn:
+        row=await conn.fetchrow("SELECT * FROM ad_campaigns WHERE id=$1 FOR UPDATE",ad_id)
+        if row is None: raise ValueError("ad_not_found")
+        if not await admin_repo.audit(conn,actor,"queue_ad",request_id,{"ad_id":ad_id}): return False
+        queued=await outbox_repo.enqueue(conn,f"ad:{ad_id}:{request_id}","advertisement",
+                                         {"text":row["body"],"ad_id":ad_id},row["destination_chat_id"])
+        if queued: await conn.execute("UPDATE ad_campaigns SET status='queued',last_queued_at=now(),updated_at=now() WHERE id=$1",ad_id)
+        return queued
+```
+
+### `packages\core\services\content_filter.py`
+
+```python
+"""Unicode-aware Persian content moderation with bounded obfuscation detection.
+
+The matcher is deliberately boundary-aware: it catches separators and repeated letters
+inside a blocked token, but does not reject a longer innocent word merely because it
+contains the same substring.
+"""
+from __future__ import annotations
+from dataclasses import dataclass
+import re
+import unicodedata
+
+@dataclass(frozen=True, slots=True)
+class ModerationResult:
+    allowed: bool
+    category: str | None = None
+
+# Keep the public response generic; never echo an offensive value back to a group.
+TERMS: dict[str, tuple[str, ...]] = {
+    "sexual": ("کون", "کس", "کیر", "جنده", "پورن", "سکس"),
+    "insult": ("حرومزاده", "بی ناموس", "مادر قحبه", "کصخل"),
+    "political_extremism": ("داعش", "نازی", "فاشیست"),
+}
+_CHAR_MAP = str.maketrans({"ي":"ی", "ى":"ی", "ك":"ک", "ة":"ه", "ۀ":"ه", "ؤ":"و", "إ":"ا", "أ":"ا"})
+_SEP = r"[\s\-_.ـ‌‍]*"
+_WORD = r"\w"
+
+def normalize(text: str) -> str:
+    value = unicodedata.normalize("NFKC", text).translate(_CHAR_MAP).casefold()
+    value = "".join(ch for ch in value if unicodedata.category(ch) not in {"Mn", "Cf"})
+    return value
+
+def _pattern(term: str) -> re.Pattern[str]:
+    chars = [c for c in normalize(term) if c.isalnum()]
+    body = _SEP.join(re.escape(c) + "+" for c in chars)
+    # Persian has no case distinction; Unicode word boundaries prevent false positives
+    # such as the blocked token being only the prefix of a longer name.
+    return re.compile(rf"(?<!{_WORD}){body}(?!{_WORD})", re.UNICODE)
+
+_PATTERNS = [(category, _pattern(term)) for category, terms in TERMS.items() for term in terms]
+
+def inspect(text: str) -> ModerationResult:
+    value = normalize(text)
+    for category, pattern in _PATTERNS:
+        if pattern.search(value):
+            return ModerationResult(False, category)
+    return ModerationResult(True)
+
+def require_clean(text: str, field: str = "content") -> None:
+    result = inspect(text)
+    if not result.allowed:
+        raise ValueError(f"inappropriate_{field}")
 ```
 
 ### `packages\core\services\country.py`
@@ -6492,6 +7026,7 @@ import asyncpg
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, group_repo, ledger_repo
+from packages.core.services.content_filter import require_clean
 
 
 def _resources(chat_id: int, name: str) -> dict[str, int]:
@@ -6541,6 +7076,8 @@ async def create_country(*, chat_id: int, chat_title: str, player_id: int,
                          name: str, government: str, description: str) -> asyncpg.Record:
     cfg=get_config(); name=name.strip(); description=description.strip()
     if government not in set(cfg.get("country.government_types")): raise ValueError("invalid_government")
+    require_clean(name, "name")
+    require_clean(description, "description")
     rules=cfg.section("country.validation")
     if not int(rules["name_min_length"]) <= len(name) <= int(rules["name_max_length"]): raise ValueError("invalid_name")
     if not int(rules["description_min_length"]) <= len(description) <= int(rules["description_max_length"]): raise ValueError("invalid_description")
@@ -7070,6 +7607,7 @@ from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, election_repo
 from packages.core.services import country as country_service
+from packages.core.services.governance import rules_for
 from packages.core.utils import clock
 
 async def _active_citizen(country_id:int, player_id:int)->bool:
@@ -7080,7 +7618,10 @@ async def start(country_id:int, player_id:int)->asyncpg.Record:
     if country is None: raise ValueError("country_not_found")
     if not await _active_citizen(country_id,player_id): raise PermissionError("citizen_required")
     president=country["president_player_id"]
-    if president is not None and int(president)!=player_id: raise PermissionError("president_required")
+    rules=rules_for(str(country["government_type"]))
+    if not rules.public_elections: raise PermissionError("elections_forbidden_by_government")
+    if rules.election_starter=="leader" and (president is None or int(president)!=player_id): raise PermissionError("president_required")
+    if rules.election_starter=="citizen" and president is not None and str(country["government_type"]) not in {"republic","presidential","parliamentary","semi_presidential","federal","direct_democracy","constitutional_monarchy","council"} and int(president)!=player_id: raise PermissionError("president_required")
     cfg=get_config(); now=clock.utcnow()
     nom=now+timedelta(hours=cfg.int_("elections.election.nomination_duration_hours"))
     vote=nom+timedelta(hours=cfg.int_("elections.election.voting_duration_hours"))
@@ -7130,6 +7671,50 @@ async def resolve_due()->dict[str,int]:
             await election_repo.resolve_poll(conn,row["id"]);stats["polls"]+=1
     for cid in touched: await country_service.refresh_status(cid)
     return stats
+
+async def override_result(election_id:int,leader_id:int,winner_id:int)->bool:
+    row=await db.fetchrow("SELECT e.country_id,c.government_type,c.president_player_id,e.status FROM elections e JOIN countries c ON c.id=e.country_id WHERE e.id=$1",election_id)
+    if row is None:raise ValueError("election_not_found")
+    rules=rules_for(str(row["government_type"]))
+    if not rules.leader_may_override or row["president_player_id"] is None or int(row["president_player_id"])!=leader_id:raise PermissionError("override_forbidden")
+    if not await _active_citizen(int(row["country_id"]),winner_id):raise PermissionError("citizen_required")
+    async with db.transaction() as conn:
+        await conn.execute("UPDATE elections SET winner_player_id=$2,status='completed',resolved_at=now() WHERE id=$1",election_id,winner_id)
+        await conn.execute("UPDATE countries SET president_player_id=$2 WHERE id=$1",row["country_id"],winner_id)
+    return True
+```
+
+### `packages\core\services\governance.py`
+
+```python
+"""Executable constitutional rules for each government model."""
+from __future__ import annotations
+from dataclasses import dataclass
+
+@dataclass(frozen=True,slots=True)
+class Rules:
+    leadership_selection:str
+    public_elections:bool
+    election_starter:str
+    leader_may_override:bool=False
+    candidate_screening:bool=False
+
+RULES={
+ "republic":Rules("popular","public"=="public","citizen"),
+ "presidential":Rules("popular",True,"citizen"),
+ "parliamentary":Rules("parliament",True,"citizen"),
+ "semi_presidential":Rules("popular",True,"citizen"),
+ "federal":Rules("popular",True,"citizen"),
+ "direct_democracy":Rules("popular",True,"citizen"),
+ "constitutional_monarchy":Rules("parliament",True,"citizen"),
+ "council":Rules("council",True,"citizen"),
+ "dictatorship":Rules("leader",True,"leader",leader_may_override=True),
+ "theocracy":Rules("clerical",True,"leader",candidate_screening=True),
+ "monarchy":Rules("hereditary",False,"none"),
+ "military_junta":Rules("military_council",False,"none"),
+ "oligarchy":Rules("elite_council",False,"none"),
+}
+def rules_for(code:str)->Rules:return RULES.get(code,RULES["republic"])
 ```
 
 ### `packages\core\services\missions.py`
@@ -8023,6 +8608,65 @@ async def daily_rollover()->None:
             await conn.execute("UPDATE usd_market_state SET open_price_toman=reference_price_toman,net_flow_cents=0,volume_cents=0,health=100,market_date=$1,updated_at=now() WHERE singleton=TRUE",clock.game_today())
 ```
 
+### `packages\core\services\world_access.py`
+
+```python
+"""Minimal, cached TeleWorld permission policy.
+
+Only administrator status and message deletion are required. Editing messages sent by
+this bot needs no administrator grant; citizenship is explicit and does not consume
+Telegram member events. Dangerous grants such as adding administrators are never asked.
+"""
+from __future__ import annotations
+import time
+from dataclasses import dataclass
+from telegram.constants import ChatMemberStatus
+from packages.core.repositories import world_access_repo
+
+_CACHE_TTL = 20.0
+_cache: dict[int, tuple[float, "Access"]] = {}
+
+@dataclass(frozen=True, slots=True)
+class Access:
+    administrator: bool
+    can_delete_messages: bool
+    missing: tuple[str, ...]
+
+    @property
+    def ready(self) -> bool:
+        return not self.missing
+
+    @property
+    def fingerprint(self) -> str:
+        return ",".join(self.missing) or "ready"
+
+    def missing_fa(self) -> str:
+        names = {"administrator": "مدیر بودن بات", "delete_messages": "حذف پیام‌ها"}
+        return "، ".join(names.get(item, item) for item in self.missing)
+
+async def check(bot, chat_id: int, *, force: bool = False) -> Access:
+    now = time.monotonic()
+    cached = _cache.get(chat_id)
+    if not force and cached and now - cached[0] < _CACHE_TTL:
+        return cached[1]
+    me = await bot.get_me()
+    member = await bot.get_chat_member(chat_id, me.id)
+    administrator = member.status in {ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER}
+    can_delete = administrator and bool(getattr(member, "can_delete_messages", False))
+    missing: list[str] = []
+    if not administrator:
+        missing.append("administrator")
+    elif not can_delete:
+        missing.append("delete_messages")
+    result = Access(administrator, can_delete, tuple(missing))
+    _cache[chat_id] = (now, result)
+    await world_access_repo.save_access(chat_id, administrator, can_delete, missing)
+    return result
+
+def invalidate(chat_id: int) -> None:
+    _cache.pop(chat_id, None)
+```
+
 ### `packages\core\services\xp.py`
 
 ```python
@@ -8898,6 +9542,22 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 پس از نصب وابستگی‌های توسعه، `pytest -q` را اجرا کنید. آزمون قراردادی `test_persian_button_contracts.py` فارسی‌بودن شغل‌ها، نبود فرمان در بات جهان، معتبر بودن تنظیمات و صحت نحوی فایل‌ها را کنترل می‌کند.
 ```
 
+### `RELEASE_2026_07_27_FA.md`
+
+```markdown
+# انتشار ارتقای مدیریت، تبلیغات و سیاست
+
+- پنل مدیریت واکنش‌گرا با صفحه اختصاصی کمپین تبلیغاتی، ارسال فوری، زمان‌بندی و تکرار خودکار.
+- صف Outbox برای انتشار مطمئن پیام‌ها و جلوگیری از ارسال تکراری.
+- پالایش Unicode-aware نام و معرفی کشور، مقاوم در برابر تکرار حروف، فاصله، نیم‌فاصله، کشیده و خط تیره؛ با مرزبندی برای کاهش خطای مثبت.
+- حفظ فرایند ساخت پس از هشدار و دادن فرصت اصلاح به سازنده.
+- ۱۳ نوع حکومت همراه با توضیح و تأیید پیش از انتخاب.
+- قواعد اجرایی متفاوت برای انتخابات عمومی، انتخاب شورایی/نخبگانی/موروثی، کنترل نامزدها و اختیار دستکاری نتیجه در دیکتاتوری.
+- مهاجرت دیتابیس 0009 و تست‌های پالایش و حکمرانی.
+
+> این مدل‌ها شبیه‌سازی بازی‌اند و ادعای بازسازی کامل همه پیچیدگی‌های سیاست واقعی ندارند؛ با این حال تفاوت نهادی آن‌ها اکنون در منطق برنامه اجرا می‌شود، نه فقط در عنوان.
+```
+
 ### `RELEASE_AUDIT_FA.md`
 
 ```markdown
@@ -8928,6 +9588,32 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - اسکن توکن و اطلاعات محرمانه: موفق
 
 آزمون یکپارچه با PostgreSQL و سرور واقعی تلگرام ذاتاً به پایگاه‌داده و توکن‌های محیط استقرار نیاز دارد؛ بنابراین ادعای «صفر باگ مطلق» ممکن نیست، اما مسیرهای قابل آزمون در بسته پوشش داده شده‌اند.
+```
+
+### `RELEASE_AUDIT_FA_2026-07-27.md`
+
+```markdown
+# ممیزی باگ و منطق
+
+## اصلاح‌شده
+
+1. کنترل‌گر فعال جهان رویداد عضویت بات را ثبت نمی‌کرد؛ اکنون قبل از کنترل‌گرهای رابط ثبت می‌شود.
+2. خوش‌آمدگویی قبلی فاقد ثبت پایگاه‌داده بود و تکرار می‌شد؛ اکنون claim اتمیک دارد.
+3. عملیات کشور فقط مدیر بودن کاربر را می‌سنجید، نه دسترسی خود بات؛ قفل مرکزی اضافه شد.
+4. کلیدهای مالی تصادفی، دوبارکلیک را عملیات تازه می‌دیدند؛ شناسه Callback جایگزین شد.
+5. حذف پیام مرحله‌ای بدون بازاعتبارسنجی بود؛ اکنون دسترسی کنترل و شکست حذف به هشدار محدود تبدیل می‌شود.
+6. Privacy Mode قابل تشخیص فرض نشده و راهنمای واقعی BotFather نوشته شد.
+
+## تصمیم‌های محصولی
+
+- شهروندی بازی مستقل از عضویت تلگرام نگه داشته شد؛ بنابراین مجوز محدودسازی اعضا لازم نیست.
+- ویرایش پیام خود بات مجوز مدیر نمی‌خواهد؛ از فهرست مجوزها حذف شد.
+- افزودن مدیر و تغییر اطلاعات گروه مطالبه نمی‌شود.
+- در حالت محدود، داده کشور حذف نمی‌شود و فقط mutationها قفل می‌شوند.
+
+## محدودیت محیط تحویل
+
+در محیط ساخت حاضر Python 3.10 نصب است، درحالی‌که پروژه Python 3.13 و وابستگی‌های Telegram/asyncpg/pytest می‌خواهد. اینترنت نیز برای نصب وابستگی‌ها در دسترس نیست. بنابراین آزمون‌های اجرایی و یکپارچه PostgreSQL در این محیط اجرا نشدند و موفق اعلام نمی‌شوند. اعتبارسنجی نحوی Python، YAML، ساختار بسته، اسکن اسرار و آزمون‌های ایستای داخلی انجام می‌شوند.
 ```
 
 ### `RELEASE_NOTES_FA.md`
@@ -9270,6 +9956,23 @@ See [docs/PHASE_5.md](docs/PHASE_5.md).
 - Phase 5: یکپارچه و سخت‌سازی‌شده
 ```
 
+### `TEST_RESULTS_FA_2026-07-27.md`
+
+```markdown
+# نتیجه آزمون‌ها
+
+| دسته | موفق | ناموفق | اجرا‌نشده |
+|---|---:|---:|---:|
+| اعتبارسنجی نحوی Python | 124 فایل | ۰ | ۰ |
+| YAML | ۱۷ فایل | ۰ | ۰ |
+| قراردادهای ایستای دسترسی/مهاجرت/تکرارناپذیری | ۷ | ۰ | ۰ |
+| اسکن اطلاعات محرمانه و پاک‌سازی بسته | ۱ | ۰ | ۰ |
+| مجموعه pytest پروژه | ۰ | ۰ | ۳۲ فایل آزمون |
+| یکپارچه PostgreSQL واقعی | ۰ | ۰ | ۱ مجموعه |
+
+آزمون‌های اجرایی موفق اعلام نشده‌اند: محیط ساخت Python 3.10 دارد، ولی پروژه Python 3.13 می‌خواهد و بسته‌های `pytest`، `python-telegram-bot` و `asyncpg` نصب نیستند. محیط بدون اینترنت است و نصب وابستگی مجاز/ممکن نبود. برای پذیرش تولید، در CI دارای Python 3.13 و PostgreSQL آزمایشی، `pytest -q` را اجرا کنید.
+```
+
 ### `tests\__init__.py`
 
 ```python
@@ -9414,6 +10117,22 @@ def test_numeric_yaml_keys_support_dotted_access():
     assert get_config().int_("jobs.storage.levels.1.capacity_hours") == 6
 ```
 
+### `tests\test_content_filter.py`
+
+```python
+from packages.core.services.content_filter import inspect
+
+def test_obfuscated_blocked_terms():
+    for value in ("کون","کوون","کوووون","ک و ن","ک-و-ن","كـوـن"):
+        assert not inspect(value).allowed
+
+def test_boundary_avoids_substring_false_positive():
+    assert inspect("کونالا").allowed
+
+def test_clean_persian_content():
+    assert inspect("جمهوری روشن فردا").allowed
+```
+
 ### `tests\test_daily.py`
 
 ```python
@@ -9538,6 +10257,21 @@ def test_grid_wraps_rows():
     assert [len(r) for r in rows] == [2, 2, 1]
 ```
 
+### `tests\test_governance.py`
+
+```python
+from packages.core.services.governance import rules_for
+
+def test_dictatorship_has_real_override_rule():
+    r=rules_for("dictatorship")
+    assert r.public_elections and r.election_starter=="leader" and r.leader_may_override
+
+def test_non_electoral_systems_are_distinct():
+    assert not rules_for("monarchy").public_elections
+    assert not rules_for("military_junta").public_elections
+    assert rules_for("republic").public_elections
+```
+
 ### `tests\test_hardening_contracts.py`
 
 ```python
@@ -9614,6 +10348,20 @@ def test_checksum_is_stable():
     a = migrator._checksum("SELECT 1;")
     b = migrator._checksum("SELECT 1;")
     assert a == b and len(a) == 16
+
+def test_only_pre_manifest_migrations_are_legacy_compatible():
+    assert migrator.LEGACY_CHECKSUM_VERSIONS == {
+        "0001_core_schema", "0002_progression", "0003_country_layer",
+        "0004_admin_command_center", "0005_life_world_hardening",
+        "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
+    }
+    assert "0008_world_access_lifecycle" not in migrator.LEGACY_CHECKSUM_VERSIONS
+
+
+def test_new_migrations_remain_checksum_strict():
+    source = (migrator.Path(migrator.__file__)).read_text(encoding="utf-8")
+    assert "if version in LEGACY_CHECKSUM_VERSIONS" in source
+    assert "Create a new migration instead of editing history" in source
 ```
 
 ### `tests\test_missions.py`
@@ -9934,7 +10682,7 @@ from pydantic import ValidationError
 from packages.core.settings import Settings
 
 BASE = {
-    "DATABASE_URL": "postgresql://user:pass@localhost/db",
+    "DATABASE_URL": "postgresql://test_user:test_password@127.0.0.1/test_db",
     "ADMIN_USERNAME": "admin",
     "ADMIN_PASSWORD": "a-strong-password",
     "RUN_MODE": "polling",
@@ -9978,6 +10726,59 @@ def test_top_level_has_nothing_left():
 
 def test_available_grows_with_level():
     assert len(unlocks.available(1)) < len(unlocks.available(50))
+```
+
+### `tests\test_world_access_contracts.py`
+
+```python
+"""Static contracts that require no Telegram or PostgreSQL service."""
+from pathlib import Path
+import re
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def text(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+def test_my_chat_member_is_registered():
+    source = text("apps/teleworld_bot/handlers/access.py")
+    main = text("apps/teleworld_bot/main.py")
+    assert "ChatMemberHandler.MY_CHAT_MEMBER" in source
+    assert "access.register(application)" in main
+
+def test_permission_policy_is_minimal():
+    source = text("packages/core/services/world_access.py")
+    assert "can_delete_messages" in source
+    for dangerous in ("can_promote_members", "can_change_info", "can_restrict_members"):
+        assert dangerous not in source
+
+def test_all_world_mutations_pass_gate():
+    source = text("apps/teleworld_bot/handlers/world.py")
+    assert "is_mutating(action)" in source
+    assert "if not access.ready" in source
+
+def test_financial_callback_key_is_stable():
+    source = text("apps/teleworld_bot/handlers/world.py")
+    assert 'world-donate:{p.id}:{query.id}' in source
+    assert 'world-project:{p.id}:{query.id}' in source
+    assert 'idempotency_key=f"world:{p.id}:{uuid4().hex}"' not in source
+
+def test_migration_is_non_destructive_and_repeatable():
+    sql = text("migrations/0008_world_access_lifecycle.sql").upper()
+    assert sql.count("CREATE TABLE IF NOT EXISTS") == 2
+    assert "DROP TABLE" not in sql and "TRUNCATE" not in sql
+
+def test_callback_payload_literals_fit_limit():
+    files = [text("apps/teleworld_bot/keyboards.py"), text("apps/telelife_bot/keyboards/main.py")]
+    for source in files:
+        for value in re.findall(r'callback_data\s*=\s*f?["\']([^"\']+)', source):
+            assert len(value.encode("utf-8")) <= 64
+
+def test_privacy_mode_is_documented_honestly():
+    guide = text("docs/DEPLOYMENT_FA.md")
+    assert "Privacy Mode" in guide
+    assert "قابل تشخیص مستقیم نیست" in guide
+    assert "BotFather" in guide
 ```
 
 ### `tests\test_xp.py`

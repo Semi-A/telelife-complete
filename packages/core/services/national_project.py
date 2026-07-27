@@ -13,7 +13,7 @@ import asyncpg
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, ledger_repo, project_repo
-from packages.core.services import xp
+from packages.core.services import xp, migration
 
 _IRT = "IRT"
 
@@ -29,6 +29,7 @@ async def start(
     key: str = "national_storage",
 ) -> asyncpg.Record:
     """Open a national project. Only the sitting president may start one."""
+    if await migration.political_hold(player_id):raise PermissionError("migrant_political_hold")
     country = await country_repo.by_id(country_id)
     if country is None:
         raise ValueError("country_not_found")
