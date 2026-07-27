@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 import asyncpg
+from datetime import datetime, UTC
 from packages.core import db
 
 async def audit(conn: asyncpg.Connection, actor: str, action: str, request_id: str,
