@@ -16,7 +16,8 @@ from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
-ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۵ باز می‌شوند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
+SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
+ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
 def why(e):return ERR.get(str(e),"این کار انجام نشد؛ شرایط را دوباره بررسی کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def answer(q,text=None,show_alert=False):
@@ -26,12 +27,12 @@ async def panel(ctx,c,text,mark):return await show(c,ctx.player.id,ctx.message.c
 async def fresh(ctx):return await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
 async def home(ctx,c):
  p=await fresh(ctx);st=await ui_state_repo.ensure_life(p.id);_,_,last=await daily.state(p.id);cur,need=progression.level_progress(p.level,p.xp);left=max(0,need-cur)
- step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "کارهای امروز را انجام بده و به سطح ۵ برس" if p.level<5 else "شغلت را انتخاب کن، کار کن و درآمدت را رشد بده")
+ step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "شغل بگیر، شیفت انجام بده و به رشد کشورت کمک کن")
  hint="🚀 مسیر شروع آماده ادامه است." if step<4 else "🎯 کارهای امروز بهترین راه رشد هستند."
  text=fa.HOME.format(name=escape(p.first_name),level=fmt.number(p.level),bar=fmt.progress_bar(cur,need,width=10),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
  await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step))
 async def journey(ctx,c):
- st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ تا سطح ۵ با کارهای روزانه رشد کن، سپس شغل انتخاب کن و درآمد بساز.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
+ st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
@@ -58,9 +59,11 @@ async def housing_page(ctx,c):
 async def jobs(ctx,c):
  p=await fresh(ctx);row=await production_repo.get(p.id)
  if row:
-  a=production.accrue(row,datetime.now(UTC));job=JOB_FA.get(str(row['job_code']),'شغل');asset=ASSET_FA.get(str(row['output_asset_code']),'درآمد');body=f"شغل: <b>{job}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}</b>\nسرعت کار: <b>{fmt.number(round(a.rate,1))} {asset} در ساعت</b>\n\nهر وقت مقداری آماده شد، «کار کن و درآمد بگیر» را بزن. اگر ظرفیت پر شود، تولید بیشتر متوقف می‌شود."
- else:body=("هنوز شغلی نداری. یکی را بر اساس نوع درآمدش انتخاب کن؛ انتخاب اولیه قابل تعویض نیست." if p.level>=5 else f"شغل از سطح ۵ باز می‌شود. اکنون سطح {fmt.number(p.level)} هستی؛ با کارهای امروز تجربه بگیر.")
- await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),p.level>=5))
+  a=production.accrue(row,datetime.now(UTC));job=JOB_FA.get(str(row['job_code']),'شغل');asset=ASSET_FA.get(str(row['output_asset_code']),'درآمد');mode=SHIFT_FA.get(str(row.get('shift_mode') or 'balanced'),'متعادل')
+  body=f"شغل: <b>{job}</b>\nشیفت فعلی: <b>{mode}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}</b>\nسرعت کار: <b>{fmt.number(round(a.rate,1))} {asset} در ساعت</b>\n\nهر دریافت، سهم شخصی، مالیات و اثر ملی را شفاف ثبت می‌کند."
+ else:body="از همین حالا یک شغل انتخاب کن؛ هر شیفت برای تو درآمد دارد و برای کشورت منبع می‌سازد."
+ await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),True))
+
 async def market(ctx,c):
  v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان"
  extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else ""
@@ -116,8 +119,15 @@ async def callback(update,c):
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
   if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
   if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"شغل انتخاب شد.",show_alert=True);await jobs(ctx,c);return
+  if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
   if a=='jcollect':
-   amount,gain=await production.collect(ctx.player.id,ik(a,ctx.player.id));msg=(f"{fmt.number(amount)} واحد درآمد و {fmt.number(gain)} تجربه گرفتی." if amount else "هنوز درآمد قابل دریافت آماده نشده است؛ کمی بعد دوباره تلاش کن.");await answer(q,msg,show_alert=True);await jobs(ctx,c);return
+   r=await production.collect_purposeful(ctx.player.id,ik(a,ctx.player.id))
+   if not r.amount:msg="هنوز نتیجه قابل دریافت آماده نشده است؛ کمی بعد دوباره تلاش کن."
+   else:
+    personal=f"💵 سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"📦 سهم شما: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}"
+    national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
+    msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه: +{fmt.number(r.xp)}"
+   await answer(q,msg,show_alert=True);await jobs(ctx,c);return
   if a=='jupgrade':lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"ارتقا به سطح {fmt.number(lvl)}",show_alert=True);await jobs(ctx,c);return
   if a in {'mbuy','msell'}:r=await usd_market.trade(ctx.player.id,'buy' if a=='mbuy' else 'sell',int(parsed.arg),ik(a,ctx.player.id));await answer(q,f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,c);return
   await answer(q,)

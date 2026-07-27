@@ -67,8 +67,10 @@ def jobs(owner, has_job, unlocked=True):
     if not unlocked:
         return k.row(B("🎯 رفتن به کارهای امروز", "missions", owner, style=Style.PRIMARY)).row(B("🏠 خانه", "home", owner)).build()
     if has_job:
-        k.row(B("🛠 کار کن و درآمد بگیر", "jcollect", owner, style=Style.SUCCESS))
-        k.row(B("⚙️ ارتقای مهارت", "jupgrade", owner, "production", Style.PRIMARY), B("🗄 افزایش ظرفیت", "jupgrade", owner, "storage"))
+        k.row(B("✅ دریافت نتیجه شیفت", "jcollect", owner, style=Style.SUCCESS))
+        k.row(B("⚖️ متعادل", "jshift", owner, "balanced", Style.PRIMARY), B("🏛 ملی", "jshift", owner, "national"))
+        k.row(B("🛡 امن", "jshift", owner, "safe"), B("💵 خصوصی", "jshift", owner, "private"))
+        k.row(B("⚙️ ارتقای مهارت", "jupgrade", owner, "production"), B("🗄 افزایش ظرفیت", "jupgrade", owner, "storage"))
     else:
         k.row(B("🌾 کشاورز", "jchoose", owner, "farmer", Style.PRIMARY), B("⛏ معدن‌کار", "jchoose", owner, "miner"))
         k.row(B("💻 برنامه‌نویس", "jchoose", owner, "programmer"), B("📈 بازرگان", "jchoose", owner, "trader"))

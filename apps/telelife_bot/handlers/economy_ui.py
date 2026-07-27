@@ -13,7 +13,7 @@ from packages.core.utils import fmt
 
 ERRORS={
  "insufficient_balance":"موجودی کافی نیست.","amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.",
- "job_locked":"مشاغل از سطح ۵ باز می‌شوند.","job_not_found":"هنوز شغلی انتخاب نکرده‌ای.",
+ "job_locked":"مشاغل از سطح ۱ در دسترس هستند.","job_not_found":"هنوز شغلی انتخاب نکرده‌ای.",
  "housing_locked":"سطحت برای این خانه کافی نیست.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.",
  "market_frozen":"بازار فعلاً برای حفاظت از اقتصاد متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.",
  "daily_limit":"سقف معامله امروزت پر شده است.","invalid_housing":"انتخاب خانه معتبر نیست.",
@@ -48,7 +48,7 @@ async def market(ctx,context):
 async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  parsed=await guard_callback(update);q=update.callback_query
  if parsed is None or q is None:return
- if parsed.action not in {"economy","savings","housing","living","deposit","withdraw","jobs","jchoose","jcollect","jupgrade","market","mbuy","msell","hrent","hbuy"}:return
+ if parsed.action not in {"economy","savings","housing","living","deposit","withdraw","jobs","jchoose","jcollect","jshift","jupgrade","market","mbuy","msell","hrent","hbuy"}:return
  ctx=await resolve(update)
  if ctx is None:await q.answer();return
  try:
@@ -67,12 +67,14 @@ async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
   elif a=="jchoose":
    if not await production.choose(ctx.player.id,parsed.arg):raise ValueError("job_already_selected")
    await q.answer("شغلت ثبت شد!",show_alert=True);await jobs(ctx,context)
+  elif a=="jshift":
+   await production.choose_shift(ctx.player.id,parsed.arg);await q.answer("نوع شیفت تغییر کرد.",show_alert=True);await jobs(ctx,context)
   elif a=="jcollect":
-   amount,xp=await production.collect(ctx.player.id,key(a,ctx.player.id));await q.answer(f"{fmt.number(amount)} واحد و {fmt.number(xp)} XP دریافت شد.",show_alert=True);await jobs(ctx,context)
+   r=await production.collect_purposeful(ctx.player.id,key(a,ctx.player.id));await q.answer(f"سهم شما {fmt.number(r.amount)}؛ مالیات {fmt.toman(r.tax_toman)}؛ سهم کشور {fmt.number(r.country_amount)}",show_alert=True);await jobs(ctx,context)
   elif a=="jupgrade":
    lvl=await production.upgrade(ctx.player.id,parsed.arg,key(a,ctx.player.id));await q.answer(f"به سطح {fmt.number(lvl)} ارتقا یافت.",show_alert=True);await jobs(ctx,context)
   elif a in {"mbuy","msell"}:
    r=await usd_market.trade(ctx.player.id,"buy" if a=="mbuy" else "sell",int(parsed.arg),key(a,ctx.player.id));await q.answer(f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,context)
  except (ValueError,PermissionError) as exc:await q.answer(err(exc),show_alert=True)
 
-def register(app)->None:app.add_handler(CallbackQueryHandler(callback,pattern=r"^tl:(economy|savings|housing|living|deposit|withdraw|jobs|jchoose|jcollect|jupgrade|market|mbuy|msell|hrent|hbuy):"),group=-1)
+def register(app)->None:app.add_handler(CallbackQueryHandler(callback,pattern=r"^tl:(economy|savings|housing|living|deposit|withdraw|jobs|jchoose|jcollect|jshift|jupgrade|market|mbuy|msell|hrent|hbuy):"),group=-1)

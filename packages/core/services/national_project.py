@@ -44,6 +44,8 @@ async def start(
     ):
         raise PermissionError("citizen_required")
 
+    projects=get_config().section("national_project.projects")
+    if key not in projects:raise ValueError("invalid_project")
     requirements: dict[str, Any] = get_config().section(
         f"national_project.projects.{key}.requirements"
     )
@@ -121,14 +123,40 @@ async def contribute(
         completed = await project_repo.complete_if_ready(conn, project_id)
 
     if completed:
-        reward = get_config().int_(
-            f"national_project.projects.{project_key}.completion.contributor_reward_xp"
-        )
-        await xp.grant(
-            player_id,
-            "national_project",
-            idempotency_key=f"project:{project_id}:xp:{player_id}",
-            amount=reward,
-        )
-
+        completion=get_config().section(f"national_project.projects.{project_key}.completion")
+        async with db.transaction() as conn:
+            project=await project_repo.lock(conn,project_id)
+            await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
+            people=await project_repo.contributors(conn,project_id)
+        reward=int(completion["contributor_reward_xp"])
+        for contributor in people:
+            await xp.grant(contributor,"national_project",idempotency_key=f"project:{project_id}:xp:{contributor}",amount=reward)
+    if accepted:
+        from packages.core.services import missions
+        await missions.report_progress(player_id,"project_contribution")
     return accepted, completed
+
+async def treasury_contribute(project_id:int,player_id:int,asset:str,amount:int,key:str)->tuple[int,bool]:
+    if amount<=0:raise ValueError("amount_must_be_positive")
+    async with db.transaction() as conn:
+        project=await project_repo.lock(conn,project_id)
+        if not project or project["status"]!="active":raise ValueError("project_not_active")
+        country=await ledger_repo.lock_country(conn,int(project["country_id"]))
+        if not country or int(country["president_player_id"] or 0)!=player_id:raise PermissionError("president_required")
+        remaining=await project_repo.remaining(conn,project_id,asset)
+        if remaining is None:raise ValueError("asset_not_required")
+        accepted=min(amount,remaining)
+        if accepted<=0:return 0,False
+        if not await project_repo.claim_country_funding(conn,project_id,player_id,asset,accepted,key):return 0,False
+        balance=await ledger_repo.change_country(conn,int(project["country_id"]),asset,-accepted)
+        await ledger_repo.insert(conn,player_id=player_id,country_id=int(project["country_id"]),key=f"{key}:country",reason="project_treasury_funding",asset=asset,account=ledger_repo.country_account(asset),amount=-accepted,balance=balance,metadata={"project_id":project_id})
+        completed=await project_repo.complete_if_ready(conn,project_id)
+    if completed:
+        completion=get_config().section(f"national_project.projects.{project['project_key']}.completion")
+        async with db.transaction() as conn:
+            await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
+    return accepted,completed
+
+async def available(country_id:int)->list[tuple[str,str]]:
+    projects=get_config().section("national_project.projects");done=await project_repo.completed_keys(country_id)
+    return [(key,str(spec["title"])) for key,spec in projects.items() if key not in done]

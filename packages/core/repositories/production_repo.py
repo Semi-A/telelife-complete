@@ -71,3 +71,16 @@ async def level_up(conn: asyncpg.Connection, player_id: int, kind: str) -> None:
         f"UPDATE player_jobs SET {column} = {column} + 1 WHERE player_id = $1",  # noqa: S608
         player_id,
     )
+
+async def set_shift_mode(conn: asyncpg.Connection, player_id: int, mode: str) -> None:
+    await conn.execute(
+        "UPDATE player_jobs SET shift_mode=$2,updated_at=now() WHERE player_id=$1",
+        player_id, mode,
+    )
+
+
+async def country_for_player(conn: asyncpg.Connection, player_id: int) -> asyncpg.Record | None:
+    return await conn.fetchrow(
+        """SELECT c.id,c.name FROM citizenships cs JOIN countries c ON c.id=cs.country_id
+        WHERE cs.player_id=$1 AND cs.is_active FOR SHARE OF c""", player_id
+    )

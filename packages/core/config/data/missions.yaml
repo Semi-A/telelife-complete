@@ -1,41 +1,40 @@
-# Daily missions. Pool is sampled per player per day - deterministic by
-# (player_id, date) so a restart never reshuffles someone's missions.
 daily:
   count_per_day: 3
   reroll_allowed: false
-
 pool:
+  - key: work_shift
+    title: "نتیجه یک شیفت کاری را دریافت کن"
+    target: 1
+    reward_toman: 18000
+    reward_xp: 35
+    min_level: 1
+  - key: national_output
+    title: "با کارت برای کشور منبع تولید کن"
+    target: 1
+    reward_toman: 22000
+    reward_xp: 45
+    min_level: 1
+  - key: pay_work_tax
+    title: "با یک شیفت پولی به خزانه مالیات برسان"
+    target: 1
+    reward_toman: 25000
+    reward_xp: 50
+    min_level: 1
+  - key: project_contribution
+    title: "در یک پروژه ملی مشارکت کن"
+    target: 1
+    reward_toman: 30000
+    reward_xp: 60
+    min_level: 1
   - key: claim_daily
-    title: "جایزه روزانه‌تو بگیر"
+    title: "پاداش روزانه را برای حفظ زنجیره بگیر"
     target: 1
-    reward_toman: 15000
-    reward_xp: 30
+    reward_toman: 12000
+    reward_xp: 25
     min_level: 1
-
-  - key: check_profile
-    title: "یه سر به پروفایلت بزن"
-    target: 1
-    reward_toman: 8000
-    reward_xp: 15
-    min_level: 1
-
   - key: earn_xp_100
-    title: "۱۰۰ تا XP جمع کن"
+    title: "از فعالیت واقعی ۱۰۰ تجربه کسب کن"
     target: 100
     reward_toman: 40000
     reward_xp: 50
     min_level: 2
-
-  - key: group_active
-    title: "تو یه گروه فعال باش"
-    target: 1
-    reward_toman: 20000
-    reward_xp: 35
-    min_level: 2
-
-  - key: streak_keeper
-    title: "استریکتو نگه دار"
-    target: 1
-    reward_toman: 25000
-    reward_xp: 40
-    min_level: 3

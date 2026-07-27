@@ -55,3 +55,29 @@ jobs:
 idempotency:
   collection_key_ttl_days: 90
   upgrade_key_ttl_days: 365
+purpose_loop:
+  available_from_level: 1
+  tax_percent: 8
+  national_output_asset_for_irt_jobs: technology
+  national_output_percent_for_irt_jobs: 12
+  shift_modes:
+    safe:
+      title: "شیفت امن"
+      player_percent: 85
+      country_percent: 10
+      xp_percent: 85
+    balanced:
+      title: "شیفت متعادل"
+      player_percent: 80
+      country_percent: 20
+      xp_percent: 100
+    national:
+      title: "شیفت ملی"
+      player_percent: 65
+      country_percent: 35
+      xp_percent: 125
+    private:
+      title: "شیفت خصوصی"
+      player_percent: 95
+      country_percent: 5
+      xp_percent: 75

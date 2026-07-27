@@ -138,3 +138,24 @@ async def complete_if_ready(conn: asyncpg.Connection, project_id: int) -> bool:
         project_id,
     )
     return completed is not None
+async def completed_keys(country_id: int) -> set[str]:
+    rows=await db.fetch("SELECT project_key FROM national_projects WHERE country_id=$1",country_id)
+    return {str(row["project_key"]) for row in rows}
+
+async def contributors(conn: asyncpg.Connection, project_id: int) -> list[int]:
+    rows=await conn.fetch("SELECT DISTINCT player_id FROM project_contributions WHERE project_id=$1",project_id)
+    return [int(row["player_id"]) for row in rows]
+
+async def claim_country_funding(conn: asyncpg.Connection, project_id: int, actor: int,
+                                asset: str, amount: int, key: str) -> bool:
+    value=await conn.fetchval("""INSERT INTO country_project_funding(project_id,actor_player_id,asset_code,amount,idempotency_key)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",project_id,actor,asset,amount,key)
+    if value is None:return False
+    await conn.execute("""UPDATE project_requirements SET contributed_amount=LEAST(required_amount,contributed_amount+$3)
+      WHERE project_id=$1 AND asset_code=$2""",project_id,asset,amount)
+    return True
+
+async def apply_effect(conn: asyncpg.Connection, project_id: int, country_id: int,
+                       code: str, asset: str | None, magnitude: int) -> None:
+    await conn.execute("""INSERT INTO national_project_effects(country_id,project_id,effect_code,asset_code,magnitude_basis_points)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id) DO NOTHING""",country_id,project_id,code,asset,magnitude)

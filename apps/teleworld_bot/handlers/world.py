@@ -11,7 +11,7 @@ from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -69,10 +69,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration", "rate", "reserve"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -163,15 +163,17 @@ async def project_page(update, context):
     row, _, _ = await facts(update.effective_chat.id)
     if not row: raise ValueError("country_not_found")
     project = await project_repo.active(row["id"])
+    objective=await country_objectives.today(row["id"])
     latest = project or await db.fetchrow("SELECT * FROM national_projects WHERE country_id=$1 ORDER BY id DESC LIMIT 1", row["id"])
     body = "هنوز پروژه‌ای آغاز نشده است."
     if latest:
         status = await project_repo.status(latest["id"])
         body = "\n".join(f"• {ASSET.get(str(x['asset_code']), 'دارایی')}: {fmt.number(x['contributed_amount'])} از {fmt.number(x['required_amount'])}" for x in status)
-        if latest["status"] == "completed": body = "✅ این پروژه ملی تکمیل شده است.\n\n" + body
-    markup = kb.project(True) if project else kb.back()
-    if latest is None: markup = kb.project(False)
-    await show(update, context, "🏗 <b>پروژه ملی</b>\n\n" + body + "\n\nهر شهروند فقط به اندازه نیاز باقی‌مانده کمک می‌کند.", markup)
+        if latest["status"] == "completed": body = "✅ آخرین پروژه تکمیل شده و اثرش روی تولید فعال است.\n\n" + body
+    daily=f"\n\n🎯 هدف کاری امروز کشور: {fmt.number(objective.progress)} از {fmt.number(objective.target)} شیفت · {fmt.number(objective.contributors)} مشارکت‌کننده"+(" ✅" if objective.complete else "")
+    available=await national_project.available(row["id"])
+    markup=kb.project(True) if project else kb.project(False,available)
+    await show(update, context, "🏗 <b>پروژه‌ها و هدف ملی</b>\n\n" + body + daily + "\n\nپروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.", markup)
 
 async def callback(update, context):
     query = update.callback_query
@@ -307,11 +309,17 @@ async def callback(update, context):
             election = await election_repo.open_for_country(row["id"])
             if not election or election["status"] != "voting": await answer(query, "رأی‌گیری باز نیست.", show_alert=True); return
             accepted = await elections.vote(election["id"], p.id, int(action.split(":", 1)[1])); await answer(query, "رأی ثبت شد." if accepted else "قبلاً رأی داده‌ای.", show_alert=True); await politics_page(update, context)
-        elif action == "pstart":
-            p = await player(update); row, _, _ = await facts(update.effective_chat.id)
-            if not row: raise ValueError("country_not_found")
-            if await db.fetchval("SELECT 1 FROM national_projects WHERE country_id=$1", row["id"]): await answer(query, "پروژه ملی این کشور قبلاً آغاز شده است و تکرارشدنی نیست.", show_alert=True); return
-            await national_project.start(row["id"], p.id); await answer(query, "پروژه ملی آغاز شد.", show_alert=True); await project_page(update, context)
+        elif action.startswith("pstart:"):
+            p=await player(update);row,_,_=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            project_key=action.split(":",1)[1];await national_project.start(row["id"],p.id,project_key);await answer(query,"پروژه ملی آغاز شد.",show_alert=True);await project_page(update,context)
+        elif action.startswith("ptreasury:"):
+            p=await player(update);row,_,_=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            project=await project_repo.active(row["id"])
+            if not project:await answer(query,"پروژه فعالی وجود ندارد.",show_alert=True);return
+            _,asset,amount=action.split(":");accepted,done=await national_project.treasury_contribute(project["id"],p.id,asset,int(amount),f"treasury-project:{p.id}:{query.id}")
+            await answer(query,f"{fmt.number(accepted)} واحد از دارایی کشور به پروژه رسید."+(" پروژه تکمیل شد!" if done else ""),show_alert=True);await project_page(update,context)
         elif action.startswith("pcon:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")

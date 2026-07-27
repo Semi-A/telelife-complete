@@ -61,11 +61,15 @@ def candidates(rows):
     buttons = [[b(f"🗳 رأی به {row['first_name']}", f"vote:{row['player_id']}", "primary" if i == 0 else None)] for i, row in enumerate(rows)]
     buttons.append([b("↩️ بازگشت", "politics")])
     return InlineKeyboardMarkup(buttons)
-def project(active):
+def project(active, available=None):
     if active:
-        return InlineKeyboardMarkup([[b("💵 کمک ۵۰ هزار تومان", "pcon:IRT:50000", "success")],
-                                     [b("🌾 کمک ۵۰ غذا", "pcon:food:50"), b("⛏ کمک ۵۰ ماده معدنی", "pcon:minerals:50")], [b("🏠 خانه جهان", "home")]])
-    return InlineKeyboardMarkup([[b("🏗 آغاز پروژه ملی", "pstart", "primary")], [b("🏠 خانه جهان", "home")]])
+        return InlineKeyboardMarkup([[b("💵 کمک شخصی ۵۰ هزار", "pcon:IRT:50000", "success"),b("🏛 از خزانه ۲۰۰ هزار","ptreasury:IRT:200000")],
+                                     [b("🌾 کمک ۵۰ غذا", "pcon:food:50"), b("⛏ کمک ۵۰ معدن", "pcon:minerals:50")],
+                                     [b("🛢 کمک ۵۰ نفت", "pcon:oil:50"),b("⚡ کمک ۵۰ انرژی", "pcon:energy:50")],
+                                     [b("🔬 کمک ۵۰ فناوری", "pcon:technology:50")], [b("🏠 خانه جهان", "home")]])
+    rows=[]
+    for key,title in (available or []):rows.append([b(f"🏗 آغاز {title}",f"pstart:{key}","primary" if not rows else None)])
+    rows.append([b("🏠 خانه جهان", "home")]);return InlineKeyboardMarkup(rows)
 
 def subscription(round_id:int,remaining:int):
  rows=[]

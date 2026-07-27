@@ -70,7 +70,7 @@ async def choose(player_id: int, job: str) -> bool:
     player = await db.fetchrow("SELECT level FROM players WHERE id=$1", player_id)
     if player is None:
         raise ValueError("player_not_found")
-    if int(player["level"]) < 5:
+    if int(player["level"]) < get_config().int_("jobs.purpose_loop.available_from_level"):
         raise ValueError("job_locked")
     jobs = get_config().section("jobs.jobs")
     if job not in jobs:
@@ -168,3 +168,79 @@ async def upgrade(player_id: int, kind: str, key: str, at: datetime | None = Non
         )
         await production_repo.level_up(conn, player_id, kind)
         return target
+@dataclass(frozen=True, slots=True)
+class WorkReceipt:
+    amount: int
+    xp: int
+    asset: str
+    tax_toman: int
+    country_amount: int
+    country_asset: str | None
+    country_name: str | None
+    shift_mode: str
+
+
+def shift_modes() -> dict[str, dict[str, object]]:
+    return get_config().section("jobs.purpose_loop.shift_modes")
+
+
+async def choose_shift(player_id: int, mode: str) -> str:
+    modes=shift_modes()
+    if mode not in modes:raise ValueError("invalid_shift")
+    async with db.transaction() as conn:
+        row=await production_repo.lock(conn,player_id)
+        if not row:raise ValueError("job_not_found")
+        accrual=accrue(row,datetime.now(UTC))
+        await production_repo.checkpoint(conn,player_id,accrual.stored,datetime.now(UTC))
+        await production_repo.set_shift_mode(conn,player_id,mode)
+    return mode
+
+
+async def collect_purposeful(player_id: int, key: str, at: datetime | None = None) -> WorkReceipt:
+    """Claim one accumulated shift and atomically split its impact."""
+    now=at or datetime.now(UTC);cfg=get_config()
+    async with db.transaction() as conn:
+        row=await production_repo.lock(conn,player_id)
+        if not row:raise ValueError("job_not_found")
+        existing=await conn.fetchrow("SELECT * FROM work_claims WHERE idempotency_key=$1",key)
+        if existing:
+            return WorkReceipt(0,0,str(existing['asset_code']),0,0,None,None,str(existing['shift_mode']))
+        accrual=accrue(row,now);gross=accrual.stored
+        if gross<cfg.int_("jobs.production.minimum_collection_amount"):
+            return WorkReceipt(0,0,str(row['output_asset_code']),0,0,None,None,str(row.get('shift_mode') or 'balanced'))
+        mode=str(row.get('shift_mode') or 'balanced');spec=cfg.section(f"jobs.purpose_loop.shift_modes.{mode}")
+        asset=str(row['output_asset_code']);country=await production_repo.country_for_player(conn,player_id)
+        player_pct=int(spec['player_percent']);country_pct=int(spec['country_percent']) if country else 0
+        if country:
+            bonus=int(await conn.fetchval("""SELECT COALESCE(sum(magnitude_basis_points),0) FROM national_project_effects
+              WHERE country_id=$1 AND effect_code='work_output_bonus' AND (asset_code=$2 OR asset_code='all')""",int(country['id']),asset) or 0)
+            gross=floor(gross*(10000+min(bonus,5000))/10000)
+        player_amount=max(1,floor(gross*player_pct/100));country_amount=max(0,floor(gross*country_pct/100))
+        tax=0;country_asset=asset if country else None
+        if asset=='IRT':
+            tax=floor(player_amount*cfg.int_("jobs.purpose_loop.tax_percent")/100) if country else 0
+            player_amount-=tax
+            country_asset=str(cfg.get("jobs.purpose_loop.national_output_asset_for_irt_jobs")) if country else None
+            country_amount=floor(gross*cfg.int_("jobs.purpose_loop.national_output_percent_for_irt_jobs")/100) if country else 0
+        balance=await ledger_repo.change_player(conn,player_id,asset,player_amount)
+        await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:player",reason="purposeful_work_player",asset=asset,account=ledger_repo.player_account(asset),amount=player_amount,balance=balance,metadata={"job":row['job_code'],"shift":mode,"gross":gross})
+        if country and tax:
+            treasury=await ledger_repo.change_country(conn,int(country['id']),'IRT',tax)
+            await ledger_repo.insert(conn,player_id=player_id,country_id=int(country['id']),key=f"{key}:tax",reason="work_tax",asset='IRT',account='treasury',amount=tax,balance=treasury,metadata={"job":row['job_code'],"shift":mode})
+        if country and country_amount and country_asset:
+            national=await ledger_repo.change_country(conn,int(country['id']),country_asset,country_amount)
+            await ledger_repo.insert(conn,player_id=player_id,country_id=int(country['id']),key=f"{key}:country",reason="national_work_output",asset=country_asset,account=ledger_repo.country_account(country_asset),amount=country_amount,balance=national,metadata={"job":row['job_code'],"shift":mode})
+        fraction=gross/accrual.capacity if accrual.capacity else 0
+        award=floor(cfg.int_("jobs.production.collection_xp_at_full_capacity")*fraction*int(spec['xp_percent'])/100) if fraction>=cfg.float_("jobs.production.minimum_collection_fraction_for_xp") else 0
+        await conn.execute("""INSERT INTO work_claims(idempotency_key,player_id,country_id,job_code,shift_mode,asset_code,gross_amount,player_amount,country_amount,tax_toman,xp_awarded)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",key,player_id,int(country['id']) if country else None,row['job_code'],mode,asset,gross,player_amount,country_amount,tax,award)
+        await conn.execute("""UPDATE player_jobs SET stored_amount=0,production_updated_at=$2,last_claim_at=$2,total_claims=total_claims+1,
+          total_tax_toman=total_tax_toman+$3,total_country_output=total_country_output+$4,updated_at=now() WHERE player_id=$1""",player_id,now,tax,country_amount)
+    if award:
+        result=await xp.grant(player_id,"purposeful_work",idempotency_key=f"{key}:xp",amount=award);award=result.granted
+    from packages.core.services import missions
+    await missions.report_progress(player_id,"work_shift")
+    if country_amount:await missions.report_progress(player_id,"national_output")
+    if tax:await missions.report_progress(player_id,"pay_work_tax")
+    if award:await missions.report_progress(player_id,"earn_xp_100",award)
+    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode)
