@@ -1,6 +1,6 @@
 """صفحه‌کلیدهای فارسی بات زندگی؛ در هر صفحه فقط یک اقدام اصلی داریم."""
 from telegram import InlineKeyboardMarkup
-from packages.core.ui import Keyboard, Style, button, cb
+from packages.core.ui import Keyboard, Style, button, cb, url_button
 
 NS = "tl"
 
@@ -19,7 +19,8 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
-    k.row(B("🪪 شخصیت من", "profile", owner), B("🧭 مرکز پیشرفت", "progress", owner))
+    k.row(B("🪪 شخصیت من", "profile", owner), B("🌍 کشور من", "country", owner))
+    k.row(B("🧭 مرکز پیشرفت", "progress", owner))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
@@ -112,3 +113,13 @@ def today(owner, actions):
 def confirm(owner, token, confirm_action, arg, back_action):
     return (Keyboard().row(B("✅ تأیید و اجرا",confirm_action,owner,arg,Style.SUCCESS))
             .row(B("↩️ انصراف",back_action,owner)).build())
+
+def country(owner:int,group_url:str|None,destinations:list[tuple[int,str,int]],*,pending:bool=False):
+    k=Keyboard()
+    if group_url:
+        k.row(url_button("🔗 ورود به گروه کشور من",group_url,style=Style.PRIMARY))
+    if not pending:
+        for country_id,name,citizens in destinations:
+            k.row(B(f"🧳 {name} · {citizens} شهروند","migrate",owner,str(country_id)))
+    k.row(B("🔄 تازه‌سازی", "country", owner),B("🏠 خانه", "home", owner))
+    return k.build()

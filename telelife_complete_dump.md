@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 269
+تعداد کل فایل‌ها: 274
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -220,6 +220,7 @@ telelife_complete/
 │   ├── conftest.py
 │   ├── test_admin_2026_hardening.py
 │   ├── test_admin_operations_10.py
+│   ├── test_admin_ui_health_market_regressions.py
 │   ├── test_all_keyboard_states.py
 │   ├── test_callbacks.py
 │   ├── test_clock.py
@@ -231,6 +232,7 @@ telelife_complete/
 │   ├── test_country_realism_contracts.py
 │   ├── test_country_trade_release_c.py
 │   ├── test_daily.py
+│   ├── test_deep_audit_regressions.py
 │   ├── test_fmt.py
 │   ├── test_free_tier_hardening.py
 │   ├── test_glass_buttons.py
@@ -238,6 +240,7 @@ telelife_complete/
 │   ├── test_hardening_contracts.py
 │   ├── test_hotfix_2026_07_27.py
 │   ├── test_interval_bindings.py
+│   ├── test_ledger_owner_regressions.py
 │   ├── test_life_progression_system.py
 │   ├── test_live_market.py
 │   ├── test_market_chart_contracts.py
@@ -273,6 +276,7 @@ telelife_complete/
 ├── .gitignore
 ├── ADMIN_10_RELEASE_FA.md
 ├── ADMIN_COMMAND_THEATRE_RELEASE_FA.md
+├── ADMIN_PANEL_REDESIGN_FA_2026-07-27.md
 ├── AUDIT_AND_DEPLOY_FA_2026-07-27.md
 ├── AUDIT_FINAL_FA_2026-07-27.md
 ├── AUDIT_STATUS.md
@@ -284,6 +288,7 @@ telelife_complete/
 ├── Dockerfile
 ├── dump.py
 ├── HOTFIX_2026-07-27_FA.md
+├── HOTFIX_LEDGER_OWNER_FA_2026-07-27.md
 ├── LIFE_PROGRESSION_RELEASE_FA.md
 ├── MANIFEST.sha256
 ├── pyproject.toml
@@ -370,7 +375,6 @@ __pycache__/
 *.py[cod]
 .env
 .venv/
-venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -420,6 +424,32 @@ venv/
 - چیدمان دسکتاپ حرفه‌ای و واکنش‌گرا برای نمایشگرهای کوچک‌تر
 
 کنترل کیفیت: parse تمام Python/YAML، compileall، بررسی نحوی JavaScript و قراردادهای ایستا انجام شد. تست یکپارچه PostgreSQL باید در staging با `python -m pytest -q` اجرا شود.
+```
+
+### `ADMIN_PANEL_REDESIGN_FA_2026-07-27.md`
+
+```markdown
+# بازطراحی و پایدارسازی پنل مدیریت — ۲۷ ژوئیهٔ ۲۰۲۶
+
+## سلامت سرویس‌ها
+- یک نمونهٔ ناموفق Health Check دیگر باعث اعلام خرابی یا Restart فوری بات نمی‌شود؛ سه شکست متوالی لازم است.
+- وضعیت‌های شروع، بازیابی، اتصال ناپایدار، برخط و خاموش از هم تفکیک شده‌اند.
+- خطای قدیمی پس از بازیابی موفق پاک می‌شود.
+- `/healthz` سلامت وب‌سایت و دیتابیس را گزارش می‌کند و اتصال موقت Telegram را به‌اشتباه 503 نمی‌کند.
+
+## نمودار بازار
+- نمودار با Snapshotهای واقعی پایگاه داده ساخته می‌شود.
+- PostgreSQL داده‌ها را به کندل‌های OHLC واقعی ۳۰دقیقه‌ای تبدیل می‌کند.
+- Tooltip شامل باز، بیشینه، کمینه، بسته و تعداد نمونه است.
+- Crosshair، خط آخرین قیمت، درصد تغییر و تازه‌سازی خودکار ۳۰ثانیه‌ای اضافه شد.
+- بازه‌های نمایش ۲۴ ساعت، ۷ روز و ۳۰ روز هستند؛ تایم‌فریم همواره ۳۰ دقیقه است.
+
+## رابط کاربری
+- تایپوگرافی فارسی خواناتر، کنتراست بهتر، فاصله‌گذاری منظم‌تر و چیدمان واکنش‌گرا.
+- وضعیت سالمِ بدون رخداد به‌طور شفاف نمایش داده می‌شود.
+- وضعیت هر سرویس همراه توضیح انسانی و مدت فعالیت دیده می‌شود.
+- پشتیبانی از صفحه‌کلید، focus-visible و reduced-motion حفظ شده است.
+- URL تبلیغات فقط با پروتکل HTTP/HTTPS باز می‌شود.
 ```
 
 ### `apps\__init__.py`
@@ -549,7 +579,10 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     db_ok = await db.healthcheck(); services = snapshot()
-    admin_ok = services.get("admin", {}).get("status") in {"starting", "healthy"}
+    # /healthz describes the HTTP process itself. Bot lifecycle states remain
+    # visible in the payload, but a Telegram reconnect must not turn the admin
+    # website health endpoint into a false 503.
+    admin_ok = services.get("admin", {}).get("status") in {"starting", "healthy", "degraded"}
     code = status.HTTP_200_OK if db_ok and admin_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse({"ok": db_ok and admin_ok, "database": db_ok, "services": services}, code)
 
@@ -964,6 +997,17 @@ body{background:radial-gradient(circle at 72% -18%,#123356 0,transparent 32%),ra
 .check-row{display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:10px}
 .check-row input{width:auto}
 button[hidden]{display:none!important}
+
+/* Admin cockpit refinement — Persian-first readability with a technical market tape. */
+@font-face{font-family:"TL Persian";src:local("Vazirmatn"),local("IRANSansX"),local("Tahoma");font-display:swap}
+:root{--bg:#07111c;--panel:#0c1a28;--panel-2:#102436;--ink:#f3f8fb;--muted:#9db0bd;--dim:#68808f;--cyan:#63d9d1;--blue:#75a9ff;--violet:#a896ff;--rose:#ff6f86;--amber:#ffc166;--line:rgba(166,202,219,.16);--shadow:0 20px 55px rgba(0,0,0,.27)}
+html{font-size:16px}body{font-family:"TL Persian",TL,"Segoe UI",sans-serif;line-height:1.65;letter-spacing:0;background:radial-gradient(circle at 20% -10%,#102a3c 0,transparent 34%),linear-gradient(135deg,#07111c,#091522 55%,#08131f)}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(to bottom,#0006,transparent 75%)}
+.rail{width:272px;padding:24px 18px;background:rgba(5,14,23,.92)}.shell{margin-right:272px;padding-inline:42px}.brand b{font-size:18px}.brand small{font-family:"JetBrains Mono",monospace}.nav{font-size:14px;min-height:44px}.nav span{font-family:"JetBrains Mono",monospace}.topbar h1{font-size:29px}.eyebrow{font-family:"JetBrains Mono","TL Persian",monospace;letter-spacing:1px}.panel-head h2,.section-lead h2{font-weight:760;letter-spacing:-.35px}.panel,.metric-grid article,.country-card,.market-cards article{border-color:var(--line);background:linear-gradient(145deg,rgba(15,34,50,.97),rgba(8,22,35,.97))}.status-help{font-size:10px;color:var(--dim)}
+.service-radar span{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;min-height:48px;padding:10px 13px}.service-radar span small{grid-column:1/-1;color:var(--dim);font-size:9px;margin-top:-6px}.service-radar i{display:inline-flex;align-items:center;gap:7px;font-style:normal}.service-radar i:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}.service-radar .status-ok{color:var(--cyan)}.service-radar .status-info{color:var(--blue)}.service-radar .status-warning{color:var(--amber)}.service-radar .status-critical{color:var(--rose)}
+.range-control{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px}.market-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:42px}.market-summary{font:11px "JetBrains Mono","TL Persian",monospace;color:var(--muted);direction:rtl}.chart-foot{display:flex;gap:18px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:12px;color:var(--dim);font-size:10px}.chart-foot span:before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--cyan);margin-left:7px}.candle-chart{overflow:hidden;border:1px solid rgba(99,217,209,.08);background:linear-gradient(180deg,rgba(4,16,27,.68),rgba(7,20,31,.28))}.candle-chart svg{font-family:"JetBrains Mono",monospace}.candle-chart .axis-label{fill:var(--dim);font-size:10px}.candle-chart .gridline{stroke:rgba(166,202,219,.09);stroke-dasharray:3 7}.candle-chart .wick{stroke-width:1.3}.candle-chart .candle.up{fill:rgba(99,217,209,.65);stroke:#63d9d1}.candle-chart .candle.down{fill:rgba(255,111,134,.58);stroke:#ff6f86}.candle-chart .last-line{stroke:var(--blue);stroke-width:1;stroke-dasharray:5 5;opacity:.75}.candle-chart .last-pill{fill:#75a9ff}.candle-chart .last-text{fill:#07111c;font-size:10px;font-weight:800}.candle-chart .crosshair{stroke:#d7edf755;stroke-width:1;stroke-dasharray:3 3;opacity:0}.candle-chart:hover .crosshair{opacity:1}.chart-tooltip{position:absolute;pointer-events:none;z-index:3;min-width:155px;padding:10px 12px;border:1px solid var(--line);background:rgba(5,16,26,.96);box-shadow:var(--shadow);color:var(--muted);font:10px "JetBrains Mono","TL Persian",monospace;opacity:0;transform:translate(12px,-105%)}.chart-tooltip.show{opacity:1}.chart-tooltip b{display:block;color:var(--ink);font-size:11px;margin-bottom:5px}
+.empty.success-empty{color:var(--cyan);border-style:solid;background:#63d9d108}.incident-core:has(.success-empty){border-top-color:var(--cyan)}
+@media(max-width:1050px){.rail{width:84px}.shell{margin-right:84px;padding-inline:26px}}@media(max-width:650px){html{font-size:15px}.shell{margin:0;padding-inline:14px}.market-toolbar,.range-control{align-items:flex-start;flex-direction:column}.chart-foot{gap:7px 14px}.status-help{display:none}}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -972,7 +1016,7 @@ button[hidden]{display:none!important}
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const fa=new Intl.NumberFormat("fa-IR"), money=n=>`${fa.format(Number(n||0))} تومان`;
-const state={market:[],asset:"USD",ops:null,opsTimer:null,me:null,loading:new Set()};
+const state={market:[],asset:"USD",ops:null,opsTimer:null,marketTimer:null,me:null,loading:new Set(),lastHealth:null};
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";clearTimeout(el._t);el._t=setTimeout(()=>el.className="",3500)}
 async function api(url,options={}){
   const method=(options.method||"GET").toUpperCase();
@@ -997,14 +1041,54 @@ async function api(url,options={}){
 }
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
+function safeUrl(v){try{const u=new URL(String(v),location.origin);return ["http:","https:"].includes(u.protocol)?u.href:"#"}catch{return "#"}}
 function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده",engagement:"ماندگاری کاربران",ledger:"دفتر اقتصاد",audit:"گزارش حسابرسی",controls:"کنترل سامانه",admins:"مدیران پنل"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
-async function overview(){const results=await Promise.allSettled([api('/api/admin/command-center'),api('/healthz')]);if(results[0].status==='rejected')throw results[0].reason;const cc=results[0].value,h=results[1].status==='fulfilled'?results[1].value:{services:{}};const o=cc.overview||{};$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i class="${v.status==='healthy'?'source-live':'source-stale'}">${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';renderCommand(cc);state.command=cc;loadOperationalTools();$("#last-sync").textContent=new Date().toLocaleTimeString('fa-IR');} 
-function renderCommand(cc){const alerts=cc.alerts||[],summary=cc.summary||{},integrity=cc.integrity||{};$("#critical-count").textContent=fa.format(summary.critical||0);$("#warning-count").textContent=fa.format(summary.warning||0);$("#crisis-count").textContent=fa.format(summary.crises||0);$("#ledger-24").textContent=fa.format(integrity.ledger_24h||0);$("#net-irt").textContent=money(integrity.net_irt_24h||0);$("#incident-feed").innerHTML=alerts.map((a,i)=>`<article class="incident ${esc(a.severity)}" style="animation-delay:${i*.06}s"><div><h3>${esc(a.title)}</h3><p>${esc(a.detail)}</p><small>${esc(a.status||'open')} · ${fa.format(a.occurrences||1)} بار</small></div><div class="incident-actions"><button class="small-btn" data-incident-go="${esc(a.action_view||a.action)}">بررسی</button>${a.status==='resolved'?'':`<button class="small-btn" data-incident-ack="${a.id}">پذیرش</button><button class="small-btn danger" data-incident-resolve="${a.id}">حل شد</button>`}</div></article>`).join('');$$('[data-incident-go]').forEach(b=>b.onclick=()=>go(b.dataset.incidentGo));$$('[data-incident-ack]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentAck,'acknowledged'));$$('[data-incident-resolve]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentResolve,'resolved'));const spots=[[13,41],[25,67],[39,35],[51,61],[63,29],[74,55],[84,38],[91,70]];$("#world-nodes").innerHTML=(cc.countries||[]).slice(0,8).map((x,i)=>`<button class="world-node ${x.crisis?'crisis':''}" style="left:${spots[i][0]}%;top:${spots[i][1]}%" data-go="countries"><i></i>${esc(x.name)} · ${fa.format(x.citizens||0)}</button>`).join('');$$('#world-nodes [data-go]').forEach(b=>b.onclick=()=>go('countries'));}
+async function overview(){
+  const results=await Promise.allSettled([api('/api/admin/command-center'),api('/healthz')]);
+  if(results[0].status==='rejected')throw results[0].reason;
+  const cc=results[0].value,h=results[1].status==='fulfilled'?results[1].value:{services:{},ok:false};
+  state.lastHealth=h;
+  const o=cc.overview||{};$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));
+  const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'بات زندگی',teleworld:'بات جهان'};
+  const labels={online:'برخط',starting:'در حال شروع',recovering:'در حال بازیابی',offline:'خاموش',degraded:'اتصال ناپایدار',healthy:'برخط',restarting:'در حال بازیابی'};
+  $("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>{
+    const display=v.display_status||v.status||'unknown',severity=v.severity||(display==='online'||display==='healthy'?'ok':display==='starting'?'info':'warning');
+    const detail=display==='starting'?'راه‌اندازی اولیه؛ هنوز خطا محسوب نمی‌شود':display==='recovering'?`بازیابی خودکار · ${fa.format(v.restarts||0)} راه‌اندازی مجدد`:display==='online'||display==='healthy'?`پایدار · ${fa.format(Math.floor((v.uptime_seconds||0)/60))} دقیقه فعالیت`:(v.last_error||'در حال بررسی خودکار');
+    return `<span>${names[k]||esc(k)}<i class="status-${esc(severity)}">${esc(labels[display]||display)}</i><small>${esc(detail)}</small></span>`;
+  }).join('')||'<span>اطلاعات سرویس هنوز آماده نیست</span>';
+  const conn=$("#connection-state");conn.classList.toggle('offline',!h.ok);conn.querySelector('span').textContent=h.ok?'همگام':'داده دیرکرد دارد';
+  renderCommand(cc);state.command=cc;loadOperationalTools();$("#last-sync").textContent=new Date().toLocaleTimeString('fa-IR');
+}
+function renderCommand(cc){const alerts=cc.alerts||[],summary=cc.summary||{},integrity=cc.integrity||{};$("#critical-count").textContent=fa.format(summary.critical||0);$("#warning-count").textContent=fa.format(summary.warning||0);$("#crisis-count").textContent=fa.format(summary.crises||0);$("#ledger-24").textContent=fa.format(integrity.ledger_24h||0);$("#net-irt").textContent=money(integrity.net_irt_24h||0);$("#incident-feed").innerHTML=alerts.length?alerts.map((a,i)=>`<article class="incident ${esc(a.severity)}" style="animation-delay:${i*.06}s"><div><h3>${esc(a.title)}</h3><p>${esc(a.detail)}</p><small>${esc(a.status||'open')} · ${fa.format(a.occurrences||1)} بار</small></div><div class="incident-actions"><button class="small-btn" data-incident-go="${esc(a.action_view||a.action)}">بررسی</button>${a.status==='resolved'?'':`<button class="small-btn" data-incident-ack="${a.id}">پذیرش</button><button class="small-btn danger" data-incident-resolve="${a.id}">حل شد</button>`}</div></article>`).join(''):'<div class="empty success-empty">سیگنال بحرانی فعالی دیده نشد</div>';$$('[data-incident-go]').forEach(b=>b.onclick=()=>go(b.dataset.incidentGo));$$('[data-incident-ack]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentAck,'acknowledged'));$$('[data-incident-resolve]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentResolve,'resolved'));const spots=[[13,41],[25,67],[39,35],[51,61],[63,29],[74,55],[84,38],[91,70]];$("#world-nodes").innerHTML=(cc.countries||[]).slice(0,8).map((x,i)=>`<button class="world-node ${x.crisis?'crisis':''}" style="left:${spots[i][0]}%;top:${spots[i][1]}%" data-go="countries"><i></i>${esc(x.name)} · ${fa.format(x.citizens||0)}</button>`).join('');$$('#world-nodes [data-go]').forEach(b=>b.onclick=()=>go('countries'));}
 
 async function setIncident(id,status){try{await api(`/api/admin/incidents/${id}`,{method:'PATCH',body:JSON.stringify({status,note:status==='resolved'?'حل‌شده از مرکز فرماندهی':null})});toast(status==='resolved'?'رخداد حل شد':'مسئولیت رخداد پذیرفته شد');await overview()}catch(e){toast(e.message,true)}}
-function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
-async function market(mini=false){state.market=await api(`/api/admin/market?hours=${$("#market-range")?.value||24}`);if(!state.market.length)return;let selected=state.market.find(x=>x.asset_code===state.asset)||state.market[0];state.asset=selected.asset_code;chart(mini?'#mini-chart':'#market-chart',selected.points?.length?selected.points:[{price:selected.current_price_toman,time:selected.updated_at}]);if(mini)return;$("#market-tabs").innerHTML=state.market.map(x=>`<button class="${x.asset_code===state.asset?'active':''}" data-asset="${esc(x.asset_code)}">${esc(x.title_fa)}</button>`).join('');$("#market-cards").innerHTML=state.market.map(x=>`<article><span>${esc(x.title_fa)} · ${esc(x.asset_code)}</span><strong>${money(x.current_price_toman)}</strong><small>آخرین تغییر: ${date(x.updated_at)}</small><button class="small-btn" data-price="${esc(x.asset_code)}">ثبت قیمت جدید</button></article>`).join('');$$('[data-asset]').forEach(b=>b.onclick=()=>{state.asset=b.dataset.asset;market()});$$('[data-price]').forEach(b=>b.onclick=()=>priceDialog(b.dataset.price))}
+function chart(target,candles){
+  const el=$(target);if(!candles?.length){el.innerHTML='<div class="empty">برای این بازه هنوز Snapshot کافی ثبت نشده است</div>';return}
+  const data=candles.map(x=>({time:x.time,open:Number(x.open??x.price),high:Number(x.high??x.price),low:Number(x.low??x.price),close:Number(x.close??x.price),samples:Number(x.samples||1)})).filter(x=>Number.isFinite(x.close));
+  if(!data.length){el.innerHTML='<div class="empty">داده معتبر نمودار موجود نیست</div>';return}
+  const w=1040,h=390,p={t:22,r:92,b:42,l:18},plotW=w-p.l-p.r,plotH=h-p.t-p.b;
+  const lo=Math.min(...data.map(x=>x.low)),hi=Math.max(...data.map(x=>x.high)),pad=Math.max((hi-lo)*.1,1),min=lo-pad,max=hi+pad,range=max-min;
+  const y=v=>p.t+(max-v)/range*plotH,x=i=>p.l+(i+.5)*plotW/data.length,cw=Math.max(3,Math.min(15,plotW/data.length*.62));
+  const ticks=[0,.25,.5,.75,1].map(t=>max-range*t),timeTicks=[0,Math.floor((data.length-1)/2),data.length-1];
+  const candlesSvg=data.map((d,i)=>{const up=d.close>=d.open,top=y(Math.max(d.open,d.close)),bottom=y(Math.min(d.open,d.close));return `<g data-candle="${i}"><line class="wick ${up?'up':'down'}" x1="${x(i)}" x2="${x(i)}" y1="${y(d.high)}" y2="${y(d.low)}"/><rect class="candle ${up?'up':'down'}" x="${x(i)-cw/2}" y="${top}" width="${cw}" height="${Math.max(1.6,bottom-top)}" rx="1"/></g>`}).join('');
+  const last=data.at(-1).close,lastY=y(last),labels=ticks.map(v=>`<line class="gridline" x1="${p.l}" x2="${w-p.r}" y1="${y(v)}" y2="${y(v)}"/><text class="axis-label" x="${w-p.r+9}" y="${y(v)+3}">${fa.format(Math.round(v))}</text>`).join('');
+  const times=timeTicks.map(i=>`<text class="axis-label" text-anchor="middle" x="${x(i)}" y="${h-14}">${new Date(data[i].time).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'})}</text>`).join('');
+  el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار کندلی واقعی قیمت در بازه‌های ۳۰ دقیقه">${labels}${times}${candlesSvg}<line class="last-line" x1="${p.l}" x2="${w-p.r}" y1="${lastY}" y2="${lastY}"/><rect class="last-pill" x="${w-p.r+4}" y="${lastY-10}" width="84" height="20" rx="4"/><text class="last-text" x="${w-p.r+46}" y="${lastY+3}" text-anchor="middle">${fa.format(Math.round(last))}</text><line id="chart-cross-x" class="crosshair" x1="${p.l}" x2="${p.l}" y1="${p.t}" y2="${h-p.b}"/><line id="chart-cross-y" class="crosshair" x1="${p.l}" x2="${w-p.r}" y1="${p.t}" y2="${p.t}"/></svg><div class="chart-tooltip"></div>`;
+  const svg=$('svg',el),tip=$('.chart-tooltip',el);svg.onpointermove=e=>{const r=svg.getBoundingClientRect(),px=(e.clientX-r.left)/r.width*w,py=(e.clientY-r.top)/r.height*h,i=Math.max(0,Math.min(data.length-1,Math.floor((px-p.l)/plotW*data.length))),d=data[i];$('#chart-cross-x',el).setAttribute('x1',x(i));$('#chart-cross-x',el).setAttribute('x2',x(i));$('#chart-cross-y',el).setAttribute('y1',py);$('#chart-cross-y',el).setAttribute('y2',py);tip.classList.add('show');tip.style.left=`${e.clientX-r.left}px`;tip.style.top=`${e.clientY-r.top}px`;tip.innerHTML=`<b>${date(d.time)} · ۳۰ دقیقه</b>باز ${fa.format(d.open)}<br>بیشینه ${fa.format(d.high)}<br>کمینه ${fa.format(d.low)}<br>بسته ${fa.format(d.close)}<br>${fa.format(d.samples)} نمونه`;};svg.onpointerleave=()=>tip.classList.remove('show');
+}
+async function market(mini=false){
+  state.market=await api(`/api/admin/market?hours=${$("#market-range")?.value||24}`);if(!state.market.length)return;
+  let selected=state.market.find(x=>x.asset_code===state.asset)||state.market[0];state.asset=selected.asset_code;
+  const series=selected.candles?.length?selected.candles:(selected.points?.length?selected.points:[{price:selected.current_price_toman,time:selected.updated_at}]);
+  chart(mini?'#mini-chart':'#market-chart',series);if(mini)return;
+  const first=Number(series[0]?.open??series[0]?.price??selected.current_price_toman),last=Number(series.at(-1)?.close??series.at(-1)?.price??selected.current_price_toman),change=first?((last-first)/first*100):0;
+  $("#market-summary").innerHTML=`<b class="${change>=0?'amount-positive':'amount-negative'}">${change>=0?'+':''}${fa.format(change.toFixed(2))}٪</b> · ${fa.format(series.length)} کندل · آخرین ${date(selected.updated_at)}`;
+  $("#market-tabs").innerHTML=state.market.map(x=>`<button class="${x.asset_code===state.asset?'active':''}" data-asset="${esc(x.asset_code)}">${esc(x.title_fa)}</button>`).join('');
+  $("#market-cards").innerHTML=state.market.map(x=>`<article><span>${esc(x.title_fa)} · ${esc(x.asset_code)}</span><strong>${money(x.current_price_toman)}</strong><small>آخرین تغییر: ${date(x.updated_at)}</small><button class="small-btn" data-price="${esc(x.asset_code)}">ثبت قیمت جدید</button></article>`).join('');
+  $$('[data-asset]').forEach(b=>b.onclick=()=>{state.asset=b.dataset.asset;market()});$$('[data-price]').forEach(b=>b.onclick=()=>priceDialog(b.dataset.price));
+  clearInterval(state.marketTimer);state.marketTimer=setInterval(()=>{if($('#view-market')?.classList.contains('active')&&!document.hidden)market().catch(()=>{})},30000);
+}
 function guardedConfirm(summary,run){let armed=false;return async()=>{if(!armed){armed=true;$('#dialog-fields').insertAdjacentHTML('afterbegin',`<div class="confirm-preview"><strong>پیش‌نمایش اثر</strong><br>${esc(summary)}<br>برای اجرای نهایی، دوباره دکمه تأیید را بزن.</div>`);$('#dialog-confirm').textContent='تأیید نهایی و اجرا';return}await run()}}
 function openDialog(title,kicker,fields,confirm){$("#dialog-title").textContent=title;$("#dialog-kicker").textContent=kicker;$("#dialog-fields").innerHTML=fields;$("#dialog-confirm").textContent="تأیید عملیات";const risky=/مسدود|بازپرداخت|توقف|فریز|تنظیم|ریاست|قیمت/.test(`${title} ${kicker}`);$("#dialog-confirm").onclick=risky?guardedConfirm(`عملیات «${title}» پس از تأیید نهایی اجرا و در حسابرسی ثبت می‌شود.`,confirm):confirm;$("#action-dialog").showModal()}
 function priceDialog(asset){const row=state.market.find(x=>x.asset_code===asset);openDialog(`قیمت ${row?.title_fa||asset}`,"ثبت نقطه بازار",`<label>قیمت جدید به تومان<input id="f-price" type="number" min="1" value="${row?.current_price_toman||1}"></label>`,async()=>{try{await api(`/api/admin/market/${encodeURIComponent(asset)}`,{method:'POST',body:JSON.stringify({price:Number($("#f-price").value)})});$("#action-dialog").close();toast("قیمت ثبت شد");await market()}catch(e){toast(e.message,true)}})}
@@ -1020,7 +1104,7 @@ $("#send-news").onclick=async()=>{const text=$("#news-text").value.trim(),d=$("#
 let searchTimer;$("#player-search").oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(players,300)};$("#market-range").onchange=()=>market();$("#refresh").onclick=()=>load(location.hash.slice(1)||'overview');
 
 
-async function requests(){const rows=await api('/api/admin/ad-requests?limit=100');$("#ad-requests").innerHTML=rows.map(x=>`<article class="panel request-card">${x.image_mime?`<img src="/api/admin/ad-requests/${x.id}/image" alt="تصویر تبلیغ">`:''}<div><p class="eyebrow">#${x.id} · ${esc(x.package_code)} · ${esc(x.channel)} · ${fa.format(x.price_stars)} ⭐</p><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><a href="${esc(x.target_url)}" target="_blank" rel="noopener">${esc(x.target_url)}</a><small>${esc(x.first_name)} · ${date(x.created_at)} · ${esc(x.status)} · ارسال‌شده ${fa.format(x.delivered||0)} · در انتظار ${fa.format(x.pending||0)}</small><div class="country-actions"><button class="small-btn" data-editrequest="${x.id}" data-title="${esc(x.title)}" data-description="${esc(x.description)}" data-url="${esc(x.target_url)}">ویرایش</button><button class="small-btn" data-approve="${x.id}">تأیید و صدور پرداخت</button><button class="small-btn danger" data-reject="${x.id}">درخواست اصلاح</button><button class="small-btn" data-pause="${x.id}">توقف</button><button class="small-btn" data-refund="${x.id}">بازپرداخت</button></div></div></article>`).join('')||'<div class="empty">درخواستی وجود ندارد</div>';$$('[data-editrequest]').forEach(b=>b.onclick=()=>editRequest(b));$$('[data-approve]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.approve,'approve'));$$('[data-reject]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.reject,'reject'));$$('[data-pause]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.pause,'pause'));$$('[data-refund]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.refund,'refund'))}
+async function requests(){const rows=await api('/api/admin/ad-requests?limit=100');$("#ad-requests").innerHTML=rows.map(x=>`<article class="panel request-card">${x.image_mime?`<img src="/api/admin/ad-requests/${x.id}/image" alt="تصویر تبلیغ">`:''}<div><p class="eyebrow">#${x.id} · ${esc(x.package_code)} · ${esc(x.channel)} · ${fa.format(x.price_stars)} ⭐</p><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><a href="${esc(safeUrl(x.target_url))}" target="_blank" rel="noopener">${esc(x.target_url)}</a><small>${esc(x.first_name)} · ${date(x.created_at)} · ${esc(x.status)} · ارسال‌شده ${fa.format(x.delivered||0)} · در انتظار ${fa.format(x.pending||0)}</small><div class="country-actions"><button class="small-btn" data-editrequest="${x.id}" data-title="${esc(x.title)}" data-description="${esc(x.description)}" data-url="${esc(x.target_url)}">ویرایش</button><button class="small-btn" data-approve="${x.id}">تأیید و صدور پرداخت</button><button class="small-btn danger" data-reject="${x.id}">درخواست اصلاح</button><button class="small-btn" data-pause="${x.id}">توقف</button><button class="small-btn" data-refund="${x.id}">بازپرداخت</button></div></div></article>`).join('')||'<div class="empty">درخواستی وجود ندارد</div>';$$('[data-editrequest]').forEach(b=>b.onclick=()=>editRequest(b));$$('[data-approve]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.approve,'approve'));$$('[data-reject]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.reject,'reject'));$$('[data-pause]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.pause,'pause'));$$('[data-refund]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.refund,'refund'))}
 
 function editRequest(b){openDialog(`ویرایش درخواست #${b.dataset.editrequest}`,"بازبینی محتوای تبلیغ",`<label>عنوان<input id="f-ad-title" maxlength="120" value="${esc(b.dataset.title)}"></label><label>توضیحات<textarea id="f-ad-description" maxlength="2000">${esc(b.dataset.description)}</textarea></label><label>نشانی مقصد<input id="f-ad-url" maxlength="1000" dir="ltr" value="${esc(b.dataset.url)}"></label>`,async()=>{try{await api(`/api/admin/ad-requests/${b.dataset.editrequest}`,{method:'PUT',body:JSON.stringify({title:$("#f-ad-title").value.trim(),description:$("#f-ad-description").value.trim(),target_url:$("#f-ad-url").value.trim(),requested_start_at:null})});$("#action-dialog").close();toast('درخواست ویرایش شد');requests()}catch(e){toast(e.message,true)}})}
 
@@ -1095,7 +1179,7 @@ if($('#add-admin'))$('#add-admin').onclick=adminCreateDialog;
 ```html
 <!doctype html><html lang="fa" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#06111d"><title>{% block title %}مرکز فرماندهی TeleLife{% endblock %}</title>
+<meta name="theme-color" content="#08131f"><title>{% block title %}مرکز فرماندهی TeleLife{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', path='/admin.css') }}">
 </head><body><div class="noise"></div>{% block content %}{% endblock %}
 <script src="{{ url_for('static', path='/admin.js') }}" defer></script></body></html>
@@ -1125,7 +1209,7 @@ if($('#add-admin'))$('#add-admin').onclick=adminCreateDialog;
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
 <main class="shell">
-<header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live"><i></i><span>LIVE</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی">↻</button></div></header>
+<header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live" id="connection-state"><i></i><span>همگام</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی" aria-label="تازه‌سازی داده‌ها">↻</button></div></header>
 <div id="toast" role="status" aria-live="polite"></div>
 <section class="view active command-view" id="view-overview">
   <div class="command-mast">
@@ -1140,7 +1224,7 @@ if($('#add-admin'))$('#add-admin').onclick=adminCreateDialog;
     </article>
     <aside class="command-side">
       <article class="panel pulse-card"><p class="eyebrow">ECONOMY PULSE</p><div class="pulse-value"><strong data-stat="player_liquidity">۰</strong><small>تومان نقدینگی بازیکنان</small></div><div id="economy-wave" class="economy-wave"><i></i></div><div class="pulse-meta"><span>دفتر ۲۴ ساعت <b id="ledger-24">۰</b></span><span>جریان خالص <b id="net-irt">۰</b></span></div></article>
-      <article class="panel network-card"><div class="panel-head"><div><p class="eyebrow">SERVICE MESH</p><h2>شبکه سرویس‌ها</h2></div></div><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
+      <article class="panel network-card"><div class="panel-head"><div><p class="eyebrow">SERVICE MESH</p><h2>وضعیت سرویس‌ها</h2></div><span class="status-help">شروع و بازیابی، خرابی نیست</span></div><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
     </aside>
   </div>
   <div class="world-strip panel">
@@ -1156,8 +1240,8 @@ if($('#add-admin'))$('#add-admin').onclick=adminCreateDialog;
   <div class="split"><article class="panel"><div class="panel-head"><div><p class="eyebrow">قیف امروز</p><h2>از ورود تا عادت روزانه</h2></div></div><div id="retention-funnel" class="funnel"></div></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">راهنمای اقدام</p><h2>چه چیزی را بهتر کنیم؟</h2></div></div><div id="engagement-insights" class="insight-list"></div></article></div>
 </section>
 <section class="view" id="view-market">
-  <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>هر تغییر قیمت ثبت و وارد تاریخچه نمودار می‌شود.</p></div><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div>
-  <article class="panel market-stage"><div id="market-tabs" class="asset-tabs"></div><div id="market-chart" class="chart-wrap large"><div class="empty">در حال دریافت قیمت‌ها…</div></div></article>
+  <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>کندل‌های واقعی از Snapshotهای ثبت‌شده؛ هر کندل دقیقاً ۳۰ دقیقه.</p></div><div class="range-control"><span>تایم‌فریم ۳۰ دقیقه</span><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div></div>
+  <article class="panel market-stage"><div class="market-toolbar"><div id="market-tabs" class="asset-tabs"></div><div id="market-summary" class="market-summary">در حال محاسبه…</div></div><div id="market-chart" class="chart-wrap large candle-chart"><div class="empty">در حال دریافت قیمت‌ها…</div></div><div class="chart-foot"><span>OHLC واقعی</span><span>حرکت خودکار هر ۳۰ ثانیه</span><span>منبع: Snapshotهای پایگاه داده</span></div></article>
   <div id="market-cards" class="market-cards"></div>
 </section>
 
@@ -4829,6 +4913,31 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 - اجرای کامل pytest در محیط تحویل ممکن نبود، چون وابستگی‌های runtime پروژه (`python-telegram-bot` و `pytest`) در sandbox نصب نبودند؛ پیش از استقرار در محیط پروژه اجرا شود: `python -m pytest -q`.
 ```
 
+### `HOTFIX_LEDGER_OWNER_FA_2026-07-27.md`
+
+```markdown
+# اصلاح مالکیت Ledger — ۲۷ ژوئیهٔ ۲۰۲۶
+
+## علت رخداد
+قید `ledger_owner_check` هر ردیف دفترکل را متعلق به دقیقاً یکی از دو مالک «بازیکن» یا «کشور» می‌داند. سه مسیر مربوط به درآمد ملی، مالیات کار و تأمین مالی پروژهٔ ملی، شناسهٔ بازیکنِ عامل را هم‌زمان با شناسهٔ کشور به‌عنوان مالک ثبت می‌کردند؛ بنابراین PostgreSQL تراکنش را رد می‌کرد.
+
+## اصلاحات
+- ردیف مالیات کار و خروجی ملی اکنون فقط با `country_id` ثبت می‌شود.
+- برداشت بودجهٔ کشور برای پروژهٔ ملی اکنون فقط با `country_id` ثبت می‌شود.
+- مخزن Ledger پیش از اجرای SQL، وجود دقیقاً یک مالک را کنترل می‌کند تا خطای مشابه زودتر و واضح‌تر متوقف شود.
+- تست رگرسیون برای همهٔ فراخوانی‌های ایستای `ledger_repo.insert` و حالت‌های صفر/دو مالک اضافه شد.
+
+شناسهٔ بازیکنِ عامل در جداول دامنه‌ای مانند `work_claims` و `country_project_funding` حفظ می‌شود؛ اما مالک ردیف دفترکل همان حسابی است که موجودی‌اش تغییر کرده است.
+
+## ممیزی عمیق دوم
+- اتمیک‌سازی تکمیل پروژه ملی، اثر دائمی آن و پاداش XP مشارکت‌کنندگان؛ قطع فرایند دیگر پروژه کاملِ بدون اثر یا پاداش باقی نمی‌گذارد.
+- پرداخت پاداش مشارکت‌کنندگان در پایان خزانه‌ای نیز اضافه و اتمیک شد.
+- شمارنده XP امروز در پنل با مرز روز منطقه زمانی بازی هماهنگ شد.
+- تجارت با خود و کمک انسانی به خود، پیش از قفل‌گذاری رد می‌شود.
+- سقف کمک انسانی به‌صورت مجزا برای هر دارایی محاسبه می‌شود و واحدهای نامرتبط با هم جمع نمی‌شوند.
+- پذیرش رابطه دیپلماتیک، کلید idempotency را پیش از تغییر وضعیت claim می‌کند.
+```
+
 ### `LIFE_PROGRESSION_RELEASE_FA.md`
 
 ```markdown
@@ -8006,15 +8115,36 @@ async def news_rows(limit: int = 100) -> list[asyncpg.Record]:
     """, limit)
 
 async def market_history(hours: int = 24) -> list[asyncpg.Record]:
+    """Return real 30-minute OHLC candles from persisted market snapshots."""
     return await db.fetch("""
-        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error,
+        WITH samples AS (
+          SELECT s.asset_code,s.captured_at,s.price_toman,
+            date_bin(interval '30 minutes',s.captured_at,TIMESTAMPTZ '2000-01-01 00:00:00+00') bucket
+          FROM market_price_snapshots s
+          WHERE s.captured_at >= now()-($1::int * interval '1 hour')
+        ), ranked AS (
+          SELECT *,row_number() OVER(PARTITION BY asset_code,bucket ORDER BY captured_at) first_rank,
+                   row_number() OVER(PARTITION BY asset_code,bucket ORDER BY captured_at DESC) last_rank
+          FROM samples
+        ), candles AS (
+          SELECT asset_code,bucket,
+            max(price_toman) FILTER(WHERE first_rank=1) open,
+            max(price_toman) high,min(price_toman) low,
+            max(price_toman) FILTER(WHERE last_rank=1) close,
+            count(*) samples
+          FROM ranked GROUP BY asset_code,bucket
+        )
+        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,
+               p.source_checked_at,p.source_error,
                COALESCE(jsonb_agg(jsonb_build_object(
-                 'time',s.captured_at,'price',s.price_toman) ORDER BY s.captured_at)
-                 FILTER (WHERE s.captured_at IS NOT NULL),'[]'::jsonb) AS points
-        FROM market_prices p
-        LEFT JOIN market_price_snapshots s ON s.asset_code=p.asset_code
-          AND s.captured_at >= now()-($1::int * interval '1 hour')
-        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error
+                 'time',c.bucket,'open',c.open,'high',c.high,'low',c.low,
+                 'close',c.close,'price',c.close,'samples',c.samples
+               ) ORDER BY c.bucket) FILTER(WHERE c.bucket IS NOT NULL),'[]'::jsonb) candles,
+               COALESCE(jsonb_agg(jsonb_build_object('time',c.bucket,'price',c.close)
+                 ORDER BY c.bucket) FILTER(WHERE c.bucket IS NOT NULL),'[]'::jsonb) points
+        FROM market_prices p LEFT JOIN candles c ON c.asset_code=p.asset_code
+        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,
+                 p.source_checked_at,p.source_error
         ORDER BY CASE p.asset_code WHEN 'USD' THEN 0 ELSE 1 END,p.asset_code
     """, hours)
 
@@ -8812,6 +8942,11 @@ async def insert(
     key: str, reason: str, asset: str, account: str, amount: int,
     balance: int, metadata: dict[str, Any] | None = None,
 ) -> bool:
+    # A ledger leg belongs to exactly one balance owner. Actor/citizen IDs must
+    # live in metadata; setting both owners violates ledger_owner_check and can
+    # roll back an otherwise valid economic transaction.
+    if (player_id is None) == (country_id is None):
+        raise ValueError("ledger_requires_exactly_one_owner")
     row = await conn.fetchval(
         """INSERT INTO ledger(player_id,country_id,idempotency_key,reason,currency,asset_code,account,amount,balance_after,metadata)
         VALUES($1,$2,$3,$4,$5,$5,$6,$7,$8,$9)
@@ -9274,6 +9409,7 @@ async def country_for_player(conn: asyncpg.Connection, player_id: int) -> asyncp
 from __future__ import annotations
 
 from packages.core import db
+from packages.core.utils import clock
 
 
 async def unlocked_keys(player_id: int) -> set[str]:
@@ -9287,9 +9423,12 @@ async def xp_today(player_id: int) -> int:
     value = await db.fetchval(
         """
         SELECT COALESCE(sum(amount), 0) FROM xp_events
-        WHERE player_id = $1 AND created_at >= date_trunc('day', now())
+        WHERE player_id = $1
+          AND (created_at AT TIME ZONE $2)::date = $3::date
         """,
         player_id,
+        str(clock.game_timezone().key),
+        clock.game_today(),
     )
     return int(value or 0)
 
@@ -9456,7 +9595,7 @@ async def completed_keys(country_id: int) -> set[str]:
     return {str(row["project_key"]) for row in rows}
 
 async def contributors(conn: asyncpg.Connection, project_id: int) -> list[int]:
-    rows=await conn.fetch("SELECT DISTINCT player_id FROM project_contributions WHERE project_id=$1",project_id)
+    rows=await conn.fetch("SELECT DISTINCT player_id FROM project_contributions WHERE project_id=$1 ORDER BY player_id",project_id)
     return [int(row["player_id"]) for row in rows]
 
 async def claim_country_funding(conn: asyncpg.Connection, project_id: int, actor: int,
@@ -9581,6 +9720,7 @@ class ServiceState:
     last_error: str | None = None
     last_started_monotonic: float | None = None
     last_healthy_monotonic: float | None = None
+    consecutive_health_failures: int = 0
 
     def public(self) -> dict[str, Any]:
         data = asdict(self)
@@ -9589,6 +9729,21 @@ class ServiceState:
         healthy = data.pop("last_healthy_monotonic")
         data["uptime_seconds"] = round(max(0.0, now - started), 1) if started else 0.0
         data["healthy_ago_seconds"] = round(max(0.0, now - healthy), 1) if healthy else None
+        # The process-local registry is authoritative for lifecycle state. A
+        # service in its startup grace period is not a failed bot.
+        raw_status = str(data["status"])
+        if raw_status == "healthy":
+            display_status, severity = "online", "ok"
+        elif raw_status == "starting":
+            display_status, severity = "starting", "info"
+        elif raw_status == "restarting":
+            display_status, severity = "recovering", "warning"
+        elif raw_status == "stopped":
+            display_status, severity = "offline", "critical"
+        else:
+            display_status, severity = raw_status, "warning"
+        data["display_status"] = display_status
+        data["severity"] = severity
         return data
 
 
@@ -11046,6 +11201,7 @@ async def _adjust_rep(conn,country_id:int,delta:int,field:str|None=None)->None:
  await conn.execute(f"UPDATE country_international_reputation SET {field_sql} score=GREATEST($3::int,LEAST($4::int,score+$2::int)),updated_at=now() WHERE country_id=$1",country_id,delta,minimum,maximum)
 
 async def create_contract(proposer_id:int,recipient_id:int,actor_id:int,preset:str,key:str):
+ pair(proposer_id,recipient_id)  # reject self-trade before taking duplicate locks
  cfg=get_config();presets=cfg.section("country_trade.contracts.presets")
  if preset not in presets:raise ValueError("invalid_trade_preset")
  spec=presets[preset];offered_asset=str(spec["offered_asset"]);requested_asset=str(spec["requested_asset"]);offered=int(spec["offered_amount"]);requested=int(spec["requested_amount"])
@@ -11145,8 +11301,9 @@ async def accept_relation(country_id:int,target_id:int,actor_id:int,key:str)->bo
   if not await _authorized(conn,country_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
   row=await conn.fetchrow("SELECT * FROM country_relations WHERE country_low_id=$1 AND country_high_id=$2 FOR UPDATE",lo,hi)
   if not row or not row["proposed_status"] or int(row["proposed_by_country_id"] or 0)==country_id or row["proposal_expires_at"]<=datetime.now(UTC):raise ValueError("relation_proposal_missing")
+  inserted=await conn.fetchval("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'relation_accepted',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,target_id,actor_id,key,{"status":str(row["proposed_status"])})
+  if not inserted:return False
   await conn.execute("UPDATE country_relations SET status=proposed_status,proposed_status=NULL,proposed_by_country_id=NULL,proposal_expires_at=NULL,changed_by_player_id=$3,updated_at=now() WHERE country_low_id=$1 AND country_high_id=$2",lo,hi,actor_id)
-  await conn.execute("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'relation_accepted',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING",country_id,target_id,actor_id,key,{"status":str(row["proposed_status"])})
   return True
 
 async def impose_sanction(country_id:int,target_id:int,actor_id:int,key:str)->bool:
@@ -11160,6 +11317,7 @@ async def impose_sanction(country_id:int,target_id:int,actor_id:int,key:str)->bo
   return True
 
 async def send_aid(donor_id:int,recipient_id:int,actor_id:int,asset:str,key:str)->int:
+ pair(donor_id,recipient_id)  # self-aid would inflate reputation without transfer
  cfg=get_config();presets=cfg.section("country_trade.aid.presets")
  if asset not in presets:raise ValueError("invalid_aid_asset")
  amount=int(presets[asset])
@@ -11168,8 +11326,10 @@ async def send_aid(donor_id:int,recipient_id:int,actor_id:int,asset:str,key:str)
   if not await _authorized(conn,donor_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
   crisis=await conn.fetchrow("SELECT id FROM country_crises WHERE country_id=$1 AND status='active' ORDER BY severity DESC,id LIMIT 1 FOR UPDATE",recipient_id)
   if not crisis:raise ValueError("recipient_has_no_crisis")
-  used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM country_humanitarian_aid WHERE donor_country_id=$1 AND sent_at>=date_trunc('day',now())",donor_id) or 0)
-  if asset!="IRT" and used+amount>cfg.int_("country_trade.aid.daily_limit_per_country"):raise ValueError("aid_daily_limit")
+  # The limit is per asset: summing IRT and resource units together is
+  # dimensionally invalid and made the cap depend on unrelated donations.
+  used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM country_humanitarian_aid WHERE donor_country_id=$1 AND asset_code=$2 AND sent_at>=date_trunc('day',now())",donor_id,asset) or 0)
+  if used+amount>cfg.int_("country_trade.aid.daily_limit_per_country"):raise ValueError("aid_daily_limit")
   inserted=await conn.fetchval("INSERT INTO country_humanitarian_aid(donor_country_id,recipient_country_id,asset_code,amount,crisis_id,sent_by_player_id,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",donor_id,recipient_id,asset,amount,crisis["id"],actor_id,key)
   if not inserted:return 0
   dbal=await ledger_repo.change_country(conn,donor_id,asset,-amount);rbal=await ledger_repo.change_country(conn,recipient_id,asset,amount)
@@ -12351,16 +12511,36 @@ async def contribute(
         )
 
         completed = await project_repo.complete_if_ready(conn, project_id)
-
-    if completed:
-        completion=get_config().section(f"national_project.projects.{project_key}.completion")
-        async with db.transaction() as conn:
-            project=await project_repo.lock(conn,project_id)
-            await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
-            people=await project_repo.contributors(conn,project_id)
-        reward=int(completion["contributor_reward_xp"])
-        for contributor in people:
-            await xp.grant(contributor,"national_project",idempotency_key=f"project:{project_id}:xp:{contributor}",amount=reward)
+        people: list[int] = []
+        reward = 0
+        if completed:
+            # Completion and its durable gameplay effect are one atomic state
+            # transition. Committing "completed" first could leave a project
+            # permanently effect-less if the process died before a second tx.
+            completion = get_config().section(
+                f"national_project.projects.{project_key}.completion"
+            )
+            await project_repo.apply_effect(
+                conn,
+                project_id,
+                int(project["country_id"]),
+                str(completion["effect_code"]),
+                str(completion.get("effect_asset") or "all"),
+                int(completion["magnitude_basis_points"]),
+            )
+            people = await project_repo.contributors(conn, project_id)
+            reward = int(completion["contributor_reward_xp"])
+            # Reward delivery participates in the completion transaction. If
+            # the process dies, status/effect/rewards all roll back together;
+            # otherwise a completed project could never replay missed rewards.
+            for contributor in people:
+                await xp.grant(
+                    contributor,
+                    "national_project",
+                    idempotency_key=f"project:{project_id}:xp:{contributor}",
+                    amount=reward,
+                    conn=conn,
+                )
     if accepted:
         from packages.core.services import missions
         await missions.report_progress(player_id,"project_contribution")
@@ -12379,12 +12559,17 @@ async def treasury_contribute(project_id:int,player_id:int,asset:str,amount:int,
         if accepted<=0:return 0,False
         if not await project_repo.claim_country_funding(conn,project_id,player_id,asset,accepted,key):return 0,False
         balance=await ledger_repo.change_country(conn,int(project["country_id"]),asset,-accepted)
-        await ledger_repo.insert(conn,player_id=player_id,country_id=int(project["country_id"]),key=f"{key}:country",reason="project_treasury_funding",asset=asset,account=ledger_repo.country_account(asset),amount=-accepted,balance=balance,metadata={"project_id":project_id})
+        await ledger_repo.insert(conn,player_id=None,country_id=int(project["country_id"]),key=f"{key}:country",reason="project_treasury_funding",asset=asset,account=ledger_repo.country_account(asset),amount=-accepted,balance=balance,metadata={"project_id":project_id})
         completed=await project_repo.complete_if_ready(conn,project_id)
-    if completed:
-        completion=get_config().section(f"national_project.projects.{project['project_key']}.completion")
-        async with db.transaction() as conn:
+        if completed:
+            completion=get_config().section(f"national_project.projects.{project['project_key']}.completion")
+            # Keep project status, effect and contributor rewards atomic even
+            # when the treasury supplies the final required unit.
             await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
+            people=await project_repo.contributors(conn,project_id)
+            reward=int(completion["contributor_reward_xp"])
+            for contributor in people:
+                await xp.grant(contributor,"national_project",idempotency_key=f"project:{project_id}:xp:{contributor}",amount=reward,conn=conn)
     return accepted,completed
 
 async def available(country_id:int)->list[tuple[str,str]]:
@@ -12858,10 +13043,10 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
         await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:player",reason="purposeful_work_player",asset=asset,account=ledger_repo.player_account(asset),amount=player_amount,balance=balance,metadata={"job":row['job_code'],"shift":mode,"gross":gross})
         if country and tax:
             treasury=await ledger_repo.change_country(conn,int(country['id']),'IRT',tax)
-            await ledger_repo.insert(conn,player_id=player_id,country_id=int(country['id']),key=f"{key}:tax",reason="work_tax",asset='IRT',account='treasury',amount=tax,balance=treasury,metadata={"job":row['job_code'],"shift":mode})
+            await ledger_repo.insert(conn,player_id=None,country_id=int(country['id']),key=f"{key}:tax",reason="work_tax",asset='IRT',account='treasury',amount=tax,balance=treasury,metadata={"job":row['job_code'],"shift":mode})
         if country and country_amount and country_asset:
             national=await ledger_repo.change_country(conn,int(country['id']),country_asset,country_amount)
-            await ledger_repo.insert(conn,player_id=player_id,country_id=int(country['id']),key=f"{key}:country",reason="national_work_output",asset=country_asset,account=ledger_repo.country_account(country_asset),amount=country_amount,balance=national,metadata={"job":row['job_code'],"shift":mode})
+            await ledger_repo.insert(conn,player_id=None,country_id=int(country['id']),key=f"{key}:country",reason="national_work_output",asset=country_asset,account=ledger_repo.country_account(country_asset),amount=country_amount,balance=national,metadata={"job":row['job_code'],"shift":mode})
         fraction=gross/accrual.capacity if accrual.capacity else 0
         award=floor(cfg.int_("jobs.production.collection_xp_at_full_capacity")*fraction*int(spec['xp_percent'])/100) if fraction>=cfg.float_("jobs.production.minimum_collection_fraction_for_xp") else 0
         await conn.execute("""INSERT INTO work_claims(idempotency_key,player_id,country_id,job_code,shift_mode,asset_code,gross_amount,player_amount,country_amount,tax_toman,xp_awarded)
@@ -13479,6 +13664,7 @@ class ServiceSupervisor:
             local_stop = asyncio.Event()
             item.status = "starting"
             item.last_started_monotonic = time.monotonic()
+            item.consecutive_health_failures = 0
             service_task = asyncio.create_task(spec.runner(local_stop), name=f"service:{spec.name}")
             try:
                 while not self.stop.is_set():
@@ -13507,8 +13693,17 @@ class ServiceSupervisor:
                     if inspect.isawaitable(healthy):
                         healthy = await healthy
                     if not healthy:
-                        raise RuntimeError("service health check failed")
+                        # A single polling/updater sample can be false during a
+                        # harmless Telegram reconnect. Require three consecutive
+                        # failed probes before restarting the service.
+                        item.consecutive_health_failures += 1
+                        item.status = "degraded"
+                        if item.consecutive_health_failures < 3:
+                            continue
+                        raise RuntimeError("service health check failed repeatedly")
+                    item.consecutive_health_failures = 0
                     item.status = "healthy"
+                    item.last_error = None
                     item.last_healthy_monotonic = time.monotonic()
                     if time.monotonic() - (item.last_started_monotonic or 0) >= 300:
                         failures = 0
@@ -15002,6 +15197,53 @@ def test_frontend_uses_backend_preview_and_command_palette():
  assert 'EventSource' in s and 'setIncident' in s
 ```
 
+### `tests\test_admin_ui_health_market_regressions.py`
+
+```python
+"""Contracts for the readable admin UI, truthful health and 30-minute market tape."""
+from pathlib import Path
+
+
+def test_market_api_builds_real_thirty_minute_ohlc() -> None:
+    source = Path("packages/core/repositories/admin_repo.py").read_text(encoding="utf-8")
+    assert "date_bin(interval '30 minutes'" in source
+    for field in ("'open'", "'high'", "'low'", "'close'", "'samples'"):
+        assert field in source
+    assert "FROM market_price_snapshots" in source
+
+
+def test_transient_health_failure_does_not_restart_bot() -> None:
+    source = Path("packages/core/supervisor.py").read_text(encoding="utf-8")
+    assert "consecutive_health_failures < 3" in source
+    assert "service health check failed repeatedly" in source
+    assert "item.last_error = None" in source
+
+
+def test_health_endpoint_does_not_treat_reconnect_as_admin_failure() -> None:
+    source = Path("apps/admin/main.py").read_text(encoding="utf-8")
+    assert '{"starting", "healthy", "degraded"}' in source
+    assert "Bot lifecycle states remain" in source
+
+
+def test_admin_chart_is_interactive_and_snapshot_driven() -> None:
+    js = Path("apps/admin/static/admin.js").read_text(encoding="utf-8")
+    html = Path("apps/admin/templates/dashboard.html").read_text(encoding="utf-8")
+    assert "data.candles" not in js  # rows expose candles directly per asset
+    assert "selected.candles" in js
+    assert "chart-cross-x" in js and "chart-tooltip" in js
+    assert "setInterval" in js and "30000" in js
+    assert "کندل‌های واقعی" in html and "تایم‌فریم ۳۰ دقیقه" in html
+
+
+def test_admin_design_keeps_accessibility_basics() -> None:
+    html = Path("apps/admin/templates/dashboard.html").read_text(encoding="utf-8")
+    css = Path("apps/admin/static/admin.css").read_text(encoding="utf-8")
+    assert 'aria-live="polite"' in html
+    assert 'aria-label="تازه‌سازی داده‌ها"' in html
+    assert "focus-visible" in css
+    assert "prefers-reduced-motion" in css
+```
+
 ### `tests\test_all_keyboard_states.py`
 
 ```python
@@ -15354,6 +15596,52 @@ def test_preview_matches_ladder():
     assert preview(5) == _reward_for(5)[0]
 ```
 
+### `tests\test_deep_audit_regressions.py`
+
+```python
+"""Regression contracts found during the second deep audit."""
+from pathlib import Path
+
+
+def test_project_completion_and_effect_share_transaction_scope() -> None:
+    source = Path("packages/core/services/national_project.py").read_text(encoding="utf-8")
+    # The old failure mode opened another transaction after completion committed.
+    assert "if completed:\n        completion=" not in source
+    assert "Completion and its durable gameplay effect are one atomic" in source
+    assert "Keep project status, effect and contributor rewards atomic" in source
+
+
+def test_progression_panel_uses_game_timezone_day() -> None:
+    source = Path("packages/core/repositories/progression_repo.py").read_text(encoding="utf-8")
+    assert "created_at AT TIME ZONE $2" in source
+    assert "clock.game_today()" in source
+    assert "date_trunc('day', now())" not in source
+
+
+def test_project_rewards_are_atomic_and_ordered() -> None:
+    service = Path("packages/core/services/national_project.py").read_text(encoding="utf-8")
+    repo = Path("packages/core/repositories/project_repo.py").read_text(encoding="utf-8")
+    assert service.count("conn=conn") >= 2
+    assert "treasury supplies the final required unit" in service
+    assert "ORDER BY player_id" in repo
+
+
+def test_trade_rejects_self_operations_and_aid_cap_is_per_asset() -> None:
+    source = Path("packages/core/services/country_trade.py").read_text(encoding="utf-8")
+    assert "pair(proposer_id,recipient_id)" in source
+    assert "pair(donor_id,recipient_id)" in source
+    assert "donor_country_id=$1 AND asset_code=$2" in source
+    assert 'if asset!="IRT" and used+amount' not in source
+
+
+def test_relation_acceptance_claims_idempotency_before_mutation() -> None:
+    source = Path("packages/core/services/country_trade.py").read_text(encoding="utf-8")
+    block = source[source.index("async def accept_relation"):source.index("async def impose_sanction")]
+    assert "RETURNING id" in block
+    assert "if not inserted:return False" in block
+    assert block.index("if not inserted:return False") < block.index("UPDATE country_relations SET status")
+```
+
 ### `tests\test_fmt.py`
 
 ```python
@@ -15562,6 +15850,70 @@ def test_integer_intervals_use_numeric_bind_casts() -> None:
     assert "::text || ' hours'" not in text
     assert "$1 || ' days'" not in text
     assert "interval '1 day'" in text
+```
+
+### `tests\test_ledger_owner_regressions.py`
+
+```python
+"""Regression coverage for the exclusive ledger owner invariant."""
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+import pytest
+
+from packages.core.repositories import ledger_repo
+
+
+class NoQueryConnection:
+    async def fetchval(self, *args: object) -> object:
+        raise AssertionError("invalid ownership must be rejected before SQL executes")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("player_id", "country_id"),
+    [(None, None), (7, 11)],
+)
+async def test_insert_rejects_zero_or_two_owners(player_id: int | None, country_id: int | None) -> None:
+    with pytest.raises(ValueError, match="ledger_requires_exactly_one_owner"):
+        await ledger_repo.insert(
+            NoQueryConnection(),  # type: ignore[arg-type]
+            player_id=player_id,
+            country_id=country_id,
+            key="owner-test",
+            reason="test",
+            asset="IRT",
+            account="wallet",
+            amount=1,
+            balance=1,
+        )
+
+
+def test_all_static_ledger_calls_have_one_explicit_owner() -> None:
+    """Keep country balance legs from accidentally carrying the actor as owner."""
+    for root in (Path("packages"), Path("apps")):
+        for path in root.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if not (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "insert"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "ledger_repo"
+                ):
+                    continue
+                keywords = {item.arg: item.value for item in node.keywords if item.arg}
+                player = keywords.get("player_id")
+                country = keywords.get("country_id")
+                assert player is not None and country is not None, f"owners missing at {path}:{node.lineno}"
+                player_none = isinstance(player, ast.Constant) and player.value is None
+                country_none = isinstance(country, ast.Constant) and country.value is None
+                assert player_none != country_none, f"ambiguous owners at {path}:{node.lineno}"
 ```
 
 ### `tests\test_life_progression_system.py`

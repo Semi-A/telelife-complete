@@ -38,3 +38,15 @@ async def link_member(group_id: int, player_id: int) -> None:
 
 async def count_total() -> int:
     return int(await db.fetchval("SELECT count(*) FROM groups WHERE is_active") or 0)
+async def set_public_link(telegram_id: int, url: str | None) -> None:
+    """Cache a safe Telegram group URL discovered by the World bot."""
+    if not url:
+        return
+    await db.execute(
+        """UPDATE groups
+           SET settings=jsonb_set(settings,'{public_link}',to_jsonb($2::text),true),
+               last_active_at=now()
+           WHERE telegram_id=$1""",
+        telegram_id,
+        url[:500],
+    )

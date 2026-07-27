@@ -115,6 +115,17 @@ async def home(update, context):
         await show(update, context, fa.PRIVATE, kb.private(context.bot.username or ""))
         return
     await group_repo.get_or_create(chat.id, chat.title or "سرزمین بی‌نام")
+    # Keep a real group link for the private Life bot. Public usernames need no
+    # extra permission; existing private invite links are cached when visible.
+    try:
+        full_chat = await context.bot.get_chat(chat.id)
+        public_link = (
+            f"https://t.me/{full_chat.username}" if getattr(full_chat, "username", None)
+            else getattr(full_chat, "invite_link", None)
+        )
+        await group_repo.set_public_link(chat.id, public_link)
+    except (BadRequest, Forbidden):
+        pass
     access = await world_access.check(context.bot, chat.id)
     if not access.ready:
         await access_page(update, context)
@@ -558,6 +569,17 @@ async def start(update, context):
         if update.effective_message:
             await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
         return
+    # Every accepted /start opens a fresh panel. Retire the old keyboard first
+    # so previous controls cannot be used after the new session begins.
+    state = await ui_state_repo.world(chat.id)
+    if state and state["message_id"]:
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=chat.id, message_id=int(state["message_id"]), reply_markup=None
+            )
+        except (BadRequest, Forbidden):
+            pass
+        await ui_state_repo.clear_world(chat.id)
     await home(update, context)
 
 async def precheckout(update,context):

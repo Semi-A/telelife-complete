@@ -7,34 +7,35 @@ from telegram import Update
 from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers import ux
-from apps.telelife_bot.handlers.panel import show
+from apps.telelife_bot.handlers.panel import retire_message, show
 from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.bot.start_limit import allow_start
-from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,life_progression,missions,personal_economy,production,progression,unlocks,usd_market,xp
+from packages.core.repositories import country_repo,player_repo,progression_repo,production_repo,ui_state_repo
+from packages.core.services import daily,life_progression,migration,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
 SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
 SKILL_FA={"agriculture":"کشاورزی","extraction":"استخراج","commerce":"تجارت","media":"رسانه","medicine":"پزشکی","software":"نرم‌افزار","engineering":"مهندسی"}
-ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری."}
+ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری.","migration_not_available":"این مقصد برای مهاجرت در دسترس نیست.","migration_cooldown":"تا پایان دوره ۳۰روزه امکان مهاجرت دوباره نداری.","migration_pending":"یک درخواست مهاجرت در انتظار داری.","leader_must_transfer_power":"رهبر باید ابتدا قدرت را واگذار کند.","migration_expired":"مهلت این درخواست تمام شده است."}
 def why(e):
  return ERR.get(str(e),"فعلاً نشد انجامش بدیم. یک‌بار صفحه را تازه کن و دوباره امتحان کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def answer(q,text=None,show_alert=False):
  try:await q.answer(text,show_alert=show_alert)
  except Exception:return
-async def panel(ctx,c,text,mark):return await show(c,ctx.player.id,ctx.message.chat_id,text,mark,message=ctx.message if getattr(ctx.message,'reply_markup',None) is not None else None)
+async def panel(ctx,c,text,mark,*,force_new=False):
+ return await show(c,ctx.player.id,ctx.message.chat_id,text,mark,message=None if force_new else (ctx.message if getattr(ctx.message,'reply_markup',None) is not None else None),force_new=force_new)
 async def fresh(ctx):return await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
-async def home(ctx,c):
+async def home(ctx,c,*,force_new=False):
  p=await fresh(ctx);st=await ui_state_repo.ensure_life(p.id);_,_,last=await daily.state(p.id);cur,need=progression.level_progress(p.level,p.xp);left=max(0,need-cur)
  step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "شغل بگیر، شیفت انجام بده و به رشد کشورت کمک کن")
  hint="🚀 مسیر شروع آماده ادامه است." if step<4 else "🎯 کارهای امروز بهترین راه رشد هستند."
  text=fa.HOME.format(name=escape(p.first_name),level=fmt.number(p.level),bar=fmt.progress_bar(cur,need,width=10),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
- await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step))
+ await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step),force_new=force_new)
 async def journey(ctx,c):
  st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
@@ -106,6 +107,43 @@ async def assets_page(ctx,c):
   lines.append(f"{icon} <b>{a.title}</b> — {a.reason}\n{fmt.toman(a.cost)}{upkeep}\n{a.opportunity}")
  await panel(ctx,c,"🚗 <b>دارایی‌های کاربردی</b>\n\n"+"\n\n".join(lines),kb.assets(ctx.telegram_id,rows))
 
+def _group_url(telegram_id:int)->str | None:
+ # Public usernames are not stored in the legacy schema. Telegram's private
+ # group post link still opens the group for members and is safe to render.
+ raw=str(abs(int(telegram_id)))
+ if raw.startswith("100") and len(raw)>3:
+  return f"https://t.me/c/{raw[3:]}/1"
+ return None
+
+async def country_page(ctx,c):
+ from packages.core import db
+ current=await db.fetchrow("""SELECT cs.country_id,c.name,c.government_type,g.telegram_id,g.title,g.settings->>'public_link' group_link,
+   (SELECT count(*) FROM citizenships x WHERE x.country_id=c.id AND x.is_active) citizens
+  FROM citizenships cs JOIN countries c ON c.id=cs.country_id JOIN groups g ON g.id=c.group_id
+  WHERE cs.player_id=$1 AND cs.is_active""",ctx.player.id)
+ if not current:
+  text="🌐 <b>کشور من</b>\n\nهنوز شهروند هیچ کشوری نیستی. وارد گروه یک کشور شو و از بات World درخواست شهروندی بده؛ بعد کشور و مسیر مهاجرتت همین‌جا نمایش داده می‌شود."
+  await panel(ctx,c,text,kb.country(ctx.telegram_id,None,[]));return
+ pending=await db.fetchrow("""SELECT r.id,r.status,d.name destination_name,r.expires_at FROM migration_requests r JOIN countries d ON d.id=r.destination_country_id WHERE r.player_id=$1 AND r.status='pending' AND r.expires_at>now() ORDER BY r.created_at DESC LIMIT 1""",ctx.player.id)
+ destinations=await db.fetch("""SELECT c.id,c.name,g.telegram_id,(SELECT count(*) FROM citizenships x WHERE x.country_id=c.id AND x.is_active) citizens FROM countries c JOIN groups g ON g.id=c.group_id WHERE c.id<>$1 AND c.status<>'forming' ORDER BY citizens DESC,c.name LIMIT 8""",current['country_id'])
+ status=(f"\n\n⏳ درخواست مهاجرت به <b>{escape(str(pending['destination_name']))}</b> در انتظار بررسی است." if pending else "")
+ text=(f"🌍 <b>کشور من</b>\n\n🏳 <b>{escape(str(current['name']))}</b>\n"
+       f"🏛 نوع حکومت: {escape(str(current['government_type']))}\n"
+       f"👥 شهروندان: {fmt.number(current['citizens'])}{status}\n\n"
+       "برای دیدن گروه، دکمه کشور را بزن. برای مهاجرت، مقصد را انتخاب کن؛ قبل از ثبت نهایی هزینه و محدودیت‌ها را می‌بینی.")
+ rows=[(int(x['id']),str(x['name']),int(x['citizens'])) for x in destinations]
+ await panel(ctx,c,text,kb.country(ctx.telegram_id,str(current['group_link']) if current['group_link'] else _group_url(int(current['telegram_id'])),rows,pending=bool(pending)))
+
+async def migration_preview(ctx,c,destination_id:int):
+ row=await migration.quote(ctx.player.id,destination_id)
+ if not row:raise ValueError('migration_not_available')
+ fee=migration.exit_fee(int(row['wallet_toman'])+int(row['savings_toman']))
+ text=(f"🧳 <b>تأیید مهاجرت</b>\n\nاز <b>{escape(str(row['origin_name']))}</b> به <b>{escape(str(row['destination_name']))}</b>\n"
+       f"💳 هزینه خروج: <b>{fmt.toman(fee)}</b>\n⏱ مهلت بررسی: ۷ روز\n"
+       "🗳 پس از مهاجرت، فعالیت سیاسی ۱۴ روز محدود می‌شود و تا ۳۰ روز امکان مهاجرت دوباره نداری.\n\n"
+       "هزینه فقط هنگام تأیید و تکمیل مهاجرت کم می‌شود.")
+ await panel(ctx,c,text,kb.confirm(ctx.telegram_id,'migration','migconfirm',str(destination_id),'country'))
+
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
@@ -117,7 +155,8 @@ async def start(update,c):
   if update.effective_message:await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
   return
  ctx=await resolve(update)
- if ctx:await home(ctx,c)
+ if ctx:
+  await home(ctx,c,force_new=True)
 async def text_start(update,c):
  if c.user_data.get('ad_request_flow'):return
  if update.effective_chat and update.effective_chat.type=='private':
@@ -128,13 +167,20 @@ async def callback(update,c):
  if not parsed or not q:return
  ctx=await resolve(update)
  if not ctx:await answer(q,);return
+ state=await ui_state_repo.ensure_life(ctx.player.id)
+ active_id=int(state['life_message_id'] or 0) if state else 0
+ clicked_id=int(q.message.message_id) if q.message else 0
+ if active_id and clicked_id and active_id!=clicked_id:
+  await answer(q,'این پنل قدیمی شده؛ از پنل جدیدت ادامه بده.',show_alert=True)
+  if q.message:await retire_message(q.message)
+  return
  a=parsed.action
  if a=='advertise':
   from apps.telelife_bot.handlers.advertising import begin
   await begin(update,c);return
  try:
-  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
-   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
+  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets','country'}:
+   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page,'country':country_page}[a];await fn(ctx,c);return
   if a=='jstep':
    step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
    if step!=expected:await answer(q,'این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
@@ -178,6 +224,10 @@ async def callback(update,c):
   if a in {'mbuy','msell'}:
    p=await fresh(ctx);side='buy' if a=='mbuy' else 'sell';await answer(q,)
    await panel(ctx,c,await ux.market_preview(p,side,int(parsed.arg)),kb.confirm(ctx.telegram_id,'market','mconfirm',f"{side},{parsed.arg}",'market'));return
+  if a=='migrate':
+   await answer(q,);await migration_preview(ctx,c,int(parsed.arg));return
+  if a=='migconfirm':
+   result=await migration.request(ctx.player.id,int(parsed.arg));await answer(q,'درخواست مهاجرت ثبت شد.' if str(result['status'])=='pending' else 'مهاجرت با موفقیت انجام شد.',show_alert=True);await country_page(ctx,c);return
   if a=='mconfirm':
    side,cents=parsed.arg.split(',',1);r=await usd_market.trade(ctx.player.id,side,int(cents),ik(a,ctx.player.id));await answer(q,f"✅ معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}. موجودی تازه در همین صفحه نمایش داده می‌شود.",show_alert=True);await market(ctx,c);return
   await answer(q,)

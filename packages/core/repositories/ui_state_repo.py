@@ -17,3 +17,5 @@ async def world(chat_id:int):return await db.fetchrow("SELECT * FROM world_ui_st
 async def set_world(chat_id:int,message_id:int)->None:
  await db.execute("""INSERT INTO world_ui_state(chat_id,message_id,expires_at) VALUES($1,$2,now()+interval '60 seconds')
  ON CONFLICT(chat_id) DO UPDATE SET message_id=$2,expires_at=now()+interval '60 seconds',updated_at=now()""",chat_id,message_id)
+async def clear_world(chat_id:int)->None:
+ await db.execute("DELETE FROM world_ui_state WHERE chat_id=$1",chat_id)
