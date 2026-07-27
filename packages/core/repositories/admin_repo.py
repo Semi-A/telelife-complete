@@ -202,14 +202,15 @@ async def command_center() -> dict[str, object]:
     countries_rows = await db.fetch("""
       SELECT c.id,c.name,c.status,c.treasury_toman,
         count(DISTINCT cs.player_id) FILTER (WHERE cs.is_active) citizens,
-        COALESCE(e.inflation_bp,0) inflation_bp,
-        COALESCE(e.unemployment_bp,0) unemployment_bp,
+        COALESCE(i.inflation_bp,0) inflation_bp,
+        COALESCE(i.unemployment_bp,0) unemployment_bp,
         COALESCE(e.production_modifier_bp,10000) production_modifier_bp,
         EXISTS(SELECT 1 FROM country_crises x WHERE x.country_id=c.id AND x.status='active') crisis
       FROM countries c
       LEFT JOIN citizenships cs ON cs.country_id=c.id
       LEFT JOIN country_economy_state e ON e.country_id=c.id
-      GROUP BY c.id,e.inflation_bp,e.unemployment_bp,e.production_modifier_bp
+      LEFT JOIN LATERAL (SELECT inflation_bp,unemployment_bp FROM country_indicator_daily d WHERE d.country_id=c.id ORDER BY indicator_date DESC LIMIT 1) i ON TRUE
+      GROUP BY c.id,i.inflation_bp,i.unemployment_bp,e.production_modifier_bp
       ORDER BY crisis DESC,c.treasury_toman DESC LIMIT 24
     """)
     alerts: list[dict[str, object]] = []
@@ -235,6 +236,93 @@ async def command_center() -> dict[str, object]:
     if not alerts:
         alerts.append({"severity":"info","domain":"system","title":"وضعیت پایدار","detail":"در این لحظه رخداد قابل‌اقدام بحرانی ثبت نشده است.","action":"operations"})
     order={"critical":0,"warning":1,"info":2};alerts.sort(key=lambda x:order[str(x["severity"])])
+    await persist_incidents(alerts)
+    durable=[dict(x) for x in await incident_rows(30)]
     return {"overview":dict(overview) if overview else {},"operations":ops,"integrity":integrity,
-      "alerts":alerts,"countries":[dict(x) for x in countries_rows],
-      "summary":{"critical":sum(a["severity"]=="critical" for a in alerts),"warning":sum(a["severity"]=="warning" for a in alerts),"crises":crisis_count}}
+      "alerts":durable,"countries":[dict(x) for x in countries_rows],
+      "summary":{"critical":sum(a["severity"]=="critical" and a["status"]!='resolved' for a in durable),"warning":sum(a["severity"]=="warning" and a["status"]!='resolved' for a in durable),"crises":crisis_count}}
+
+async def persist_incidents(items:list[dict[str,object]])->list[dict[str,object]]:
+    """Upsert observations while preserving acknowledgement and ownership."""
+    import hashlib
+    seen=[]
+    for item in items:
+        fingerprint=hashlib.sha256(f"{item['domain']}|{item['title']}".encode()).hexdigest()[:32]
+        row=await db.fetchrow("""INSERT INTO admin_incidents(fingerprint,severity,domain,title,detail,action_view,metadata)
+          VALUES($1,$2,$3,$4,$5,$6,$7)
+          ON CONFLICT(fingerprint) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,
+          action_view=EXCLUDED.action_view,last_seen_at=now(),occurrences=admin_incidents.occurrences+1,
+          status=CASE WHEN admin_incidents.status='resolved' THEN 'open' ELSE admin_incidents.status END,
+          resolved_at=CASE WHEN admin_incidents.status='resolved' THEN NULL ELSE admin_incidents.resolved_at END
+          RETURNING *""",fingerprint,item['severity'],item['domain'],item['title'],item['detail'],item['action'],item)
+        seen.append(dict(row))
+    return seen
+
+async def incident_rows(limit:int=100)->list[asyncpg.Record]:
+    return await db.fetch("""SELECT * FROM admin_incidents ORDER BY
+      CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+      CASE status WHEN 'open' THEN 0 WHEN 'investigating' THEN 1 WHEN 'acknowledged' THEN 2 ELSE 3 END,
+      last_seen_at DESC LIMIT $1""",limit)
+
+async def update_incident(incident_id:int,status:str,actor:str,note:str|None)->asyncpg.Record|None:
+    return await db.fetchrow("""UPDATE admin_incidents SET status=$2,assigned_to=CASE WHEN $2 IN ('acknowledged','investigating') THEN $3 ELSE assigned_to END,
+      acknowledged_at=CASE WHEN $2 IN ('acknowledged','investigating') THEN COALESCE(acknowledged_at,now()) ELSE acknowledged_at END,
+      resolved_at=CASE WHEN $2='resolved' THEN now() ELSE NULL END,resolution_note=CASE WHEN $2='resolved' THEN $4 ELSE resolution_note END
+      WHERE id=$1 RETURNING *""",incident_id,status,actor,note)
+
+async def global_search(query:str,limit:int=8)->dict[str,list[dict[str,object]]]:
+    q=query.strip();like=f"%{q}%"
+    if not q:return {"players":[],"countries":[],"incidents":[],"audit":[]}
+    players=await db.fetch("""SELECT id,first_name,username,telegram_id,level,is_banned FROM players
+      WHERE first_name ILIKE $1 OR COALESCE(username,'') ILIKE $1 OR id::text=$2 OR telegram_id::text=$2 ORDER BY last_seen_at DESC LIMIT $3""",like,q,limit)
+    countries=await db.fetch("SELECT id,name,status,treasury_toman FROM countries WHERE name ILIKE $1 OR id::text=$2 ORDER BY name LIMIT $3",like,q,limit)
+    incidents=await db.fetch("SELECT id,title,severity,status,action_view FROM admin_incidents WHERE title ILIKE $1 OR detail ILIKE $1 ORDER BY last_seen_at DESC LIMIT $2",like,limit)
+    audits=await db.fetch("SELECT id,admin_actor,action,created_at FROM admin_audit_log WHERE action ILIKE $1 OR admin_actor ILIKE $1 ORDER BY created_at DESC LIMIT $2",like,limit)
+    return {"players":[dict(x) for x in players],"countries":[dict(x) for x in countries],"incidents":[dict(x) for x in incidents],"audit":[dict(x) for x in audits]}
+
+async def anomaly_rows(limit:int=100)->list[dict[str,object]]:
+    rows=await db.fetch("""WITH flow AS (
+      SELECT player_id,count(*) tx_count,COALESCE(sum(abs(amount)),0) volume,
+       count(*) FILTER(WHERE reason='level_up' OR reason LIKE '%xp%') xp_related
+      FROM ledger WHERE created_at>=now()-interval '24 hours' AND player_id IS NOT NULL GROUP BY player_id
+    ), wealth AS (SELECT id,first_name,username,wallet_toman+savings_toman wealth FROM players)
+    SELECT w.id,w.first_name,w.username,w.wealth,COALESCE(f.tx_count,0) tx_count,COALESCE(f.volume,0) volume,
+      CASE WHEN COALESCE(f.tx_count,0)>250 THEN 'transaction_burst'
+           WHEN COALESCE(f.volume,0)>GREATEST(w.wealth*5,50000000) THEN 'volume_spike'
+           WHEN w.wealth>1000000000 THEN 'wealth_outlier' END anomaly
+    FROM wealth w LEFT JOIN flow f ON f.player_id=w.id
+    WHERE COALESCE(f.tx_count,0)>250 OR COALESCE(f.volume,0)>GREATEST(w.wealth*5,50000000) OR w.wealth>1000000000
+    ORDER BY volume DESC,wealth DESC LIMIT $1""",limit)
+    return [dict(x) for x in rows]
+
+async def register_undo(actor:str,action_type:str,target_key:str,inverse:dict[str,object],request_id:str)->int:
+    return int(await db.fetchval("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+      VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes') RETURNING id""",actor,action_type,target_key,inverse,request_id))
+
+async def undo_action(action_id:int,actor:str)->bool:
+    async with db.transaction() as conn:
+        row=await conn.fetchrow("SELECT * FROM admin_reversible_actions WHERE id=$1 FOR UPDATE",action_id)
+        if not row or row['undone_at'] or row['expires_at']<=await conn.fetchval('SELECT now()'):raise ValueError('undo_unavailable')
+        data=dict(row['inverse_payload']);kind=str(row['action_type'])
+        if kind=='feature_toggle':
+            await set_flag(conn,str(data['key']),bool(data['enabled']),actor)
+        elif kind=='market_price':
+            await conn.execute("UPDATE market_prices SET current_price_toman=$2,updated_by=$3,updated_at=now() WHERE asset_code=$1",data['asset'],int(data['price']),actor)
+            await conn.execute("INSERT INTO market_price_snapshots(asset_code,price_toman,captured_at) VALUES($1,$2,date_trunc('minute',now())) ON CONFLICT(asset_code,captured_at) DO UPDATE SET price_toman=EXCLUDED.price_toman",data['asset'],int(data['price']))
+        elif kind=='country_asset':
+            country_id=int(data['country_id']);asset=str(data['asset']);delta=int(data['delta'])
+            if asset=='IRT':
+                balance=await conn.fetchval("UPDATE countries SET treasury_toman=treasury_toman+$2 WHERE id=$1 AND treasury_toman+$2>=0 RETURNING treasury_toman",country_id,delta)
+            else:
+                balance=await conn.fetchval("UPDATE country_resources SET quantity=quantity+$3 WHERE country_id=$1 AND asset_code=$2 AND quantity+$3>=0 RETURNING quantity",country_id,asset,delta)
+            if balance is None:raise ValueError('undo_insufficient_balance')
+            await conn.execute("INSERT INTO ledger(player_id,country_id,idempotency_key,reason,currency,asset_code,account,amount,balance_after,metadata) VALUES(NULL,$1,$2,'admin_undo',$3,$3,'treasury',$4,$5,$6)",country_id,f"admin-undo:{action_id}",asset,delta,int(balance),{'admin_actor':actor,'source_action_id':action_id})
+        else:raise ValueError('undo_unsupported')
+        await conn.execute("UPDATE admin_reversible_actions SET undone_at=now(),undone_by=$2 WHERE id=$1",action_id,actor)
+        await audit(conn,actor,'undo',f"undo:{action_id}",{'source_action_id':action_id})
+        return True
+
+
+async def available_undos(limit:int=50)->list[asyncpg.Record]:
+    return await db.fetch("""SELECT id,admin_actor,action_type,target_key,expires_at,created_at
+      FROM admin_reversible_actions WHERE undone_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT $1""",limit)

@@ -20,7 +20,10 @@ async def feature(actor: str, key: str, enabled: bool, request_id: str) -> bool:
         if not await admin_repo.audit(conn, actor, "feature_toggle", request_id,
                                       {"key": key, "enabled": enabled}):
             return False
+        previous=await conn.fetchval("SELECT enabled FROM feature_flags WHERE key=$1 FOR UPDATE",key)
         await admin_repo.set_flag(conn, key, enabled, actor)
+        await conn.execute("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+          VALUES($1,'feature_toggle',$2,$3,$4,now()+interval '10 minutes')""",actor,key,{"key":key,"enabled":bool(previous)},request_id)
         return True
 
 async def grant_xp(actor: str, player_id: int, amount: int,
@@ -37,6 +40,7 @@ async def set_market_price(actor: str, asset: str, price: int, request_id: str) 
         if not await admin_repo.audit(conn, actor, "market_price", request_id,
                                       {"asset": asset, "price": price}):
             return False
+        previous=await conn.fetchval("SELECT current_price_toman FROM market_prices WHERE asset_code=$1 FOR UPDATE",asset)
         changed = await conn.fetchval("""
             UPDATE market_prices SET current_price_toman=$2,updated_by=$3,updated_at=now()
             WHERE asset_code=$1 RETURNING asset_code
@@ -48,6 +52,8 @@ async def set_market_price(actor: str, asset: str, price: int, request_id: str) 
             VALUES($1,$2,date_trunc('minute',now()))
             ON CONFLICT(asset_code,captured_at) DO UPDATE SET price_toman=EXCLUDED.price_toman
         """, asset, price)
+        await conn.execute("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+          VALUES($1,'market_price',$2,$3,$4,now()+interval '10 minutes')""",actor,asset,{"asset":asset,"price":int(previous)},request_id)
         return True
 
 async def adjust_country_asset(actor: str, country_id: int, asset: str, delta: int,
@@ -79,6 +85,8 @@ async def adjust_country_asset(actor: str, country_id: int, asset: str, delta: i
             VALUES(NULL,$1,$2,'admin_adjustment',$3,$3,'treasury',$4,$5,$6)
         """, country_id, f"admin-country:{request_id}", asset, delta, value,
              {"admin_actor": actor})
+        await conn.execute("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+          VALUES($1,'country_asset',$2,$3,$4,now()+interval '10 minutes')""",actor,f"{country_id}:{asset}",{"country_id":country_id,"asset":asset,"delta":-delta},request_id)
         return int(value)
 
 async def set_president(actor: str, country_id: int, player_id: int | None,

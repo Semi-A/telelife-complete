@@ -3,17 +3,22 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 from datetime import datetime
+import asyncio, json
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, commerce, live_market, scheduler_ops, engagement
+from packages.core.services import admin, admin_security, commerce, live_market, scheduler_ops, engagement
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[str, Depends(require_admin)]
-router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
+async def enforce_admin_request(request: Request, actor: AdminActor) -> None:
+    await admin_security.verify_request(request, actor)
+
+router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin),Depends(enforce_admin_request)])
 
 class BanBody(BaseModel):
     enabled: bool
@@ -65,6 +70,63 @@ class FreezeBody(BaseModel):
 
 class FeatureBody(BaseModel):
     enabled: bool
+
+
+class PreviewBody(BaseModel):
+    method: Literal["POST","PUT","PATCH","DELETE"]
+    path: str = Field(min_length=12,max_length=500)
+    payload: dict[str,object] = Field(default_factory=dict)
+class IncidentBody(BaseModel):
+    status: Literal["acknowledged","investigating","resolved"]
+    note: str | None = Field(default=None,max_length=1000)
+
+@router.post("/action-preview")
+async def action_preview(body:PreviewBody,actor:AdminActor)->dict[str,object]:
+    return await admin_security.issue_preview(actor,body.method,body.path,body.payload)
+
+@router.get("/me")
+async def me(actor:AdminActor)->dict[str,str]:
+    return {"username":actor,"role":get_settings().admin_role}
+
+@router.get("/search")
+async def global_search(q:Annotated[str,Query(min_length=2,max_length=100)]) -> dict[str,list[dict[str,object]]]:
+    return await admin_repo.global_search(q)
+
+@router.get("/incidents")
+async def incidents(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return [dict(x) for x in await admin_repo.incident_rows(limit)]
+
+@router.patch("/incidents/{incident_id}")
+async def incident_update(incident_id:int,body:IncidentBody,actor:AdminActor)->dict[str,object]:
+    row=await admin_repo.update_incident(incident_id,body.status,actor,body.note)
+    if not row:raise HTTPException(404,"رخداد پیدا نشد.")
+    return dict(row)
+
+@router.get("/anomalies")
+async def anomalies(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return await admin_repo.anomaly_rows(limit)
+
+@router.post("/undo/{action_id}")
+async def undo(action_id:int,actor:AdminActor)->dict[str,bool]:
+    try:return {"undone":await admin_repo.undo_action(action_id,actor)}
+    except ValueError as exc:raise HTTPException(409,"عملیات دیگر قابل بازگردانی نیست.") from exc
+
+@router.get("/undos")
+async def undos(limit:Annotated[int,Query(ge=1,le=100)]=50)->list[dict[str,object]]:
+    return [dict(x) for x in await admin_repo.available_undos(limit)]
+
+@router.get("/events")
+async def admin_events(request:Request):
+    async def stream():
+        last=""
+        while not await request.is_disconnected():
+            rows=[dict(x) for x in await admin_repo.incident_rows(30)]
+            payload=json.dumps(rows,default=str,ensure_ascii=False,separators=(",",":"))
+            if payload!=last:
+                yield f"event: incidents\ndata: {payload}\n\n";last=payload
+            else:yield ": keepalive\n\n"
+            await asyncio.sleep(8)
+    return StreamingResponse(stream(),media_type="text/event-stream",headers={"Cache-Control":"no-store","X-Accel-Buffering":"no"})
 
 @router.get("/engagement")
 async def engagement_overview() -> dict[str, object]:

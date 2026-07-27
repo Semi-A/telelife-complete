@@ -54,6 +54,15 @@ class Settings(BaseSettings):
 
     admin_username: str = ""
     admin_password: str = ""
+    admin_role: str = "superadmin"
+
+    @field_validator("admin_role")
+    @classmethod
+    def validate_admin_role(cls, value: str) -> str:
+        role=value.strip().lower()
+        if role not in {"viewer","support","content","economy","operator","superadmin"}:
+            raise ValueError("ADMIN_ROLE is invalid")
+        return role
 
     @field_validator("log_level")
     @classmethod
