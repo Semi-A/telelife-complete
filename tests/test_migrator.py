@@ -19,9 +19,13 @@ def test_only_pre_normalization_migrations_are_legacy_compatible():
         "0001_core_schema", "0002_progression", "0003_country_layer",
         "0004_admin_command_center", "0005_life_world_hardening",
         "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
-        "0008_world_access_lifecycle",
+        "0008_world_access_lifecycle", "0009_ads_governance_moderation",
+        "0010_stars_subscriptions_ad_marketplace",
+        "0011_population_channels_migration",
+        "0012_reliability_live_market_engagement",
+        "0013_country_identity_candles_realism",
     }
-    assert "0009_ads_governance_moderation" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0014_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
 
 
 def test_new_migrations_remain_checksum_strict():
