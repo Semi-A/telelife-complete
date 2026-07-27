@@ -18,19 +18,34 @@ def access(ready=False):
 def private(username):
     return InlineKeyboardMarkup([[InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{username}?startgroup=true", style="primary")], [b("📘 راهنمای استفاده", "guide")]])
 
-def home(country, admin, citizen=False):
+def home(country, admin, citizen=False, official_role=None):
+    """Reveal only actions relevant to this member's current country role."""
     if country:
-        rows = [[b("🏛 شناسنامه کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
-                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project"),b("🌐 تجارت و دیپلماسی","trade")]]
-        rows.append([b("🚪 خروج از شهروندی", "leave", "danger")] if citizen else [b("🤝 شهروند این کشور می‌شوم", "join", "success")])
-        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription", "primary"),b("✈️ مهاجرت", "migration")])
-        if admin:rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
-        rows.append([b("📘 راهنمای همین مرحله", "guide"), b("🔄 تازه‌سازی", "home")])
+        if not citizen:
+            rows = [[b("🤝 شهروند این کشور می‌شوم", "join", "success")],
+                    [b("🏛 وضعیت کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
+                    [b("📘 قوانین شهروندی", "migration_rules"), b("🔄 تازه‌سازی", "home")]]
+            return InlineKeyboardMarkup(rows)
+        rows = [[b("☀️ وضعیت امروز کشور", "country_today", "primary")],
+                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")],
+                [b("🏗 پروژه ملی", "project"), b("🌐 تجارت و دیپلماسی", "trade")],
+                [b("✈️ مهاجرت", "migration"), b("🏛 شناسنامه", "country")]]
+        if official_role in {"president", "economy_minister", "industry_minister"}:
+            rows.insert(2,[b("⚙️ مدیریت حوزه من", "economyb", "success")])
+        if official_role in {"president", "foreign_minister"}:
+            rows.insert(3,[b("🤝 عملیات دیپلماسی", "trade", "success")])
+        if official_role == "president" or admin:
+            rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
+        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription"), b("🔄 تازه‌سازی", "home")])
         return InlineKeyboardMarkup(rows)
     if admin:
         return InlineKeyboardMarkup([[b("🏗 ساخت کشور", "create", "primary")], [b("📘 راهنمای ساخت کشور", "guide")], [b("🔄 تازه‌سازی", "home")]])
     return InlineKeyboardMarkup([[b("📘 برای ساخت کشور چه کنیم؟", "guide", "primary")], [b("🔄 تازه‌سازی", "home")]])
 
+
+
+def confirm_world(confirm_action, back_action="home"):
+ return InlineKeyboardMarkup([[b("✅ تأیید و اجرا",confirm_action,"success")],[b("↩️ انصراف",back_action,"primary")]])
 
 def citizenship_elsewhere():
     return InlineKeyboardMarkup([

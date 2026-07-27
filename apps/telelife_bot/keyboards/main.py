@@ -12,10 +12,10 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
     if onboarding < 4:
         k.row(B("🚀 ادامه مسیر شروع", "journey", owner, style=Style.PRIMARY))
     else:
-        k.row(B("🎯 کارهای امروز", "missions", owner, style=Style.PRIMARY),
+        k.row(B("☀️ امروز من", "today", owner, style=Style.PRIMARY),
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     if onboarding < 4:
-        k.row(B("🎯 کارهای امروز", "missions", owner),
+        k.row(B("☀️ امروز من", "today", owner),
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
@@ -99,3 +99,16 @@ def assets(owner, rows):
             k.row(B(f"خرید {item.title}", "abuy", owner, item.code, Style.PRIMARY))
     k.row(B("🧭 مرکز پیشرفت", "progress", owner), B("🏠 خانه", "home", owner))
     return k.build()
+
+def today(owner, actions):
+    labels={"daily":"🎁 دریافت هدیه","missions":"🎯 دریافت پاداش مأموریت","jobs":"💼 رفتن به شغل","economy":"💳 بررسی هزینه زندگی"}
+    styles={"daily":Style.SUCCESS,"missions":Style.SUCCESS,"jobs":Style.PRIMARY,"economy":Style.PRIMARY}
+    k=Keyboard()
+    for action in actions:
+        k.row(B(labels.get(action,"ادامه"),action,owner,style=styles.get(action,Style.GLASS)))
+    k.row(B("🔄 تازه‌سازی امروز", "today", owner),B("🏠 خانه", "home", owner))
+    return k.build()
+
+def confirm(owner, token, confirm_action, arg, back_action):
+    return (Keyboard().row(B("✅ تأیید و اجرا",confirm_action,owner,arg,Style.SUCCESS))
+            .row(B("↩️ انصراف",back_action,owner)).build())

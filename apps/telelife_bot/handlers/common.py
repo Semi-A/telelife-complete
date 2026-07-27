@@ -60,6 +60,16 @@ async def guard_callback(update: Update) -> Callback | None:
     if not parsed.owned_by(query.from_user.id):
         await query.answer(fa.NOT_YOUR_PANEL, show_alert=True)
         return None
+    player = await player_repo.get_by_telegram_id(query.from_user.id)
+    if player is not None:
+        from packages.core import db
+        valid = await db.fetchval("""SELECT life_expires_at>now() FROM player_ui_state
+          WHERE player_id=$1 AND life_chat_id=$2 AND life_message_id=$3""",
+          player.id, query.message.chat_id if query.message else 0,
+          query.message.message_id if query.message else 0)
+        if valid is False:
+            await query.answer("⌛ این پنل منقضی شده است؛ /start را بزن تا پنل تازه باز شود.",show_alert=True)
+            return None
     return parsed
 
 

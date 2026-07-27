@@ -16,22 +16,22 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 # the same applied SQL with checksums calculated from the pre-normalized bytes.
 # Never re-run those versions: preserve their records and enforce immutable
 # checksums for every migration introduced after the recovered baseline.
+# This recovered distribution may differ byte-for-byte from migrations already
+# applied by earlier releases. Never re-run shipped history. Starting with 0021,
+# checksums are strict and changing an applied migration remains a hard failure.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
-    "0001_core_schema",
-    "0002_progression",
-    "0003_country_layer",
-    "0004_admin_command_center",
-    "0005_life_world_hardening",
-    "0006_phase3_phase4_complete",
-    "0007_unified_ui_onboarding",
-    "0008_world_access_lifecycle",
-    "0009_ads_governance_moderation",
-    "0010_stars_subscriptions_ad_marketplace",
-    "0011_population_channels_migration",
-    "0012_reliability_live_market_engagement",
-    "0013_country_identity_candles_realism",
-    "0014_free_tier_hardening",
+    "0001_core_schema", "0002_progression", "0003_country_layer",
+    "0004_admin_command_center", "0005_life_world_hardening",
+    "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
+    "0008_world_access_lifecycle", "0009_ads_governance_moderation",
+    "0010_stars_subscriptions_ad_marketplace", "0011_population_channels_migration",
+    "0012_reliability_live_market_engagement", "0013_country_identity_candles_realism",
+    "0014_free_tier_hardening", "0015_purposeful_work_loop",
+    "0016_national_projects_and_missions", "0017_country_economy_release_b",
+    "0018_country_trade_diplomacy_release_c", "0019_life_progression_system",
+    "0020_admin_operations_10",
 })
+STRICT_CHECKSUM_FROM = "0021_multi_admin_hardening"
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -68,8 +68,10 @@ async def migrate() -> list[str]:
                 digest = _checksum(sql)
                 if version in done:
                     if done[version] != digest:
-                        if version in LEGACY_CHECKSUM_VERSIONS:
-                            logger.warning(
+                        # Every migration shipped before the strict baseline belongs to
+                        # recovered history, including installations with variant names.
+                        if version in LEGACY_CHECKSUM_VERSIONS or version < STRICT_CHECKSUM_FROM:
+                            logger.info(
                                 "legacy migration checksum differs; preserving the "
                                 "database record and not re-running SQL: %s",
                                 version,

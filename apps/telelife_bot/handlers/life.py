@@ -6,6 +6,7 @@ from html import escape
 from telegram import Update
 from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
+from apps.telelife_bot.handlers import ux
 from apps.telelife_bot.handlers.panel import show
 from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
@@ -37,6 +38,10 @@ async def home(ctx,c):
 async def journey(ctx,c):
  st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
+async def today_page(ctx,c):
+ p=await fresh(ctx);view=await ux.today_view(p)
+ await panel(ctx,c,view.text,kb.today(ctx.telegram_id,view.actions))
+
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
  text=fa.PROFILE.format(name=escape(p.first_name),level=fmt.number(p.level),rank=fmt.number(rank),bar=fmt.progress_bar(cur,need),xp=fmt.number(cur),need=fmt.number(need),wallet=fmt.toman(p.wallet_toman),savings=fmt.toman(p.savings_toman),usd=fmt.usd(p.usd_cents),happy=fmt.number(p.happiness),rep=fmt.number(p.reputation),streak=fmt.number(streak))
@@ -128,8 +133,8 @@ async def callback(update,c):
   from apps.telelife_bot.handlers.advertising import begin
   await begin(update,c);return
  try:
-  if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
-   await answer(q,);fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
+  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
+   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
   if a=='jstep':
    step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
    if step!=expected:await answer(q,'این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
@@ -148,7 +153,11 @@ async def callback(update,c):
    await xp.grant(ctx.player.id,'mission_complete',idempotency_key=f"mission-xp:{ctx.player.id}:{parsed.arg}:{xp.day_key('d',0)}",amount=m.reward_xp);await answer(q,"پاداش مأموریت دریافت شد.",show_alert=True);await missions_page(ctx,c);return
   if a in {'deposit','withdraw'}:await personal_economy.savings_transfer(ctx.player.id,int(parsed.arg),a,ik(a,ctx.player.id));await answer(q,"انتقال انجام شد.",show_alert=True);await savings_page(ctx,c);return
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
-  if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
+  if a in {'hrent','hbuy'}:
+   p=await fresh(ctx);tenure='rent' if a=='hrent' else 'owned';text=ux.housing_preview(p,parsed.arg,tenure)
+   await answer(q,);await panel(ctx,c,text,kb.confirm(ctx.telegram_id,'housing','hconfirm',f"{tenure},{parsed.arg}",'housing'));return
+  if a=='hconfirm':
+   tenure,code=parsed.arg.split(',',1);await personal_economy.acquire_housing(ctx.player.id,code,tenure,ik(a,ctx.player.id));await answer(q,"✅ خانه ثبت شد. حالا هزینه زندگی روزانه‌ات را در بخش دارایی و بانک ببین.",show_alert=True);await economy(ctx,c);return
   if a=='abuy':await life_progression.buy_asset(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,"دارایی خریده شد و اثرش فعال است.",show_alert=True);await assets_page(ctx,c);return
   if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"عالیه؛ شغلت ثبت شد و از همین حالا درآمدش جمع می‌شود.",show_alert=True);await jobs(ctx,c);return
   if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
@@ -160,9 +169,21 @@ async def callback(update,c):
     national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
     msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه زندگی: +{fmt.number(r.xp)}\n🛠 مهارت {SKILL_FA.get(r.skill_code or '',r.skill_code or 'شغلی')}: سطح {fmt.number(r.skill_level)} · {fmt.number(r.skill_xp)}/{fmt.number(r.skill_needed)}"
    await answer(q,msg,show_alert=True);await jobs(ctx,c);return
-  if a=='jupgrade':lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"ارتقا به سطح {fmt.number(lvl)}",show_alert=True);await jobs(ctx,c);return
-  if a in {'mbuy','msell'}:r=await usd_market.trade(ctx.player.id,'buy' if a=='mbuy' else 'sell',int(parsed.arg),ik(a,ctx.player.id));await answer(q,f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,c);return
+  if a=='jupgrade':
+   p=await fresh(ctx);row=await production_repo.get(p.id)
+   if not row:raise ValueError('job_not_found')
+   await answer(q,);await panel(ctx,c,ux.upgrade_preview(row,parsed.arg,p.wallet_toman),kb.confirm(ctx.telegram_id,'upgrade','juconfirm',parsed.arg,'jobs'));return
+  if a=='juconfirm':
+   lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"✅ ارتقا به سطح {fmt.number(lvl)} انجام شد. نتیجه آن را در نرخ و ظرفیت جدید می‌بینی.",show_alert=True);await jobs(ctx,c);return
+  if a in {'mbuy','msell'}:
+   p=await fresh(ctx);side='buy' if a=='mbuy' else 'sell';await answer(q,)
+   await panel(ctx,c,await ux.market_preview(p,side,int(parsed.arg)),kb.confirm(ctx.telegram_id,'market','mconfirm',f"{side},{parsed.arg}",'market'));return
+  if a=='mconfirm':
+   side,cents=parsed.arg.split(',',1);r=await usd_market.trade(ctx.player.id,side,int(cents),ik(a,ctx.player.id));await answer(q,f"✅ معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}. موجودی تازه در همین صفحه نمایش داده می‌شود.",show_alert=True);await market(ctx,c);return
   await answer(q,)
- except (ValueError,PermissionError) as e:await answer(q,why(e),show_alert=True)
+ except (ValueError,PermissionError) as e:
+  code=str(e);await answer(q,why(e),show_alert=True)
+  if code in {'insufficient_balance','insufficient_player_balance','housing_locked','market_locked','job_not_found','max_level_reached','market_frozen'}:
+   await panel(ctx,c,ux.actionable_error(code,player=ctx.player),kb.back(ctx.telegram_id,'home'))
 def register(app):
  app.add_handler(CommandHandler('start',start));app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'));app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,text_start))

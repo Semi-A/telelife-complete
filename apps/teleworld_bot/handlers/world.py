@@ -123,12 +123,21 @@ async def home(update, context):
     p = await player(update)
     citizenship = await country_repo.citizenship(p.id) if row else None
     citizen = bool(citizenship and citizenship["is_active"] and int(citizenship["country_id"]) == int(row["id"]))
+    official_role = None
+    if row and citizen:
+        if int(row["president_player_id"] or 0) == p.id:
+            official_role = "president"
+        else:
+            official_role = await db.fetchval(
+                "SELECT role_code FROM country_offices WHERE country_id=$1 AND player_id=$2 LIMIT 1",
+                row["id"], p.id,
+            )
     if not row:
         await show(update, context, fa.HOME_EMPTY, kb.home(False, await is_admin(update, context)))
         return
     goal = "شهروند جذب کنید" if row["status"] == "forming" else "انتخابات رهبر را کامل کنید" if not row["president_player_id"] else "پروژه و اقتصاد کشور را رشد دهید"
     text = fa.HOME.format(name=escape(str(row["name"])), status=STATUS.get(row["status"], "نامشخص"), citizens=fmt.number(count), leader=escape(str(leader or "هنوز انتخاب نشده")), treasury=fmt.toman(row["treasury_toman"]), goal=goal)
-    await show(update, context, text, kb.home(True, await is_admin(update, context), citizen))
+    await show(update, context, text, kb.home(True, await is_admin(update, context), citizen, official_role))
 
 async def country_page(update, context):
     row, count, leader = await facts(update.effective_chat.id)
@@ -264,6 +273,18 @@ async def callback(update, context):
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
         elif action == "guide":
             await answer(query, ); row, _, _ = await facts(update.effective_chat.id) if update.effective_chat.type in GROUPS else (None, 0, None); await show(update, context, fa.GUIDE if row else fa.GUIDE_EMPTY, kb.back())
+        elif action == "country_today":
+            await answer(query);row,count,leader=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            project=await project_repo.active(row["id"]);election=await election_repo.open_for_country(row["id"])
+            crisis=bool(await db.fetchval("SELECT 1 FROM country_crises WHERE country_id=$1 AND status='active'",row["id"]))
+            text=(f"☀️ <b>امروز {escape(str(row['name']))}</b>\n\n"
+                  f"{'⚠️ بحران فعال نیازمند رسیدگی است.' if crisis else '✅ بحران فعالی ثبت نشده است.'}\n"
+                  f"{'🟢 پروژه ملی فعال است.' if project else '▫️ پروژه ملی فعالی وجود ندارد.'}\n"
+                  f"{'🗳 انتخابات در جریان است.' if election else '▫️ انتخابات بازی وجود ندارد.'}\n"
+                  f"👥 جمعیت: <b>{fmt.number(count)}</b> · خزانه: <b>{fmt.toman(row['treasury_toman'])}</b>\n\n"
+                  "بهترین اقدام را از دکمه‌های مرتبط همین صفحه انتخاب کن.")
+            await show(update,context,text,kb.home(True,await is_admin(update,context),True));return
         elif action == "country": await answer(query, ); await country_page(update, context)
         elif action == "economy": await answer(query, ); await economy_page(update, context)
         elif action == "economyb": await answer(query); await economy_b_page(update,context)
@@ -434,8 +455,12 @@ async def callback(update, context):
             if not row: raise ValueError("country_not_found")
             citizenship = await country_repo.citizenship(p.id)
             if not citizenship or not citizenship["is_active"] or int(citizenship["country_id"]) != int(row["id"]): raise PermissionError("citizen_required")
-            await economy.transfer(p.id, row["id"], "IRT", int(action.split(":", 1)[1]), reason="donation", idempotency_key=f"world-donate:{p.id}:{query.id}")
-            await answer(query, "کمک مالی ثبت شد.", show_alert=True); await country_page(update, context)
+            amount=int(action.split(":",1)[1]);await answer(query)
+            await show(update,context,f"💰 <b>پیش‌نمایش کمک به {escape(str(row['name']))}</b>\n\nمبلغ انتقال: <b>{fmt.toman(amount)}</b>\nکیف پول پس از کمک: <b>{fmt.toman(p.wallet_toman-amount)}</b>\nخزانه کشور پس از کمک: <b>{fmt.toman(int(row['treasury_toman'])+amount)}</b>\n\nاین انتقال در دفتر اقتصاد ثبت می‌شود.",kb.confirm_world(f"donateok:{amount}","country"));return
+        elif action.startswith("donateok:"):
+            p=await player(update);row,_,_=await facts(update.effective_chat.id);amount=int(action.split(":",1)[1])
+            await economy.transfer(p.id,row["id"],"IRT",amount,reason="donation",idempotency_key=f"world-donate:{p.id}:{query.id}")
+            await answer(query,"✅ کمک ثبت شد؛ اثر آن را در خزانه تازه‌شده می‌بینی.",show_alert=True);await country_page(update,context)
         elif action == "estart":
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")

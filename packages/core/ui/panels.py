@@ -35,6 +35,8 @@ async def _expire(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.edit_message_reply_markup(
             chat_id=chat_id, message_id=message_id, reply_markup=None
         )
+        # Buttons disappear while the informational message remains readable.
+        # Persistent expiry is also checked by callback guards after restarts.
     except BadRequest as exc:
         logger.debug("panel cleanup no-op for chat %s: %s", chat_id, exc)
     except Forbidden:
