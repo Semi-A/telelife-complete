@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 189
+تعداد کل فایل‌ها: 200
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -35,6 +35,7 @@ telelife_complete/
 │   ├── telelife_bot/
 │   │   ├── handlers/
 │   │   │   ├── __init__.py
+│   │   │   ├── advertising.py
 │   │   │   ├── common.py
 │   │   │   ├── economy_ui.py
 │   │   │   ├── life.py
@@ -89,7 +90,9 @@ telelife_complete/
 │   ├── 0006_phase3_phase4_complete.sql
 │   ├── 0007_unified_ui_onboarding.sql
 │   ├── 0008_world_access_lifecycle.sql
-│   └── 0009_ads_governance_moderation.sql
+│   ├── 0009_ads_governance_moderation.sql
+│   ├── 0010_stars_subscriptions_ad_marketplace.sql
+│   └── 0011_population_channels_migration.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -98,6 +101,7 @@ telelife_complete/
 │   │   │   └── runtime.py
 │   │   ├── config/
 │   │   │   ├── data/
+│   │   │   │   ├── commerce.yaml
 │   │   │   │   ├── core.yaml
 │   │   │   │   ├── country.yaml
 │   │   │   │   ├── country_missions.yaml
@@ -107,6 +111,7 @@ telelife_complete/
 │   │   │   │   ├── elections.yaml
 │   │   │   │   ├── jobs.yaml
 │   │   │   │   ├── market.yaml
+│   │   │   │   ├── migration.yaml
 │   │   │   │   ├── missions.yaml
 │   │   │   │   ├── national_project.yaml
 │   │   │   │   ├── news.yaml
@@ -141,6 +146,7 @@ telelife_complete/
 │   │   ├── services/
 │   │   │   ├── __init__.py
 │   │   │   ├── admin.py
+│   │   │   ├── commerce.py
 │   │   │   ├── content_filter.py
 │   │   │   ├── country.py
 │   │   │   ├── country_economy.py
@@ -149,6 +155,7 @@ telelife_complete/
 │   │   │   ├── economy.py
 │   │   │   ├── elections.py
 │   │   │   ├── governance.py
+│   │   │   ├── migration.py
 │   │   │   ├── missions.py
 │   │   │   ├── national_project.py
 │   │   │   ├── news.py
@@ -180,6 +187,7 @@ telelife_complete/
 │   ├── test_all_keyboard_states.py
 │   ├── test_callbacks.py
 │   ├── test_clock.py
+│   ├── test_commerce.py
 │   ├── test_config.py
 │   ├── test_content_filter.py
 │   ├── test_daily.py
@@ -199,6 +207,7 @@ telelife_complete/
 │   ├── test_production_security.py
 │   ├── test_progression.py
 │   ├── test_project_integrity.py
+│   ├── test_scaling_migration.py
 │   ├── test_supervisor.py
 │   ├── test_teleworld_onboarding.py
 │   ├── test_teleworld_start.py
@@ -222,7 +231,9 @@ telelife_complete/
 ├── RELEASE_2026_07_27_FA.md
 ├── RELEASE_AUDIT_FA.md
 ├── RELEASE_AUDIT_FA_2026-07-27.md
+├── RELEASE_COMMERCE_FA.md
 ├── RELEASE_NOTES_FA.md
+├── RELEASE_SCALING_MIGRATION_FA.md
 ├── render.yaml
 ├── requirements.txt
 ├── run.py
@@ -261,6 +272,8 @@ HOST=0.0.0.0
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
 MEMORY_WARNING_MB=450
+# Telegram Stars uses currency XTR and an empty provider token.
+AD_REVIEW_NOTIFICATION_CHAT_ID=
 ```
 
 ### `.gitignore`
@@ -394,7 +407,7 @@ from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin
+from packages.core.services import admin, commerce
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[str, Depends(require_admin)]
@@ -419,6 +432,16 @@ class AdBody(BaseModel):
     destination: int
     scheduled_at: datetime | None = None
     repeat_minutes: int | None = Field(default=None,ge=15,le=525600)
+
+class AdReviewBody(BaseModel):
+    note: str | None = Field(default=None,max_length=1000)
+class AdEditBody(BaseModel):
+    title: str = Field(min_length=3,max_length=120)
+    description: str = Field(min_length=10,max_length=2000)
+    target_url: str = Field(min_length=8,max_length=1000)
+    requested_start_at: datetime | None = None
+class AdRejectBody(BaseModel):
+    reason: str = Field(min_length=3,max_length=1000)
 
 class NewsBody(BaseModel):
     text: str = Field(min_length=3, max_length=4000)
@@ -541,6 +564,46 @@ async def create_ad(body:AdBody,actor:AdminActor)->dict[str,int]:
 async def queue_ad(ad_id:int,actor:AdminActor)->dict[str,bool]:
     try:return {"queued":await admin.queue_ad(actor,ad_id,str(uuid4()))}
     except ValueError as exc:raise fail(exc) from exc
+
+@router.get("/ad-requests")
+async def ad_requests(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+ return [dict(x) for x in await commerce.list_ads(limit)]
+@router.get("/ad-requests/{ad_id}/image")
+async def ad_request_image(ad_id:int):
+ from fastapi.responses import Response
+ row=await commerce.ad_image(ad_id)
+ if not row or not row["image_bytes"]:raise HTTPException(404,"تصویری وجود ندارد.")
+ return Response(content=bytes(row["image_bytes"]),media_type=row["image_mime"] or "image/jpeg",headers={"Cache-Control":"private, no-store"})
+@router.put("/ad-requests/{ad_id}")
+async def edit_ad_request(ad_id:int,body:AdEditBody,actor:AdminActor)->dict[str,bool]:
+ return {"updated":bool(await commerce.edit_ad(ad_id,body.title,body.description,body.target_url,body.requested_start_at))}
+@router.post("/ad-requests/{ad_id}/approve")
+async def approve_ad_request(ad_id:int,body:AdReviewBody,actor:AdminActor)->dict[str,bool]:
+ row=await commerce.approve_ad(ad_id,actor,body.note)
+ if not row:raise HTTPException(409,"وضعیت درخواست قابل تأیید نیست.")
+ owner=await admin_repo.ad_owner(ad_id);payload,stars,title=await commerce.ad_invoice(ad_id,int(owner["telegram_id"]))
+ from telegram import Bot,LabeledPrice
+ async with Bot(get_settings().telelife_bot_token) as bot:
+  await bot.send_invoice(chat_id=owner["telegram_id"],title=f"پرداخت تبلیغ: {title}",description="درخواست تأیید شد. این صورتحساب ۴۸ ساعت اعتبار دارد.",payload=payload,currency="XTR",prices=[LabeledPrice("بسته تبلیغ",stars)],provider_token="")
+ return {"approved":True}
+@router.post("/ad-requests/{ad_id}/reject")
+async def reject_ad_request(ad_id:int,body:AdRejectBody,actor:AdminActor)->dict[str,bool]:
+ row=await commerce.reject_ad(ad_id,actor,body.reason)
+ if row:
+  from telegram import Bot
+  owner=await admin_repo.ad_owner(ad_id)
+  async with Bot(get_settings().telelife_bot_token) as bot:await bot.send_message(owner["telegram_id"],f"✏️ درخواست تبلیغ #{ad_id} نیاز به اصلاح دارد:\n\n{body.reason}\n\nبرای اصلاح، درخواست تازه‌ای از بخش تبلیغات ثبت کن.")
+ return {"rejected":bool(row)}
+@router.post("/ad-requests/{ad_id}/pause")
+async def pause_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:return {"paused":bool(await commerce.pause_ad(ad_id))}
+@router.post("/ad-requests/{ad_id}/refund")
+async def refund_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:
+ row=await commerce.refundable(ad_id)
+ if not row:raise HTTPException(409,"پس از نخستین پخش، بازپرداخت خودکار مجاز نیست.")
+ from telegram import Bot
+ async with Bot(get_settings().telelife_bot_token) as bot:ok=await bot.refund_star_payment(user_id=row["telegram_id"],telegram_payment_charge_id=row["telegram_charge_id"])
+ if ok:await commerce.mark_refunded(ad_id)
+ return {"refunded":bool(ok)}
 ```
 
 ### `apps\admin\static\admin.css`
@@ -553,6 +616,7 @@ async def queue_ad(ad_id:int,actor:AdminActor)->dict[str,bool]:
 #view-ads .news-item:hover{transform:translateY(-2px);border-color:#8c7cff55}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+.request-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}.request-card{padding:0;overflow:hidden}.request-card>img{width:100%;height:190px;object-fit:cover;background:#061623}.request-card>div{padding:20px}.request-card h3{margin:4px 0 10px}.request-card p{color:var(--muted);font-size:12px;line-height:1.8}.request-card a{display:block;color:var(--cyan);font-size:11px;direction:ltr;text-align:left;overflow-wrap:anywhere;margin:10px 0}.request-card small{display:block;color:var(--dim);margin:12px 0}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -566,7 +630,7 @@ function toast(message,error=false){const el=$("#toast");el.textContent=message;
 async function api(url,options={}){const res=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
-function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات"}[name];history.replaceState(null,"",`#${name}`);load(name)}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 async function overview(){const [o,h]=await Promise.all([api('/api/admin/overview'),api('/healthz')]);$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i>${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';await market(true)}
 function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
@@ -584,10 +648,17 @@ async function news(){const rows=await api('/api/admin/news?limit=100');$("#news
 $("#send-news").onclick=async()=>{const text=$("#news-text").value.trim(),d=$("#news-destination").value.trim();if(text.length<3)return toast("متن خبر کوتاه است",true);try{await api('/api/admin/news',{method:'POST',body:JSON.stringify({text,destination:d?Number(d):null})});$("#news-text").value='';toast("خبر وارد صف انتشار شد");news()}catch(e){toast(e.message,true)}};
 let searchTimer;$("#player-search").oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(players,300)};$("#market-range").onchange=()=>market();$("#refresh").onclick=()=>load(location.hash.slice(1)||'overview');
 
+
+async function requests(){const rows=await api('/api/admin/ad-requests?limit=100');$("#ad-requests").innerHTML=rows.map(x=>`<article class="panel request-card">${x.image_mime?`<img src="/api/admin/ad-requests/${x.id}/image" alt="تصویر تبلیغ">`:''}<div><p class="eyebrow">#${x.id} · ${esc(x.package_code)} · ${esc(x.channel)} · ${fa.format(x.price_stars)} ⭐</p><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><a href="${esc(x.target_url)}" target="_blank" rel="noopener">${esc(x.target_url)}</a><small>${esc(x.first_name)} · ${date(x.created_at)} · ${esc(x.status)} · ارسال‌شده ${fa.format(x.delivered||0)} · در انتظار ${fa.format(x.pending||0)}</small><div class="country-actions"><button class="small-btn" data-editrequest="${x.id}" data-title="${esc(x.title)}" data-description="${esc(x.description)}" data-url="${esc(x.target_url)}">ویرایش</button><button class="small-btn" data-approve="${x.id}">تأیید و صدور پرداخت</button><button class="small-btn danger" data-reject="${x.id}">درخواست اصلاح</button><button class="small-btn" data-pause="${x.id}">توقف</button><button class="small-btn" data-refund="${x.id}">بازپرداخت</button></div></div></article>`).join('')||'<div class="empty">درخواستی وجود ندارد</div>';$$('[data-editrequest]').forEach(b=>b.onclick=()=>editRequest(b));$$('[data-approve]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.approve,'approve'));$$('[data-reject]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.reject,'reject'));$$('[data-pause]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.pause,'pause'));$$('[data-refund]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.refund,'refund'))}
+
+async function editRequest(b){const title=prompt('عنوان',b.dataset.title);if(title===null)return;const description=prompt('توضیحات',b.dataset.description);if(description===null)return;const target_url=prompt('لینک',b.dataset.url);if(target_url===null)return;try{await api(`/api/admin/ad-requests/${b.dataset.editrequest}`,{method:'PUT',body:JSON.stringify({title,description,target_url,requested_start_at:null})});toast('درخواست ویرایش شد');requests()}catch(e){toast(e.message,true)}}
+
+async function reviewAction(id,action){let body={};if(action==='reject'){const reason=prompt('دلیل اصلاح را بنویس');if(!reason)return;body={reason}}else if(action==='approve')body={note:null};try{await api(`/api/admin/ad-requests/${id}/${action}`,{method:'POST',body:JSON.stringify(body)});toast('وضعیت درخواست به‌روزرسانی شد');requests()}catch(e){toast(e.message,true)}}
+
 async function ads(){const rows=await api('/api/admin/ads?limit=100');$("#ad-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p><b>${esc(x.title)}</b></p><small>${esc(x.status)} · مقصد ${esc(x.destination_chat_id)} · ${date(x.scheduled_at||x.created_at)}</small></div><button class="small-btn" data-adqueue="${x.id}">ارسال حالا</button></div>`).join('')||'<div class="empty">هنوز کمپینی ساخته نشده است</div>';$$('[data-adqueue]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/ads/${b.dataset.adqueue}/queue`,{method:'POST',body:'{}'});toast("تبلیغ وارد صف شد");ads()}catch(e){toast(e.message,true)}})}
 $("#save-ad").onclick=async()=>{const title=$("#ad-title").value.trim(),text=$("#ad-text").value.trim(),destination=Number($("#ad-destination").value),raw=$("#ad-scheduled").value,repeat=$("#ad-repeat").value;if(title.length<3||text.length<3||!destination)return toast("عنوان، متن و گروه مقصد را کامل کن",true);try{await api('/api/admin/ads',{method:'POST',body:JSON.stringify({title,text,destination,scheduled_at:raw?new Date(raw).toISOString():null,repeat_minutes:repeat?Number(repeat):null})});$("#ad-title").value=$("#ad-text").value='';toast("کمپین ذخیره شد");ads()}catch(e){toast(e.message,true)}};
 
-function load(name){({overview,market,players,countries,news,ads}[name]||overview)().catch(e=>toast(e.message,true))}
+function load(name){({overview,market,players,countries,news,ads,requests}[name]||overview)().catch(e=>toast(e.message,true))}
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
 ```
 
@@ -615,6 +686,7 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
     <button class="nav" data-view="ads"><span>✦</span><em>تبلیغات</em></button>
+    <button class="nav" data-view="requests"><span>▣</span><em>درخواست‌ها</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -664,6 +736,7 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
     <button id="save-ad" class="primary">ذخیره کمپین</button>
   </article><article class="panel"><div class="panel-head"><div><p class="eyebrow">کمپین‌ها</p><h2>صف تبلیغات</h2></div></div><div id="ad-list" class="news-list"></div></article></div>
 </section>
+<section class="view" id="view-requests"><div class="section-lead"><div><p class="eyebrow">بازبینی پیش از پرداخت</p><h2>درخواست‌های تبلیغ</h2><p>جزئیات، تصویر و لینک را بررسی و ویرایش کن؛ فقط پس از تأیید، مهلت پرداخت ۴۸ساعته آغاز می‌شود.</p></div></div><div id="ad-requests" class="request-grid"></div></section>
 </main>
 <dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
 {% endblock %}
@@ -714,14 +787,31 @@ __all__ = ["country_jobs", "daily_reset"]
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
 from telegram import Bot
-from packages.core.services import country_economy,elections,news
+from packages.core.services import country_economy,elections,news,commerce
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
 async def daily_events()->int:
  await country_economy.catch_up()
  return await news.ensure_daily_events()
-async def publish_news(bot:Bot)->dict[str,int]:
+async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
  async def sender(chat_id,event_type,payload):
   if chat_id is None:return
+  if event_type=="marketplace_ad":
+   from packages.core import db
+   ad=await db.fetchrow("SELECT * FROM ad_requests WHERE id=$1",payload["ad_id"])
+   if not ad:return
+   if payload.get("destination_type")=="world":
+    protected=await db.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
+    if protected:
+     await db.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
+   text=f"📣 <b>{ad['title']}</b>\n\n{ad['description']}\n\n🔗 {ad['target_url']}"
+   if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+str(ad['target_url'])[:45]
+   sender_bot=life_bot if payload.get("destination_type")=="life" and life_bot is not None else bot
+   if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
+   else:await sender_bot.send_message(chat_id=chat_id,text=text)
+   await db.execute("UPDATE ad_deliveries SET status='sent',sent_at=now() WHERE id=$1",payload["delivery_id"])
+   await db.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
+   await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
+   return
   text=str(payload.get('text') or payload.get('event_code') or payload.get('mission_key') or event_type)
   await bot.send_message(chat_id=chat_id,text=text)
  return await news.publish_batch(sender)
@@ -739,6 +829,9 @@ async def queue_due_ads()->int:
     await conn.execute("UPDATE ad_campaigns SET scheduled_at=now()+($2::int*interval '1 minute'),last_queued_at=now(),updated_at=now() WHERE id=$1",row["id"],row["repeat_minutes"])
    else: await conn.execute("UPDATE ad_campaigns SET status='queued',last_queued_at=now(),updated_at=now() WHERE id=$1",row["id"])
  return count
+
+async def run_commerce()->dict[str,int]:
+ await __import__("packages.core.services.migration",fromlist=["expire"]).expire();expired=await commerce.expire_commerce();planned=await commerce.plan_paid_ads();queued=await commerce.queue_due_deliveries();return {**expired,"planned":planned,"queued":queued}
 ```
 
 ### `apps\scheduler\jobs\daily_reset.py`
@@ -852,13 +945,14 @@ class SchedulerService:
     def healthy(self) -> bool:
         return self._running
 
-    async def minute_loop(self, stop: asyncio.Event, bot: Bot) -> None:
+    async def minute_loop(self, stop: asyncio.Event, bot: Bot, life_bot: Bot) -> None:
         while not stop.is_set():
             try:
                 await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
                 await country_jobs.resolve_due()
                 await country_jobs.queue_due_ads()
-                await country_jobs.publish_news(bot)
+                await country_jobs.run_commerce()
+                await country_jobs.publish_news(bot, life_bot)
                 await usd_market.stabilize()
                 await admin_repo.capture_market_snapshot()
                 self._heartbeat = asyncio.get_running_loop().time()
@@ -884,8 +978,8 @@ class SchedulerService:
     async def run(self, stop: asyncio.Event) -> None:
         self._running = True
         try:
-            async with Bot(self.settings.teleworld_bot_token) as bot:
-                minute = asyncio.create_task(self.minute_loop(stop, bot), name="scheduler:minute")
+            async with Bot(self.settings.teleworld_bot_token) as bot, Bot(self.settings.telelife_bot_token) as life_bot:
+                minute = asyncio.create_task(self.minute_loop(stop, bot, life_bot), name="scheduler:minute")
                 daily = asyncio.create_task(self.daily_loop(stop), name="scheduler:daily")
                 stop_waiter = asyncio.create_task(stop.wait(), name="scheduler:stop")
                 done, _ = await asyncio.wait(
@@ -916,6 +1010,91 @@ class SchedulerService:
 
 ```python
 """Package apps.telelife_bot.handlers."""
+```
+
+### `apps\telelife_bot\handlers\advertising.py`
+
+```python
+"""Guided private ad request flow and Telegram Stars settlement."""
+from __future__ import annotations
+from datetime import UTC,datetime
+from telegram import InlineKeyboardButton,InlineKeyboardMarkup,LabeledPrice,Update
+from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,PreCheckoutQueryHandler,filters
+from packages.core.repositories import player_repo
+from packages.core.services import commerce
+from packages.core.services.content_filter import inspect
+FLOW="ad_request_flow"
+PACK={"economy":"اقتصادی · پایه ۲۵ ⭐ · یک پخش","standard":"استاندارد · پایه ۶۰ ⭐ · ۳ پخش / ۲۴ ساعت","campaign":"کمپین · پایه ۱۲۰ ⭐ · ۶ پخش / ۳ روز","featured":"ویژه · پایه ۲۰۰ ⭐ · ۸ پخش / ۷ روز"}
+CHANNEL={"life":"فقط Life · کاربران فعال ۳۰ روز · ×۱","world":"فقط World · گروه‌های فعال غیرمشترک · ×۱٫۵","both":"Life + World · ×۲٫۲"}
+def keyboard(rows):return InlineKeyboardMarkup(rows)
+def menu():return keyboard([[InlineKeyboardButton(v,callback_data=f"ad:pkg:{k}")] for k,v in PACK.items()]+[[InlineKeyboardButton("📂 درخواست‌های من",callback_data="ad:mine")],[InlineKeyboardButton("لغو",callback_data="ad:cancel")]])
+def channels(package):
+ return keyboard([[InlineKeyboardButton(label+f" · {commerce.ad_price(package,code)} ⭐",callback_data=f"ad:channel:{package}:{code}")] for code,label in CHANNEL.items()]+[[InlineKeyboardButton("بازگشت",callback_data="ad:new")]])
+async def begin(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ q=update.callback_query
+ if q:await q.answer();await q.edit_message_text("📣 <b>درخواست تبلیغ</b>\n\nبسته را انتخاب کن. تبلیغ پیش از پرداخت کامل در پنل مدیریت بررسی می‌شود.",reply_markup=menu())
+async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ q=update.callback_query;action=(q.data or "").split(":")
+ if action[1]=="cancel":context.user_data.pop(FLOW,None);await q.answer();await q.edit_message_text("درخواست لغو شد.");return
+ if action[1]=="mine":
+  p=await player_repo.get_by_telegram_id(q.from_user.id);rows=await commerce.player_ads(p.id) if p else []
+  buttons=[];lines=["📂 <b>درخواست‌های من</b>"]
+  for row in rows:
+   lines.append(f"#{row['id']} · {row['title']} · {row['status']}"+(f"\nیادداشت: {row['admin_note']}" if row['admin_note'] else ""))
+   if row['status']=='changes_requested':buttons.append([InlineKeyboardButton(f"✏️ اصلاح #{row['id']}",callback_data=f"ad:revise:{row['id']}")])
+  buttons.append([InlineKeyboardButton("درخواست تازه",callback_data="ad:new")]);await q.answer();await q.edit_message_text("\n\n".join(lines) if rows else "درخواستی نداری.",reply_markup=keyboard(buttons));return
+ if action[1]=="new":await q.answer();await q.edit_message_text("بسته را انتخاب کن.",reply_markup=menu());return
+ if action[1]=="revise":
+  p=await player_repo.get_by_telegram_id(q.from_user.id);row=await commerce.revision_source(int(action[2]),p.id) if p else None
+  if not row:await q.answer("این درخواست قابل اصلاح نیست.",show_alert=True);return
+  context.user_data[FLOW]={"step":"title","package":row['package_code'],"channel":row['channel'],"revision_id":row['id']};await q.answer();await q.edit_message_text(f"عنوان اصلاح‌شده را بفرست.\nعنوان فعلی: {row['title']}");return
+ if action[1]=="pkg":await q.answer();await q.edit_message_text("محل نمایش تبلیغ را انتخاب کن. قیمت نهایی بر اساس کانال محاسبه می‌شود.",reply_markup=channels(action[2]));return
+ if action[1]=="channel":context.user_data[FLOW]={"step":"title","package":action[2],"channel":action[3]};await q.answer();await q.edit_message_text(f"قیمت نهایی: {commerce.ad_price(action[2],action[3])} ⭐\n\nعنوان کوتاه تبلیغ را بفرست (۳ تا ۱۲۰ نویسه).")
+async def text(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ flow=context.user_data.get(FLOW);msg=update.effective_message
+ if not flow or not msg:return
+ value=(msg.text or "").strip();step=flow["step"]
+ if step in {"title","description"} and not inspect(value).allowed:await msg.reply_text("⚠️ متن شامل عبارت غیرمجاز است؛ آن را اصلاح کن و دوباره بفرست.");return
+ if step=="title":
+  if not 3<=len(value)<=120:await msg.reply_text("عنوان باید بین ۳ تا ۱۲۰ نویسه باشد.");return
+  flow.update(title=value,step="description");await msg.reply_text("توضیح کامل تبلیغ را بفرست (۱۰ تا ۲۰۰۰ نویسه).");return
+ if step=="description":
+  if not 10<=len(value)<=2000:await msg.reply_text("توضیح باید بین ۱۰ تا ۲۰۰۰ نویسه باشد.");return
+  flow.update(description=value,step="url");await msg.reply_text("لینک مقصد را با https:// بفرست.");return
+ if step=="url":
+  if not commerce.valid_url(value):await msg.reply_text("لینک معتبر نیست؛ یک لینک کامل http یا https بفرست.");return
+  flow.update(url=value,step="image");await msg.reply_text("حالا تصویر تبلیغ را بفرست (JPG/PNG/WebP، حداکثر ۵ مگابایت). اگر تصویر نمی‌خواهی «بدون عکس» بنویس.");return
+ if step=="image" and value=="بدون عکس":flow.update(image=None,mime=None,step="start");await msg.reply_text("زمان شروع دلخواه را به شکل 2026-07-30 18:30 UTC بفرست یا «اولین زمان ممکن» بنویس.");return
+ if step=="start":
+  start=None
+  if value!="اولین زمان ممکن":
+   try:start=datetime.strptime(value,"%Y-%m-%d %H:%M").replace(tzinfo=UTC)
+   except ValueError:await msg.reply_text("قالب زمان درست نیست؛ نمونه: 2026-07-30 18:30 یا «اولین زمان ممکن».");return
+  user=update.effective_user;p=await player_repo.get_or_create(user.id,username=user.username,first_name=user.first_name or "کاربر",language_code=user.language_code or "fa")
+  if flow.get("revision_id"):
+   ad_id=int(flow["revision_id"]);ok=await commerce.submit_revision(ad_id,p.id,flow["title"],flow["description"],flow["url"],flow.get("image"),flow.get("mime"),start)
+   if not ok:raise ValueError("revision_closed")
+  else:ad_id=await commerce.create_ad_request(p.id,flow["package"],flow["channel"],flow["title"],flow["description"],flow["url"],flow.get("image"),flow.get("mime"),start)
+  context.user_data.pop(FLOW,None);await msg.reply_text(f"✅ درخواست #{ad_id} برای بررسی مدیر ثبت شد.\n\nدر صورت تأیید، صورتحساب استارز با اعتبار ۴۸ ساعت همین‌جا ارسال می‌شود. تا پیش از تأیید هیچ پرداختی انجام نمی‌دهی.")
+async def photo(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ flow=context.user_data.get(FLOW);msg=update.effective_message
+ if not flow or flow.get("step")!="image" or not msg.photo:return
+ photo=msg.photo[-1]
+ if photo.file_size and photo.file_size>5_000_000:await msg.reply_text("حجم تصویر بیشتر از ۵ مگابایت است.");return
+ f=await photo.get_file();data=bytes(await f.download_as_bytearray());flow.update(image=data,mime="image/jpeg",step="start");await msg.reply_text("زمان شروع دلخواه را به شکل 2026-07-30 18:30 UTC بفرست یا «اولین زمان ممکن» بنویس.")
+async def precheckout(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ q=update.pre_checkout_query;ok=await commerce.precheckout(q.invoice_payload,q.from_user.id,q.total_amount);await q.answer(ok=ok,error_message=None if ok else "صورتحساب نامعتبر یا منقضی شده است.")
+async def paid(update:Update,context:ContextTypes.DEFAULT_TYPE):
+ p=update.effective_message.successful_payment
+ if not p:return
+ purpose=await commerce.settle(p.invoice_payload,update.effective_user.id,p.total_amount,p.telegram_payment_charge_id,p.provider_payment_charge_id or None)
+ await update.effective_message.reply_text("✅ پرداخت ثبت شد. کمپین به‌صورت خودکار در گروه‌های واجد شرایط برنامه‌ریزی می‌شود." if purpose=="advertisement" else "✅ سهم استارز ثبت شد؛ با تکمیل ۱۰ استار اشتراک گروه فعال می‌شود.")
+def register(app):
+ app.add_handler(CallbackQueryHandler(callback,pattern=r"^ad:"),group=0)
+ app.add_handler(PreCheckoutQueryHandler(precheckout),group=0)
+ app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT,paid),group=0)
+ app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.PHOTO,photo),group=1)
+ app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,text),group=2)
 ```
 
 ### `apps\telelife_bot\handlers\common.py`
@@ -1136,6 +1315,10 @@ async def journey(ctx,c):
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
  text=fa.PROFILE.format(name=escape(p.first_name),level=fmt.number(p.level),rank=fmt.number(rank),bar=fmt.progress_bar(cur,need),xp=fmt.number(cur),need=fmt.number(need),wallet=fmt.toman(p.wallet_toman),savings=fmt.toman(p.savings_toman),usd=fmt.usd(p.usd_cents),happy=fmt.number(p.happiness),rep=fmt.number(p.reputation),streak=fmt.number(streak))
+ from packages.core import db
+ mig=await db.fetchrow("SELECT migrant_until,political_hold_until FROM citizenships WHERE player_id=$1 AND is_active",p.id)
+ if mig and mig["migrant_until"] and mig["migrant_until"]>datetime.now(UTC):text+="\n\n🧳 <b>وضعیت: مهاجر</b>"
+ if mig and mig["political_hold_until"] and mig["political_hold_until"]>datetime.now(UTC):text+="\nمحدودیت فعالیت سیاسی تا: "+mig["political_hold_until"].strftime('%Y-%m-%d')
  await panel(ctx,c,text,kb.back(ctx.telegram_id))
 async def daily_page(ctx,c):
  streak,best,last=await daily.state(ctx.player.id);ready=daily.claimable(last)
@@ -1167,6 +1350,7 @@ async def start(update,c):
  ctx=await resolve(update)
  if ctx:await home(ctx,c)
 async def text_start(update,c):
+ if c.user_data.get('ad_request_flow'):return
  if update.effective_chat and update.effective_chat.type=='private':
   ctx=await resolve(update)
   if ctx:await home(ctx,c)
@@ -1176,6 +1360,9 @@ async def callback(update,c):
  ctx=await resolve(update)
  if not ctx:await answer(q,);return
  a=parsed.action
+ if a=='advertise':
+  from apps.telelife_bot.handlers.advertising import begin
+  await begin(update,c);return
  try:
   if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings'}:
    await answer(q,);fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page}[a];await fn(ctx,c);return
@@ -1605,6 +1792,7 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
     k.row(B("🪪 شخصیت من", "profile", owner), B("🗺 مسیر پیشرفت", "unlocks", owner))
+    k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
 def journey(owner, step):
@@ -1675,7 +1863,7 @@ def market(owner, unlocked=True):
 ```python
 from telegram import BotCommandScopeAllGroupChats,BotCommandScopeAllPrivateChats
 from telegram.ext import Application
-from apps.telelife_bot.handlers import life
+from apps.telelife_bot.handlers import life,advertising
 from apps.telelife_bot.texts import fa
 from packages.core.bot import make_error_handler,run_bot
 from packages.core.settings import Service
@@ -1683,7 +1871,7 @@ from packages.core.settings import Service
 async def post_init(application:Application)->None:
  await application.bot.delete_my_commands(scope=BotCommandScopeAllPrivateChats())
  await application.bot.delete_my_commands(scope=BotCommandScopeAllGroupChats())
-def register(application:Application)->None:life.register(application);application.post_init=post_init;application.add_error_handler(make_error_handler(fa.ERROR))
+def register(application:Application)->None:life.register(application);advertising.register(application);application.post_init=post_init;application.add_error_handler(make_error_handler(fa.ERROR))
 def main()->None:run_bot(Service.TELELIFE,register)
 if __name__=='__main__':main()
 ```
@@ -2533,15 +2721,17 @@ def register(application) -> None:
 """کنترل‌گر یک‌پیامی، فارسی و دکمه‌محور جهان گروهی."""
 from __future__ import annotations
 from uuid import uuid4
+from datetime import UTC,datetime
 from html import escape
 from telegram.constants import ChatMemberStatus, ChatType
 from telegram.error import BadRequest, Forbidden
-from telegram.ext import CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import CallbackQueryHandler, MessageHandler, PreCheckoutQueryHandler, filters
+from telegram import LabeledPrice
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -2599,10 +2789,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -2665,8 +2855,8 @@ async def economy_page(update, context):
 async def citizens_page(update, context):
     row, count, _ = await facts(update.effective_chat.id)
     if not row: raise ValueError("country_not_found")
-    ids = await country_repo.citizens(row["id"])
-    names = [f"• {escape(str(await db.fetchval('SELECT first_name FROM players WHERE id=$1', pid) or 'شهروند'))}" for pid in ids[:25]]
+    people=await db.fetch("SELECT p.first_name,cs.migrant_until FROM citizenships cs JOIN players p ON p.id=cs.player_id WHERE cs.country_id=$1 AND cs.is_active ORDER BY cs.joined_at LIMIT 25",row["id"])
+    names=[f"• {escape(str(x['first_name']))}"+(" · 🧳 مهاجر" if x["migrant_until"] and x["migrant_until"]>datetime.now(UTC) else "") for x in people]
     await show(update, context, fa.CITIZENS.format(count=fmt.number(count), members="\n".join(names) or "هنوز شهروندی ثبت نشده است."), kb.back("country"))
 
 async def politics_page(update, context):
@@ -2749,10 +2939,41 @@ async def callback(update, context):
             if not flow or flow.get("owner") != query.from_user.id or flow.get("step") != "government" or code not in fa.GOVERNMENT_DETAILS:
                 await answer(query,"فرایند ساخت منقضی شده است؛ دوباره آغاز کن.",show_alert=True);return
             await answer(query);flow["government"]=code;flow["step"]="description";await show(update,context,fa.WIZARD_DESC,kb.cancel())
+        elif action == "migration":
+            p=await player(update);current=await country_repo.citizenship(p.id)
+            if not current:await answer(query,"ابتدا شهروند یک کشور شو.",show_alert=True);return
+            rows=await db.fetch("SELECT id,name FROM countries ORDER BY name LIMIT 100");await answer(query)
+            await show(update,context,"✈️ <b>تغییر کشور</b>\n\nعوارض هنگام تکمیل مهاجرت: ۵٪ دارایی شخصی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان؛ مبلغ به خزانه کشور مبدأ می‌رود.\n\nمحدودیت تغییر: هر ۳۰ روز. اگر مقصد رهبر داشته باشد، درخواست ۷۲ ساعت برای تأیید اعتبار دارد. پس از مهاجرت، نشان مهاجر ۳۰ روز و محدودیت سیاسی ۱۴ روز فعال است.",kb.migration_countries(rows,current["country_id"]))
+        elif action.startswith("migrate:"):
+            p=await player(update);dest=int(action.split(":")[1]);qte=await migration.quote(p.id,dest)
+            if not qte:await answer(query,"مقصد معتبر نیست.",show_alert=True);return
+            fee=migration.exit_fee(int(qte["wallet_toman"])+int(qte["savings_toman"]));row=await migration.request(p.id,dest)
+            await answer(query,(f"مهاجرت انجام شد و {fmt.toman(fee)} به خزانه کشور مبدأ رفت." if row["status"]=='approved' else f"درخواست ثبت شد؛ رهبر مقصد تا ۷۲ ساعت فرصت تأیید دارد. عوارض {fmt.toman(fee)} فقط هنگام تأیید کسر می‌شود."),show_alert=True);await home(update,context)
+        elif action == "migration_review":
+            p=await player(update);row=await country_repo.by_chat(update.effective_chat.id)
+            if not row or row["president_player_id"]!=p.id:await answer(query,"فقط رهبر مقصد دسترسی دارد.",show_alert=True);return
+            rows=await migration.pending_for_country(row["id"]);await answer(query);await show(update,context,"📥 <b>درخواست‌های مهاجرت</b>\n\n"+("درخواستی وجود ندارد." if not rows else "پذیرش، عوارض را به کشور مبدأ منتقل و مهاجر را وارد کشور می‌کند."),kb.migration_review(rows))
+        elif action.startswith("migaccept:"):
+            p=await player(update);await migration.approve(int(action.split(":")[1]),p.id);await answer(query,"مهاجر پذیرفته شد.",show_alert=True);await home(update,context)
+        elif action.startswith("migreject:"):
+            p=await player(update);ok=await migration.reject(int(action.split(":")[1]),p.id);await answer(query,"درخواست رد شد." if ok else "درخواست قابل رد نیست.",show_alert=True);await home(update,context)
+        elif action == "subscription":
+            await answer(query); view=await commerce.subscription_view(update.effective_chat.id)
+            if not view: raise ValueError("group_not_found")
+            if view["ad_free_until"] and view["ad_free_until"]>datetime.now(UTC):
+                await show(update,context,f"🛡 <b>اشتراک بدون تبلیغ فعال است</b>\n\nاعتبار تا: <b>{view['ad_free_until'].strftime('%Y-%m-%d %H:%M UTC')}</b>\n\nدر این مدت تبلیغ عمومی وارد گروه نمی‌شود.",kb.back());return
+            rnd=await commerce.ensure_round(update.effective_chat.id);target=int(rnd["target_stars"]);remaining=target-int(rnd["collected_stars"])
+            treasury=int(view["treasury_toman"] or 0);citizens=int(view["citizens"] or 0);price=commerce.treasury_price(treasury,citizens)
+            await show(update,context,f"🛡 <b>اشتراک ۳۰روزه بدون تبلیغ</b>\n\nجمعیت: <b>{citizens}</b> شهروند · قیمت: <b>{target} ⭐</b>\nپیشرفت مشارکت: <b>{rnd['collected_stars']} از {target} ⭐</b>\nهر عضو می‌تواند ۱، ۲، ۵، ۱۰، ۲۵ یا ۵۰ استار سهم بگذارد. با تکمیل قیمت جمعیت‌محور، اشتراک خودکار فعال می‌شود.\n\nخرید از خزانه: <b>{fmt.toman(price)}</b> (۲۰٪ خزانه + یک میلیون برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد).",kb.subscription(int(rnd["id"]),remaining))
+        elif action.startswith("substar:"):
+            _,rid,amount=action.split(":");payload,stars=await commerce.subscription_invoice(int(rid),query.from_user.id,int(amount));await answer(query)
+            await context.bot.send_invoice(chat_id=update.effective_chat.id,title="مشارکت اشتراک بدون تبلیغ",description=f"{stars} استار برای اشتراک ۳۰روزه گروه",payload=payload,currency="XTR",prices=[LabeledPrice("سهم اشتراک",stars)],provider_token="")
+        elif action == "subtreasury":
+            p=await player(update);price=await commerce.buy_with_treasury(update.effective_chat.id,p.id);await answer(query,f"اشتراک با {fmt.toman(price)} از خزانه فعال شد.",show_alert=True);await home(update,context)
         elif action == "join":
             p = await player(update); joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "شهروند شدی." if joined else "از قبل شهروندی.", show_alert=True); await home(update, context)
         elif action == "leave":
-            p = await player(update); left = await countries.leave_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "از کشور خارج شدی." if left else "شهروند این کشور نبودی.", show_alert=True); await home(update, context)
+            await answer(query,"برای جلوگیری از دورزدن عوارض و محدودیت زمانی، خروج مستقیم بسته است؛ از بخش «مهاجرت» کشور مقصد را انتخاب کن.",show_alert=True)
         elif action.startswith("donate:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
@@ -2843,8 +3064,17 @@ async def text(update, context):
             await show(update, context, f"ساخت کشور انجام نشد: {ERRORS.get(str(exc), 'اطلاعات معتبر نبود.')}\n\nاز صفحه اصلی دوباره تلاش کن.", kb.back()); return
         context.chat_data.pop(FLOW, None); await home(update, context)
 
+async def precheckout(update,context):
+ q=update.pre_checkout_query;ok=await commerce.precheckout(q.invoice_payload,q.from_user.id,q.total_amount);await q.answer(ok=ok,error_message=None if ok else "صورتحساب نامعتبر یا منقضی شده است.")
+async def successful_payment(update,context):
+ payment=update.effective_message.successful_payment
+ if not payment:return
+ purpose=await commerce.settle(payment.invoice_payload,update.effective_user.id,payment.total_amount,payment.telegram_payment_charge_id,payment.provider_payment_charge_id or None)
+ await update.effective_message.reply_text("✅ سهم شما ثبت شد. با تکمیل هدف جمعیت‌محور، اشتراک ۳۰روزه گروه فعال می‌شود." if purpose=="subscription" else "✅ پرداخت ثبت شد.")
 def register(app):
     app.add_handler(CallbackQueryHandler(callback, pattern=r"^tw:"))
+    app.add_handler(PreCheckoutQueryHandler(precheckout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
     app.add_handler(MessageHandler(filters.TEXT, text))
 ```
 
@@ -2876,6 +3106,8 @@ def home(country, admin, citizen=False):
         rows = [[b("🏛 شناسنامه کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
                 [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project")]]
         rows.append([b("🚪 خروج از شهروندی", "leave", "danger")] if citizen else [b("🤝 شهروند این کشور می‌شوم", "join", "success")])
+        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription", "primary"),b("✈️ مهاجرت", "migration")])
+        if admin:rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
         rows.append([b("📘 راهنمای همین مرحله", "guide"), b("🔄 تازه‌سازی", "home")])
         return InlineKeyboardMarkup(rows)
     if admin:
@@ -2917,6 +3149,20 @@ def project(active):
         return InlineKeyboardMarkup([[b("💵 کمک ۵۰ هزار تومان", "pcon:IRT:50000", "success")],
                                      [b("🌾 کمک ۵۰ غذا", "pcon:food:50"), b("⛏ کمک ۵۰ ماده معدنی", "pcon:minerals:50")], [b("🏠 خانه جهان", "home")]])
     return InlineKeyboardMarkup([[b("🏗 آغاز پروژه ملی", "pstart", "primary")], [b("🏠 خانه جهان", "home")]])
+
+def subscription(round_id:int,remaining:int):
+ rows=[]
+ for amount in (1,2,5,10,25,50):
+  if amount<=remaining: rows.append([b(f"⭐ مشارکت {amount} استار",f"substar:{round_id}:{amount}","primary" if amount==min(remaining,50) else None)])
+ rows.append([b("💰 خرید از خزانه کشور","subtreasury")]);rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
+
+def migration_countries(rows,owner_country_id):
+ buttons=[[b(f"✈️ مهاجرت به {r['name']}",f"migrate:{r['id']}")] for r in rows if int(r['id'])!=int(owner_country_id)]
+ buttons.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(buttons)
+def migration_review(rows):
+ buttons=[]
+ for r in rows:buttons.extend([[b(f"✅ پذیرش {r['first_name']}",f"migaccept:{r['id']}","success"),b("رد",f"migreject:{r['id']}","danger")]])
+ buttons.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(buttons)
 ```
 
 ### `apps\teleworld_bot\main.py`
@@ -4187,6 +4433,88 @@ CREATE TABLE IF NOT EXISTS ad_campaigns (
 CREATE INDEX IF NOT EXISTS idx_ad_campaign_due ON ad_campaigns(status,scheduled_at) WHERE status='scheduled';
 ```
 
+### `migrations\0010_stars_subscriptions_ad_marketplace.sql`
+
+```sql
+-- Telegram Stars subscriptions, collaborative funding, moderated ad marketplace.
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS ad_free_until TIMESTAMPTZ;
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS ads_delivered_today INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS ads_delivery_day DATE;
+
+CREATE TABLE IF NOT EXISTS subscription_rounds (
+ id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+ target_stars INTEGER NOT NULL DEFAULT 10 CHECK(target_stars=10), collected_stars INTEGER NOT NULL DEFAULT 0 CHECK(collected_stars BETWEEN 0 AND 10),
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','expired','cancelled')),
+ expires_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '7 days', completed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscription_open_round ON subscription_rounds(group_id) WHERE status='open';
+CREATE TABLE IF NOT EXISTS star_payments (
+ id BIGSERIAL PRIMARY KEY, purpose TEXT NOT NULL CHECK(purpose IN ('subscription','advertisement')),
+ reference_id BIGINT NOT NULL, payer_telegram_id BIGINT NOT NULL, stars INTEGER NOT NULL CHECK(stars>0),
+ invoice_payload TEXT NOT NULL UNIQUE, telegram_charge_id TEXT UNIQUE, provider_charge_id TEXT,
+ status TEXT NOT NULL DEFAULT 'invoiced' CHECK(status IN ('invoiced','paid','refunded','expired','cancelled')),
+ expires_at TIMESTAMPTZ NOT NULL, paid_at TIMESTAMPTZ, refunded_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_star_payment_lookup ON star_payments(invoice_payload,status);
+CREATE TABLE IF NOT EXISTS group_subscription_events (
+ id BIGSERIAL PRIMARY KEY, group_id BIGINT NOT NULL REFERENCES groups(id), source TEXT NOT NULL CHECK(source IN ('stars','treasury','admin')),
+ stars INTEGER, treasury_toman BIGINT, starts_at TIMESTAMPTZ NOT NULL, ends_at TIMESTAMPTZ NOT NULL,
+ actor_player_id BIGINT REFERENCES players(id), created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ad_requests (
+ id BIGSERIAL PRIMARY KEY, requester_player_id BIGINT NOT NULL REFERENCES players(id),
+ package_code TEXT NOT NULL CHECK(package_code IN ('economy','standard','campaign','featured')),
+ title TEXT NOT NULL CHECK(length(title) BETWEEN 3 AND 120), description TEXT NOT NULL CHECK(length(description) BETWEEN 10 AND 2000),
+ target_url TEXT NOT NULL CHECK(length(target_url) BETWEEN 8 AND 1000), image_bytes BYTEA, image_mime TEXT,
+ requested_start_at TIMESTAMPTZ, status TEXT NOT NULL DEFAULT 'pending_review' CHECK(status IN ('draft','pending_review','changes_requested','approved_unpaid','paid','active','paused','completed','rejected','cancelled','refunded','payment_expired')),
+ price_stars INTEGER NOT NULL CHECK(price_stars IN (25,60,120,200)), impressions_planned INTEGER NOT NULL,
+ campaign_hours INTEGER NOT NULL, priority INTEGER NOT NULL DEFAULT 0, admin_note TEXT, approved_by TEXT,
+ approved_at TIMESTAMPTZ, payment_expires_at TIMESTAMPTZ, paid_at TIMESTAMPTZ, first_delivery_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ad_requests_admin ON ad_requests(status,created_at DESC);
+CREATE TABLE IF NOT EXISTS ad_deliveries (
+ id BIGSERIAL PRIMARY KEY, ad_request_id BIGINT NOT NULL REFERENCES ad_requests(id) ON DELETE CASCADE,
+ group_id BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE, slot_no INTEGER NOT NULL,
+ scheduled_at TIMESTAMPTZ NOT NULL, status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','queued','sent','failed','cancelled')),
+ outbox_key TEXT UNIQUE, sent_at TIMESTAMPTZ, error_code TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ UNIQUE(ad_request_id,group_id,slot_no)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_delivery_due ON ad_deliveries(status,scheduled_at) WHERE status='scheduled';
+```
+
+### `migrations\0011_population_channels_migration.sql`
+
+```sql
+-- Population-priced subscriptions, channel-specific ads and controlled migration.
+ALTER TABLE subscription_rounds DROP CONSTRAINT IF EXISTS subscription_rounds_target_stars_check;
+ALTER TABLE subscription_rounds ADD CONSTRAINT subscription_rounds_target_stars_check CHECK(target_stars IN (10,15,30,50,75));
+ALTER TABLE ad_requests ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'world' CHECK(channel IN ('life','world','both'));
+ALTER TABLE ad_deliveries ADD COLUMN IF NOT EXISTS destination_type TEXT NOT NULL DEFAULT 'world' CHECK(destination_type IN ('life','world'));
+ALTER TABLE ad_deliveries ADD COLUMN IF NOT EXISTS destination_telegram_id BIGINT;
+ALTER TABLE ad_deliveries ALTER COLUMN group_id DROP NOT NULL;
+ALTER TABLE ad_deliveries DROP CONSTRAINT IF EXISTS ad_deliveries_ad_request_id_group_id_slot_no_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ad_delivery_destination ON ad_deliveries(ad_request_id,destination_type,destination_telegram_id,slot_no);
+DROP INDEX IF EXISTS idx_ad_delivery_due;
+CREATE INDEX IF NOT EXISTS idx_ad_delivery_due ON ad_deliveries(status,scheduled_at,destination_type) WHERE status='scheduled';
+
+ALTER TABLE citizenships ADD COLUMN IF NOT EXISTS migrant_until TIMESTAMPTZ;
+ALTER TABLE citizenships ADD COLUMN IF NOT EXISTS political_hold_until TIMESTAMPTZ;
+ALTER TABLE citizenships ADD COLUMN IF NOT EXISTS last_migrated_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS migration_requests (
+ id BIGSERIAL PRIMARY KEY, player_id BIGINT NOT NULL REFERENCES players(id),
+ origin_country_id BIGINT NOT NULL REFERENCES countries(id), destination_country_id BIGINT NOT NULL REFERENCES countries(id),
+ exit_fee_toman BIGINT NOT NULL CHECK(exit_fee_toman BETWEEN 500000 AND 50000000),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','expired','cancelled')),
+ reviewed_by_player_id BIGINT REFERENCES players(id), review_note TEXT,
+ expires_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '72 hours', created_at TIMESTAMPTZ NOT NULL DEFAULT now(), resolved_at TIMESTAMPTZ,
+ CHECK(origin_country_id<>destination_country_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_migration_pending ON migration_requests(player_id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS idx_migration_destination_pending ON migration_requests(destination_country_id,expires_at) WHERE status='pending';
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -4339,6 +4667,31 @@ def run_bot(service: Service, register: RegisterFn) -> None:
 from packages.core.config.loader import ConfigError, GameConfig, get_config, reload_config
 
 __all__ = ["ConfigError", "GameConfig", "get_config", "reload_config"]
+```
+
+### `packages\core\config\data\commerce.yaml`
+
+```yaml
+subscription:
+  duration_days: 30
+  stars_tiers: {20: 10, 100: 15, 500: 30, 1000: 50, overflow: 75}
+  contribution_options: [1, 2, 5, 10, 25, 50]
+  round_expiry_days: 7
+  treasury_percent: 20
+  treasury_min_toman: 20000000
+  treasury_max_toman: 1000000000
+  treasury_per_citizen_toman: 1000000
+advertising:
+  payment_expiry_hours: 48
+  max_ads_per_group_per_day: 2
+  active_group_days: 14
+  packages:
+    economy: {title: "اقتصادی", base_stars: 25, impressions: 1, hours: 1, priority: 0}
+    standard: {title: "استاندارد", base_stars: 60, impressions: 3, hours: 24, priority: 1}
+    campaign: {title: "کمپین", base_stars: 120, impressions: 6, hours: 72, priority: 2}
+    featured: {title: "ویژه", base_stars: 200, impressions: 8, hours: 168, priority: 3}
+  channel_multipliers_percent: {life: 100, world: 150, both: 220}
+  life_active_days: 30
 ```
 
 ### `packages\core\config\data\core.yaml`
@@ -4719,6 +5072,18 @@ usd:
   health:
     healthy_min: 75
     watch_min: 45
+```
+
+### `packages\core\config\data\migration.yaml`
+
+```yaml
+cooldown_days: 30
+approval_hours: 72
+migrant_badge_days: 30
+political_hold_days: 14
+exit_fee_percent: 5
+exit_fee_min_toman: 500000
+exit_fee_max_toman: 50000000
 ```
 
 ### `packages\core\config\data\missions.yaml`
@@ -5511,6 +5876,9 @@ async def capture_market_snapshot() -> int:
 
 async def ads(limit: int = 100) -> list[asyncpg.Record]:
     return await db.fetch("SELECT * FROM ad_campaigns ORDER BY created_at DESC LIMIT $1", limit)
+
+async def ad_owner(ad_id:int):
+ return await db.fetchrow("SELECT p.telegram_id,p.first_name FROM ad_requests a JOIN players p ON p.id=a.requester_player_id WHERE a.id=$1",ad_id)
 ```
 
 ### `packages\core\repositories\country_repo.py`
@@ -6960,6 +7328,191 @@ async def queue_ad(actor: str, ad_id: int, request_id: str) -> bool:
         return queued
 ```
 
+### `packages\core\services\commerce.py`
+
+```python
+"""Atomic subscriptions, Telegram Stars payments, moderation and ad delivery planning."""
+from __future__ import annotations
+from datetime import UTC,datetime,timedelta
+from urllib.parse import urlparse
+from uuid import uuid4
+from packages.core import db
+from packages.core.config import get_config
+from packages.core.services.content_filter import require_clean
+
+PACKAGES={"economy":(25,1,1,0),"standard":(60,3,24,1),"campaign":(120,6,72,2),"featured":(200,8,168,3)}
+CHANNEL_PERCENT={"life":100,"world":150,"both":220}
+def subscription_stars(citizens:int)->int:
+ if citizens<=20:return 10
+ if citizens<=100:return 15
+ if citizens<=500:return 30
+ if citizens<=1000:return 50
+ return 75
+def treasury_price(balance:int,citizens:int=0)->int:return min(1_000_000_000,max(20_000_000,balance*20//100+citizens*1_000_000))
+def ad_price(package_code:str,channel:str)->int:
+ if package_code not in PACKAGES or channel not in CHANNEL_PERCENT:raise ValueError("invalid_ad_selection")
+ return (PACKAGES[package_code][0]*CHANNEL_PERCENT[channel]+99)//100
+def valid_url(value:str)->bool:
+ try:u=urlparse(value);return u.scheme in {"http","https"} and bool(u.netloc)
+ except ValueError:return False
+
+async def subscription_view(chat_id:int):
+ return await db.fetchrow("""SELECT g.id,g.telegram_id,g.title,g.ad_free_until,c.treasury_toman,
+  (SELECT count(*) FROM citizenships cs WHERE cs.country_id=c.id AND cs.is_active) citizens,
+  r.id round_id,r.collected_stars,r.target_stars,r.expires_at
+  FROM groups g LEFT JOIN countries c ON c.group_id=g.id
+  LEFT JOIN subscription_rounds r ON r.group_id=g.id AND r.status='open'
+  WHERE g.telegram_id=$1""",chat_id)
+
+async def ensure_round(chat_id:int):
+ async with db.transaction() as conn:
+  group=await conn.fetchrow("SELECT id FROM groups WHERE telegram_id=$1 FOR UPDATE",chat_id)
+  if not group:raise ValueError("group_not_found")
+  citizens=int(await conn.fetchval("SELECT count(*) FROM citizenships cs JOIN countries c ON c.id=cs.country_id WHERE c.group_id=$1 AND cs.is_active",group["id"]) or 0);target=subscription_stars(citizens)
+  row=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE group_id=$1 AND status='open'",group["id"])
+  if row and row["expires_at"]>datetime.now(UTC):
+   if int(row["target_stars"])!=target:await conn.execute("UPDATE subscription_rounds SET target_stars=$2 WHERE id=$1",row["id"],max(target,int(row["collected_stars"])))
+   return await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1",row["id"])
+  if row:await conn.execute("UPDATE subscription_rounds SET status='expired' WHERE id=$1",row["id"])
+  return await conn.fetchrow("INSERT INTO subscription_rounds(group_id,target_stars) VALUES($1,$2) RETURNING *",group["id"],target)
+
+async def subscription_invoice(round_id:int,payer_telegram_id:int,stars:int):
+ if stars not in {1,2,5,10,25,50}:raise ValueError("invalid_stars")
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1 FOR UPDATE",round_id)
+  if not row or row["status"]!='open' or row["expires_at"]<=datetime.now(UTC):raise ValueError("round_closed")
+  amount=min(stars,int(row["target_stars"])-int(row["collected_stars"]));payload=f"sub:{round_id}:{payer_telegram_id}:{uuid4().hex}"
+  await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('subscription',$1,$2,$3,$4,LEAST($5,now()+interval '30 minutes'))",round_id,payer_telegram_id,amount,payload,row["expires_at"])
+  return payload,amount
+
+async def create_ad_request(player_id:int,package_code:str,channel:str,title:str,description:str,url:str,image_bytes:bytes|None,image_mime:str|None,start_at=None)->int:
+ if package_code not in PACKAGES or channel not in CHANNEL_PERCENT:raise ValueError("invalid_package")
+ require_clean(title,"name");require_clean(description,"description")
+ if not valid_url(url):raise ValueError("invalid_url")
+ if image_bytes and (len(image_bytes)>5_000_000 or image_mime not in {'image/jpeg','image/png','image/webp'}):raise ValueError("invalid_image")
+ base,impressions,hours,priority=PACKAGES[package_code];stars=ad_price(package_code,channel)
+ return int(await db.fetchval("""INSERT INTO ad_requests(requester_player_id,package_code,channel,title,description,target_url,image_bytes,image_mime,requested_start_at,price_stars,impressions_planned,campaign_hours,priority)
+ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",player_id,package_code,channel,title,description,url,image_bytes,image_mime,start_at,stars,impressions,hours,priority))
+
+async def ad_invoice(ad_id:int,payer_telegram_id:int):
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM ad_requests WHERE id=$1 FOR UPDATE",ad_id)
+  if not row or row["requester_player_id"]!=await conn.fetchval("SELECT id FROM players WHERE telegram_id=$1",payer_telegram_id):raise PermissionError("not_owner")
+  if row["status"]!='approved_unpaid' or not row["payment_expires_at"] or row["payment_expires_at"]<=datetime.now(UTC):raise ValueError("payment_expired")
+  payload=f"ad:{ad_id}:{payer_telegram_id}:{uuid4().hex}"
+  await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('advertisement',$1,$2,$3,$4,$5)",ad_id,payer_telegram_id,row["price_stars"],payload,row["payment_expires_at"])
+  return payload,int(row["price_stars"]),str(row["title"])
+
+async def precheckout(payload:str,payer:int,total:int)->bool:
+ row=await db.fetchrow("SELECT * FROM star_payments WHERE invoice_payload=$1",payload)
+ return bool(row and row["status"]=='invoiced' and row["payer_telegram_id"]==payer and row["stars"]==total and row["expires_at"]>datetime.now(UTC))
+
+async def settle(payload:str,payer:int,total:int,tg_charge:str,provider_charge:str|None)->str:
+ async with db.transaction() as conn:
+  payment=await conn.fetchrow("SELECT * FROM star_payments WHERE invoice_payload=$1 FOR UPDATE",payload)
+  if not payment or payment["payer_telegram_id"]!=payer or payment["stars"]!=total or payment["status"] not in {'invoiced','paid'}:raise ValueError("invalid_payment")
+  if payment["status"]=='paid':return payment["purpose"]
+  await conn.execute("UPDATE star_payments SET status='paid',telegram_charge_id=$2,provider_charge_id=$3,paid_at=now() WHERE id=$1",payment["id"],tg_charge,provider_charge)
+  if payment["purpose"]=='subscription':
+   rnd=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1 FOR UPDATE",payment["reference_id"])
+   if rnd and rnd["status"]=='open':
+    target=int(rnd["target_stars"]);total_stars=min(target,int(rnd["collected_stars"])+int(payment["stars"]));complete=total_stars>=target
+    await conn.execute("UPDATE subscription_rounds SET collected_stars=$2,status=CASE WHEN $3 THEN 'completed' ELSE status END,completed_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE id=$1",rnd["id"],total_stars,complete)
+    if complete:
+     until=await conn.fetchval("UPDATE groups SET ad_free_until=GREATEST(COALESCE(ad_free_until,now()),now())+interval '30 days' WHERE id=$1 RETURNING ad_free_until",rnd["group_id"])
+     await conn.execute("INSERT INTO group_subscription_events(group_id,source,stars,starts_at,ends_at) VALUES($1,'stars',$3,now(),$2)",rnd["group_id"],until,target)
+  else:
+   await conn.execute("UPDATE ad_requests SET status='paid',paid_at=now(),updated_at=now() WHERE id=$1 AND status='approved_unpaid'",payment["reference_id"])
+  return str(payment["purpose"])
+
+async def buy_with_treasury(chat_id:int,player_id:int)->int:
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT g.id,c.id country_id,c.treasury_toman,c.president_player_id,(SELECT count(*) FROM citizenships cs WHERE cs.country_id=c.id AND cs.is_active) citizens FROM groups g JOIN countries c ON c.group_id=g.id WHERE g.telegram_id=$1 FOR UPDATE OF c,g",chat_id)
+  if not row:raise ValueError("country_not_found")
+  if row["president_player_id"]!=player_id:raise PermissionError("president_required")
+  price=treasury_price(int(row["treasury_toman"]),int(row["citizens"]));until=await conn.fetchval("UPDATE groups SET ad_free_until=GREATEST(COALESCE(ad_free_until,now()),now())+interval '30 days' WHERE id=$1 RETURNING ad_free_until",row["id"])
+  changed=await conn.fetchval("UPDATE countries SET treasury_toman=treasury_toman-$2 WHERE id=$1 AND treasury_toman>=$2 RETURNING treasury_toman",row["country_id"],price)
+  if changed is None:raise ValueError("insufficient_balance")
+  await conn.execute("INSERT INTO group_subscription_events(group_id,source,treasury_toman,starts_at,ends_at,actor_player_id) VALUES($1,'treasury',$2,now(),$3,$4)",row["id"],price,until,player_id)
+  return price
+
+async def approve_ad(ad_id:int,actor:str,note:str|None=None):
+ return await db.fetchrow("UPDATE ad_requests SET status='approved_unpaid',approved_by=$2,admin_note=$3,approved_at=now(),payment_expires_at=now()+interval '48 hours',updated_at=now() WHERE id=$1 AND status IN ('pending_review','changes_requested') RETURNING *",ad_id,actor,note)
+async def reject_ad(ad_id:int,actor:str,note:str):
+ return await db.fetchrow("UPDATE ad_requests SET status='changes_requested',approved_by=$2,admin_note=$3,updated_at=now() WHERE id=$1 AND status IN ('pending_review','approved_unpaid') RETURNING *",ad_id,actor,note)
+
+async def list_ads(limit:int=100):
+ return await db.fetch("""SELECT a.id,a.package_code,a.channel,a.title,a.description,a.target_url,a.image_mime,a.status,a.price_stars,a.impressions_planned,a.campaign_hours,a.admin_note,a.requested_start_at,a.payment_expires_at,a.paid_at,a.first_delivery_at,a.created_at,p.telegram_id,p.first_name,
+ count(d.id) FILTER(WHERE d.status='sent') delivered,count(d.id) FILTER(WHERE d.status IN ('scheduled','queued')) pending,count(d.id) FILTER(WHERE d.status='failed') failed
+ FROM ad_requests a JOIN players p ON p.id=a.requester_player_id LEFT JOIN ad_deliveries d ON d.ad_request_id=a.id GROUP BY a.id,p.telegram_id,p.first_name ORDER BY a.created_at DESC LIMIT $1""",limit)
+async def ad_image(ad_id:int):return await db.fetchrow("SELECT image_bytes,image_mime FROM ad_requests WHERE id=$1",ad_id)
+async def edit_ad(ad_id:int,title:str,description:str,url:str,start_at):
+ require_clean(title,"name");require_clean(description,"description")
+ if not valid_url(url):raise ValueError("invalid_url")
+ return await db.fetchrow("UPDATE ad_requests SET title=$2,description=$3,target_url=$4,requested_start_at=$5,updated_at=now() WHERE id=$1 AND status IN ('pending_review','changes_requested','approved_unpaid') RETURNING *",ad_id,title,description,url,start_at)
+async def pause_ad(ad_id:int):
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("UPDATE ad_requests SET status='paused',updated_at=now() WHERE id=$1 AND status IN ('paid','active') RETURNING *",ad_id)
+  if row:await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE ad_request_id=$1 AND status IN ('scheduled','queued')",ad_id)
+  return row
+async def refundable(ad_id:int):
+ return await db.fetchrow("""SELECT a.*,p.telegram_id,sp.telegram_charge_id FROM ad_requests a JOIN players p ON p.id=a.requester_player_id JOIN star_payments sp ON sp.purpose='advertisement' AND sp.reference_id=a.id AND sp.status='paid' WHERE a.id=$1 AND a.first_delivery_at IS NULL""",ad_id)
+async def mark_refunded(ad_id:int):
+ async with db.transaction() as conn:
+  await conn.execute("UPDATE star_payments SET status='refunded',refunded_at=now() WHERE purpose='advertisement' AND reference_id=$1 AND status='paid'",ad_id)
+  await conn.execute("UPDATE ad_requests SET status='refunded',updated_at=now() WHERE id=$1",ad_id)
+  await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE ad_request_id=$1 AND status IN ('scheduled','queued')",ad_id)
+async def expire_commerce()->dict[str,int]:
+ p=await db.execute("UPDATE ad_requests SET status='payment_expired',updated_at=now() WHERE status='approved_unpaid' AND payment_expires_at<=now()")
+ s=await db.execute("UPDATE star_payments SET status='expired' WHERE status='invoiced' AND expires_at<=now()")
+ return {"ads":int(p.rsplit(' ',1)[-1]),"payments":int(s.rsplit(' ',1)[-1])}
+async def plan_paid_ads()->int:
+ count=0
+ async with db.transaction() as conn:
+  ads=await conn.fetch("SELECT * FROM ad_requests WHERE status='paid' FOR UPDATE SKIP LOCKED LIMIT 20")
+  for ad in ads:
+   start=max(datetime.now(UTC),ad["requested_start_at"] or datetime.now(UTC));n=max(1,int(ad["impressions_planned"]));hours=int(ad["campaign_hours"])
+   if ad["channel"] in {'world','both'}:
+    groups=await conn.fetch("SELECT id,telegram_id FROM groups WHERE is_active AND last_active_at>=now()-interval '14 days' AND (ad_free_until IS NULL OR ad_free_until<=now())")
+    for group in groups:
+     for slot in range(n):
+      when=start+timedelta(seconds=(hours*3600*slot/max(1,n-1) if n>1 else 0));result=await conn.execute("INSERT INTO ad_deliveries(ad_request_id,group_id,destination_type,destination_telegram_id,slot_no,scheduled_at) VALUES($1,$2,'world',$3,$4,$5) ON CONFLICT DO NOTHING",ad["id"],group["id"],group["telegram_id"],slot+1,when);count+=int(result.rsplit(' ',1)[-1])
+   if ad["channel"] in {'life','both'}:
+    players=await conn.fetch("SELECT telegram_id FROM players WHERE NOT is_banned AND NOT is_frozen AND last_seen_at>=now()-interval '30 days'")
+    for person in players:
+     for slot in range(n):
+      when=start+timedelta(seconds=(hours*3600*slot/max(1,n-1) if n>1 else 0));result=await conn.execute("INSERT INTO ad_deliveries(ad_request_id,group_id,destination_type,destination_telegram_id,slot_no,scheduled_at) VALUES($1,NULL,'life',$2,$3,$4) ON CONFLICT DO NOTHING",ad["id"],person["telegram_id"],slot+1,when);count+=int(result.rsplit(' ',1)[-1])
+   await conn.execute("UPDATE ad_requests SET status='active',updated_at=now() WHERE id=$1",ad["id"])
+ return count
+async def queue_due_deliveries()->int:
+ from packages.core.repositories import outbox_repo
+ count=0
+ async with db.transaction() as conn:
+  rows=await conn.fetch("""SELECT d.*,g.ad_free_until,g.ads_delivered_today,g.ads_delivery_day,a.priority FROM ad_deliveries d JOIN ad_requests a ON a.id=d.ad_request_id LEFT JOIN groups g ON g.id=d.group_id WHERE d.status='scheduled' AND d.scheduled_at<=now() AND a.status='active' ORDER BY a.priority DESC,d.scheduled_at FOR UPDATE OF d,g SKIP LOCKED LIMIT 200""")
+  for row in rows:
+   today=datetime.now(UTC).date()
+   if row["destination_type"]=='world':
+    used=int(row["ads_delivered_today"] if row["ads_delivery_day"]==today else 0)
+    if row["ad_free_until"] and row["ad_free_until"]>datetime.now(UTC):await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",row["id"]);continue
+    if used>=2:await conn.execute("UPDATE ad_deliveries SET scheduled_at=date_trunc('day',now())+interval '1 day 9 hours' WHERE id=$1",row["id"]);continue
+   key=f"market-ad:{row['id']}"
+   if await outbox_repo.enqueue(conn,key,"marketplace_ad",{"ad_id":row["ad_request_id"],"delivery_id":row["id"],"destination_type":row["destination_type"]},row["destination_telegram_id"]):
+    await conn.execute("UPDATE ad_deliveries SET status='queued',outbox_key=$2 WHERE id=$1",row["id"],key)
+    if row["destination_type"]=='world':await conn.execute("UPDATE groups SET ads_delivered_today=$2,ads_delivery_day=$3 WHERE id=$1",row["group_id"],used+1,today)
+    count+=1
+  return count
+
+async def player_ads(player_id:int):
+ return await db.fetch("SELECT id,title,status,admin_note,price_stars,payment_expires_at FROM ad_requests WHERE requester_player_id=$1 ORDER BY created_at DESC LIMIT 20",player_id)
+async def revision_source(ad_id:int,player_id:int):
+ return await db.fetchrow("SELECT * FROM ad_requests WHERE id=$1 AND requester_player_id=$2 AND status='changes_requested'",ad_id,player_id)
+async def submit_revision(ad_id:int,player_id:int,title:str,description:str,url:str,image_bytes:bytes|None,image_mime:str|None,start_at)->bool:
+ require_clean(title,"name");require_clean(description,"description")
+ if not valid_url(url):raise ValueError("invalid_url")
+ result=await db.execute("""UPDATE ad_requests SET title=$3,description=$4,target_url=$5,image_bytes=COALESCE($6,image_bytes),image_mime=COALESCE($7,image_mime),requested_start_at=$8,status='pending_review',admin_note=NULL,approved_by=NULL,approved_at=NULL,payment_expires_at=NULL,updated_at=now() WHERE id=$1 AND requester_player_id=$2 AND status='changes_requested'""",ad_id,player_id,title,description,url,image_bytes,image_mime,start_at)
+ return result!='UPDATE 0'
+```
+
 ### `packages\core\services\content_filter.py`
 
 ```python
@@ -7108,7 +7661,7 @@ async def join_country(*, chat_id: int, player_id: int) -> bool:
         current=await conn.fetchrow("SELECT country_id,is_active FROM citizenships WHERE player_id=$1 FOR UPDATE",player_id)
         if current and current["is_active"]:
             if int(current["country_id"]) == int(country["id"]): return False
-            raise ValueError("already_citizen_elsewhere")
+            raise ValueError("migration_required")
         if current:
             await conn.execute("UPDATE citizenships SET country_id=$2,is_active=TRUE,left_at=NULL,joined_at=now() WHERE player_id=$1",player_id,country["id"])
             joined=True
@@ -7607,6 +8160,7 @@ from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, election_repo
 from packages.core.services import country as country_service
+from packages.core.services import migration
 from packages.core.services.governance import rules_for
 from packages.core.utils import clock
 
@@ -7635,12 +8189,14 @@ async def start(country_id:int, player_id:int)->asyncpg.Record:
         raise ValueError("election_already_open") from exc
 
 async def nominate(election_id:int, player_id:int, chat_id:int|None, message_id:int|None)->bool:
+    if await migration.political_hold(player_id): raise PermissionError("migrant_political_hold")
     row=await db.fetchrow("SELECT country_id FROM elections WHERE id=$1",election_id)
     if row is None: raise ValueError("election_not_found")
     if not await _active_citizen(int(row["country_id"]),player_id): raise PermissionError("citizen_required")
     return await election_repo.nominate(election_id,player_id,chat_id,message_id)
 
 async def vote(election_id:int, voter:int, candidate:int)->bool:
+    if await migration.political_hold(voter): raise PermissionError("migrant_political_hold")
     row=await db.fetchrow("SELECT country_id FROM elections WHERE id=$1",election_id)
     if row is None: raise ValueError("election_not_found")
     cid=int(row["country_id"])
@@ -7715,6 +8271,57 @@ RULES={
  "oligarchy":Rules("elite_council",False,"none"),
 }
 def rules_for(code:str)->Rules:return RULES.get(code,RULES["republic"])
+```
+
+### `packages\core\services\migration.py`
+
+```python
+"""Controlled country migration with escrowed exit fee and destination approval."""
+from __future__ import annotations
+from datetime import UTC,datetime,timedelta
+from packages.core import db
+
+def exit_fee(wealth:int)->int:return min(50_000_000,max(500_000,wealth*5//100))
+async def political_hold(player_id:int)->bool:
+ return bool(await db.fetchval("SELECT political_hold_until>now() FROM citizenships WHERE player_id=$1 AND is_active",player_id))
+async def quote(player_id:int,destination_country_id:int):
+ return await db.fetchrow("""SELECT cs.country_id origin_country_id,o.name origin_name,d.id destination_country_id,d.name destination_name,d.president_player_id,p.wallet_toman,p.savings_toman,cs.last_migrated_at
+ FROM citizenships cs JOIN countries o ON o.id=cs.country_id JOIN countries d ON d.id=$2 JOIN players p ON p.id=cs.player_id WHERE cs.player_id=$1 AND cs.is_active AND cs.country_id<>d.id""",player_id,destination_country_id)
+async def request(player_id:int,destination_country_id:int):
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("""SELECT cs.country_id origin_country_id,d.president_player_id,p.wallet_toman,p.savings_toman,cs.last_migrated_at FROM citizenships cs JOIN countries d ON d.id=$2 JOIN players p ON p.id=cs.player_id WHERE cs.player_id=$1 AND cs.is_active AND cs.country_id<>d.id FOR UPDATE OF cs,p,d""",player_id,destination_country_id)
+  if not row:raise ValueError("migration_not_available")
+  if row["last_migrated_at"] and row["last_migrated_at"]>datetime.now(UTC)-timedelta(days=30):raise ValueError("migration_cooldown")
+  if await conn.fetchval("SELECT 1 FROM migration_requests WHERE player_id=$1 AND status='pending'",player_id):raise ValueError("migration_pending")
+  if await conn.fetchval("SELECT president_player_id=$2 FROM countries WHERE id=$1",row["origin_country_id"],player_id):raise ValueError("leader_must_transfer_power")
+  fee=exit_fee(int(row["wallet_toman"])+int(row["savings_toman"]))
+  if int(row["wallet_toman"])+int(row["savings_toman"])<fee:raise ValueError("insufficient_balance")
+  # Fee is charged only on completion. Approval requests cannot lock funds forever.
+  req=await conn.fetchrow("INSERT INTO migration_requests(player_id,origin_country_id,destination_country_id,exit_fee_toman) VALUES($1,$2,$3,$4) RETURNING *",player_id,row["origin_country_id"],destination_country_id,fee)
+  if row["president_player_id"] is None:return await _complete(conn,req["id"],None)
+  return req
+async def _complete(conn,request_id:int,reviewer:int|None):
+ req=await conn.fetchrow("SELECT * FROM migration_requests WHERE id=$1 AND status='pending' FOR UPDATE",request_id)
+ if not req or req["expires_at"]<=datetime.now(UTC):raise ValueError("migration_expired")
+ p=await conn.fetchrow("SELECT wallet_toman,savings_toman FROM players WHERE id=$1 FOR UPDATE",req["player_id"]);fee=int(req["exit_fee_toman"])
+ wallet_take=min(int(p["wallet_toman"]),fee);saving_take=fee-wallet_take
+ if int(p["wallet_toman"])+int(p["savings_toman"])<fee:raise ValueError("insufficient_balance")
+ await conn.execute("UPDATE players SET wallet_toman=wallet_toman-$2,savings_toman=savings_toman-$3 WHERE id=$1",req["player_id"],wallet_take,saving_take)
+ await conn.execute("UPDATE countries SET treasury_toman=treasury_toman+$2 WHERE id=$1",req["origin_country_id"],fee)
+ await conn.execute("UPDATE citizenships SET country_id=$2,joined_at=now(),left_at=NULL,is_active=TRUE,migrant_until=now()+interval '30 days',political_hold_until=now()+interval '14 days',last_migrated_at=now() WHERE player_id=$1",req["player_id"],req["destination_country_id"])
+ await conn.execute("UPDATE migration_requests SET status='approved',reviewed_by_player_id=$2,resolved_at=now() WHERE id=$1",request_id,reviewer)
+ return await conn.fetchrow("SELECT * FROM migration_requests WHERE id=$1",request_id)
+async def approve(request_id:int,president_id:int):
+ async with db.transaction() as conn:
+  allowed=await conn.fetchval("SELECT 1 FROM migration_requests r JOIN countries c ON c.id=r.destination_country_id WHERE r.id=$1 AND c.president_player_id=$2 AND r.status='pending'",request_id,president_id)
+  if not allowed:raise PermissionError("president_required")
+  return await _complete(conn,request_id,president_id)
+async def reject(request_id:int,president_id:int,note:str|None=None):
+ return bool(await db.fetchval("""UPDATE migration_requests r SET status='rejected',reviewed_by_player_id=$2,review_note=$3,resolved_at=now() FROM countries c WHERE r.id=$1 AND c.id=r.destination_country_id AND c.president_player_id=$2 AND r.status='pending' RETURNING r.id""",request_id,president_id,note))
+async def pending_for_country(country_id:int):
+ return await db.fetch("""SELECT r.id,r.player_id,r.exit_fee_toman,r.expires_at,p.first_name,o.name origin_name FROM migration_requests r JOIN players p ON p.id=r.player_id JOIN countries o ON o.id=r.origin_country_id WHERE r.destination_country_id=$1 AND r.status='pending' AND r.expires_at>now() ORDER BY r.created_at""",country_id)
+async def expire()->int:
+ result=await db.execute("UPDATE migration_requests SET status='expired',resolved_at=now() WHERE status='pending' AND expires_at<=now()");return int(result.rsplit(' ',1)[-1])
 ```
 
 ### `packages\core\services\missions.py`
@@ -7927,7 +8534,7 @@ import asyncpg
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import country_repo, ledger_repo, project_repo
-from packages.core.services import xp
+from packages.core.services import xp, migration
 
 _IRT = "IRT"
 
@@ -7943,6 +8550,7 @@ async def start(
     key: str = "national_storage",
 ) -> asyncpg.Record:
     """Open a national project. Only the sitting president may start one."""
+    if await migration.political_hold(player_id):raise PermissionError("migrant_political_hold")
     country = await country_repo.by_id(country_id)
     if country is None:
         raise ValueError("country_not_found")
@@ -9616,6 +10224,32 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 در محیط ساخت حاضر Python 3.10 نصب است، درحالی‌که پروژه Python 3.13 و وابستگی‌های Telegram/asyncpg/pytest می‌خواهد. اینترنت نیز برای نصب وابستگی‌ها در دسترس نیست. بنابراین آزمون‌های اجرایی و یکپارچه PostgreSQL در این محیط اجرا نشدند و موفق اعلام نمی‌شوند. اعتبارسنجی نحوی Python، YAML، ساختار بسته، اسکن اسرار و آزمون‌های ایستای داخلی انجام می‌شوند.
 ```
 
+### `RELEASE_COMMERCE_FA.md`
+
+```markdown
+# انتشار اشتراک و بازار تبلیغات
+
+## اشتراک گروه
+- اشتراک ۳۰روزه بدون تبلیغ با مجموع ۱۰ استار.
+- مشارکت گروهی با سهم‌های ۱، ۲، ۵ و ۱۰ استار؛ فعال‌سازی اتمیک با رسیدن مجموع به ۱۰.
+- خرید جایگزین از خزانه: ۲۰٪ موجودی، حداقل ۲۰ میلیون و حداکثر ۲۰۰ میلیون تومان؛ فقط رهبر کشور.
+- تمدید روی اعتبار موجود و حذف لحظه‌ای گروه مشترک از جامعه هدف.
+
+## بازار تبلیغ در TeleLife
+- چهار بسته: اقتصادی ۲۵، استاندارد ۶۰، کمپین ۱۲۰ و ویژه ۲۰۰ استار.
+- دریافت عنوان، توضیح، لینک، تصویر تا ۵MB و زمان شروع.
+- بررسی مدیر پیش از هر پرداخت؛ تأیید، ویرایش، درخواست اصلاح و ارسال مجدد.
+- صدور خودکار صورتحساب XTR پس از تأیید، با مهلت ۴۸ ساعت.
+- Pre-checkout امن، شناسه یکتا، تسویه idempotent و ثبت charge ID.
+- برنامه‌ریزی خودکار فقط برای گروه‌های فعال، سالم و غیرمشترک؛ سقف دو تبلیغ روزانه برای هر گروه.
+- توقف اضطراری، گزارش تحویل و بازپرداخت قبل از نخستین نمایش.
+
+## فنی
+- مهاجرت 0010، سرویس commerce، رابط‌های دو بات و صفحه بازبینی پنل مدیریت.
+- تصویر در دیتابیس نگهداری می‌شود تا بین TeleLife و TeleWorld قابل ارسال باشد.
+- Syntax تمام فایل‌های Python و تست‌های واحد اقتصاد/URL/بسته‌ها بررسی شد.
+```
+
 ### `RELEASE_NOTES_FA.md`
 
 ```markdown
@@ -9659,6 +10293,32 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - باند نوسان، شاخص سلامت، Freeze اضطراری، تثبیت دقیقه‌ای و تاریخچه قیمت
 - حذف فرمان‌های متنی کاربری؛ فقط `/start` به‌عنوان نقطه ورود الزامی تلگرام باقی مانده است
 - ناوبری Life و World بر پایه Inline Keyboard رنگی و ویرایش همان پیام
+```
+
+### `RELEASE_SCALING_MIGRATION_FA.md`
+
+```markdown
+# انتشار قیمت‌گذاری جمعیتی، تبلیغات چندکاناله و مهاجرت
+
+## اشتراک بدون تبلیغ
+- قیمت استارز پلکانی بر اساس شهروندان فعال کشور: تا ۲۰ نفر ۱۰⭐، تا ۱۰۰ نفر ۱۵⭐، تا ۵۰۰ نفر ۳۰⭐، تا ۱۰۰۰ نفر ۵۰⭐ و بیشتر ۷۵⭐.
+- مشارکت اعضا با سهم‌های ۱، ۲، ۵، ۱۰، ۲۵ و ۵۰ استار.
+- قیمت خزانه: ۲۰٪ خزانه + یک میلیون تومان برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد تومان.
+
+## تبلیغات سه‌کاناله
+- Life: پیام خصوصی کاربران سالم و فعال ۳۰ روز اخیر، ضریب ×۱.
+- World: گروه‌های فعال و غیرمشترک، ضریب ×۱٫۵.
+- Life + World: هر دو جامعه، ضریب ×۲٫۲.
+- قیمت با گردکردن رو به بالا محاسبه می‌شود؛ برای نمونه اقتصادی ۲۵/۳۸/۵۵ استار است.
+- پیام Life با توکن بات Life و پیام World با توکن بات World ارسال می‌شود.
+
+## مهاجرت کشور
+- عوارض ۵٪ کل دارایی شخصی، کف ۵۰۰ هزار و سقف ۵۰ میلیون تومان؛ انتقال به خزانه مبدأ هنگام تکمیل.
+- محدودیت تغییر کشور هر ۳۰ روز؛ رهبر مبدأ باید ابتدا قدرت را منتقل کند.
+- اگر مقصد رهبر داشته باشد، درخواست ۷۲ ساعت اعتبار دارد؛ در غیر این صورت مهاجرت خودکار است.
+- نشان «مهاجر» ۳۰ روز و محرومیت رأی، نامزدی و آغاز پروژه ملی ۱۴ روز.
+- خروج مستقیم بسته شده تا عوارض و محدودیت زمانی دور زده نشود.
+- ثبت دوطرفه عوارض در دفتر کل و انقضای خودکار درخواست‌ها.
 ```
 
 ### `render.yaml`
@@ -10083,6 +10743,29 @@ def test_game_date_uses_configured_timezone():
 def test_naive_datetimes_are_rejected():
     with pytest.raises(ValueError, match="timezone-aware"):
         clock.game_today(datetime(2026, 7, 26))
+```
+
+### `tests\test_commerce.py`
+
+```python
+from packages.core.services.commerce import PACKAGES,treasury_price,valid_url,ad_price
+
+def test_package_base_prices_and_delivery_counts():
+ assert PACKAGES['economy'][:3]==(25,1,1)
+ assert PACKAGES['standard'][:3]==(60,3,24)
+ assert PACKAGES['campaign'][:3]==(120,6,72)
+ assert PACKAGES['featured'][:3]==(200,8,168)
+def test_dynamic_treasury_price_is_population_aware_and_bounded():
+ assert treasury_price(1,0)==20_000_000
+ assert treasury_price(250_000_000,100)==150_000_000
+ assert treasury_price(10_000_000_000,1000)==1_000_000_000
+def test_channel_price():
+ assert ad_price('economy','life')==25
+ assert ad_price('economy','world')==38
+ assert ad_price('economy','both')==55
+def test_only_http_links():
+ assert valid_url('https://example.com/x')
+ assert not valid_url('javascript:alert(1)')
 ```
 
 ### `tests\test_config.py`
@@ -10592,6 +11275,37 @@ def test_required_runtime_directories_exist():
     assert (ROOT / "apps/admin/templates").is_dir()
     assert (ROOT / "apps/admin/static").is_dir()
     assert (ROOT / "migrations").is_dir()
+```
+
+### `tests\test_scaling_migration.py`
+
+```python
+from packages.core.services.commerce import subscription_stars,treasury_price,ad_price
+from packages.core.services.migration import exit_fee
+
+def test_subscription_population_tiers():
+ assert subscription_stars(1)==10 and subscription_stars(20)==10
+ assert subscription_stars(21)==15 and subscription_stars(100)==15
+ assert subscription_stars(101)==30 and subscription_stars(500)==30
+ assert subscription_stars(501)==50 and subscription_stars(1000)==50
+ assert subscription_stars(1001)==75
+
+def test_treasury_population_formula():
+ assert treasury_price(0,1)==20_000_000
+ assert treasury_price(250_000_000,100)==150_000_000
+ assert treasury_price(10_000_000_000,1000)==1_000_000_000
+
+def test_channel_prices_round_up():
+ assert ad_price('economy','life')==25
+ assert ad_price('economy','world')==38
+ assert ad_price('economy','both')==55
+ assert ad_price('standard','world')==90
+ assert ad_price('standard','both')==132
+
+def test_migration_fee_bounds():
+ assert exit_fee(1)==500_000
+ assert exit_fee(100_000_000)==5_000_000
+ assert exit_fee(2_000_000_000)==50_000_000
 ```
 
 ### `tests\test_supervisor.py`
