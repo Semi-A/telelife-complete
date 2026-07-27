@@ -11,7 +11,7 @@ from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -69,10 +69,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve", "offices", "tradenew", "aid"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -131,8 +131,40 @@ async def economy_page(update, context):
     resources = await country_repo.resources(row["id"])
     lines = "\n".join(f"• {ASSET.get(str(x['asset_code']), 'دارایی')}: {fmt.number(x['quantity'])}" for x in resources) or "هنوز منبعی ثبت نشده است."
     from telegram import InlineKeyboardMarkup
-    markup=InlineKeyboardMarkup([[kb.b("🏦 بانک مرکزی و شاخص‌ها","centralbank","primary")],[kb.b("🏠 خانه جهان","home")]])
+    markup=InlineKeyboardMarkup([[kb.b("📊 بودجه، رفاه و بحران","economyb","primary")],[kb.b("🏦 بانک مرکزی و شاخص‌ها","centralbank")],[kb.b("🏠 خانه جهان","home")]])
     await show(update, context, fa.ECONOMY.format(treasury=fmt.toman(row["treasury_toman"]), income=fmt.toman(row["daily_income_toman"]), expense=fmt.toman(row["daily_expense_toman"]), resources=lines), markup)
+
+
+async def economy_b_page(update,context):
+    row,_,_=await facts(update.effective_chat.id)
+    if not row:raise ValueError("country_not_found")
+    p=await player(update);v=await country_economy_b.view(int(row["id"]))
+    if not v:
+        await show(update,context,"📊 <b>اقتصاد روزانه کشور</b>\n\nپس از اجرای نخستین چرخه روزانه، گزارش اینجا نمایش داده می‌شود.",kb.country_economy_b(False,False));return
+    roles=await db.fetch("SELECT o.role_code,p.first_name FROM country_offices o JOIN players p ON p.id=o.player_id WHERE o.country_id=$1 ORDER BY o.role_code",row["id"])
+    role_names={"economy_minister":"وزیر اقتصاد","industry_minister":"وزیر صنعت","foreign_minister":"وزیر خارجه","army_commander":"فرمانده ارتش","intelligence_chief":"رئیس اطلاعات"}
+    cabinet="، ".join(f"{role_names.get(str(x['role_code']),'مقام')}: {escape(str(x['first_name']))}" for x in roles) or "هنوز کسی منصوب نشده"
+    crisis="بحران فعالی نیست ✅" if int(v["active_crises"] or 0)==0 else f"{fmt.number(v['active_crises'])} بحران فعال ⚠️"
+    sat=int(v["satisfaction"] or 70);modifier=int(v["production_modifier_bp"] or 10000)
+    text=(f"📊 <b>بودجه و وضعیت {escape(str(row['name']))}</b>\n\n"
+          f"🙂 رضایت عمومی: <b>{fmt.number(sat)} از ۱۰۰</b>\n"
+          f"🍞 کمبود غذا: <b>{int(v['food_shortage_bp'] or 0)/100:.1f}٪</b>\n"
+          f"⚡ کمبود انرژی: <b>{int(v['energy_shortage_bp'] or 0)/100:.1f}٪</b>\n"
+          f"🏭 ضریب تولید: <b>{modifier/100:.1f}٪</b>\n"
+          f"🫶 رفاه: <b>{fmt.number(v['welfare_level'] or 0)}</b> · 🛡 آمادگی: <b>{fmt.number(v['defense_readiness'] or 0)}</b>\n"
+          f"🚨 {crisis}\n\n"
+          f"<b>تقسیم بودجه</b>\nرفاه {int(v['welfare_bp'])/100:.0f}٪ · تولید {int(v['production_bp'])/100:.0f}٪ · فناوری {int(v['technology_bp'])/100:.0f}٪\n"
+          f"دفاع {int(v['defense_bp'])/100:.0f}٪ · اطلاعات {int(v['intelligence_bp'])/100:.0f}٪ · دیپلماسی {int(v['diplomacy_bp'])/100:.0f}٪ · اضطراری {int(v['emergency_bp'])/100:.0f}٪\n\n"
+          f"👔 کابینه: {cabinet}\n\nبودجه از چرخه بعدی روی مصرف، رضایت و تولید واقعی اثر می‌گذارد.")
+    can_manage=int(row["president_player_id"] or 0)==p.id or bool(await db.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code='economy_minister'",row["id"],p.id))
+    await show(update,context,text,kb.country_economy_b(can_manage,int(row["president_player_id"] or 0)==p.id))
+
+async def offices_page(update,context):
+    row,_,_=await facts(update.effective_chat.id);p=await player(update)
+    if not row or int(row["president_player_id"] or 0)!=p.id:raise PermissionError("president_required")
+    people=await db.fetch("SELECT p.id player_id,p.first_name FROM citizenships c JOIN players p ON p.id=c.player_id WHERE c.country_id=$1 AND c.is_active AND p.id<>$2 ORDER BY c.joined_at LIMIT 5",row["id"],p.id)
+    if not people:await answer(update.callback_query,"برای تشکیل کابینه، دست‌کم یک شهروند دیگر لازم است.",show_alert=True);return
+    await show(update,context,"👔 <b>کابینه اولیه</b>\n\nروی نام و سمت موردنظر بزن. هر شهروند فقط یک سمت می‌گیرد و تغییرها در گزارش حسابرسی ثبت می‌شوند.",kb.offices(people))
 
 async def central_bank_page(update,context):
     row,_,_=await facts(update.effective_chat.id)
@@ -175,6 +207,23 @@ async def project_page(update, context):
     markup=kb.project(True) if project else kb.project(False,available)
     await show(update, context, "🏗 <b>پروژه‌ها و هدف ملی</b>\n\n" + body + daily + "\n\nپروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.", markup)
 
+async def trade_page(update,context):
+ row,_,_=await facts(update.effective_chat.id)
+ if not row:raise ValueError("country_not_found")
+ p=await player(update);v=await country_trade.overview(int(row["id"]))
+ if not v:
+  from packages.core import db
+  await db.execute("INSERT INTO country_international_reputation(country_id) VALUES($1) ON CONFLICT DO NOTHING",row["id"]);v=await country_trade.overview(int(row["id"]))
+ can_manage=int(row["president_player_id"] or 0)==p.id or bool(await db.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code=ANY($3::text[])",row["id"],p.id,["economy_minister","foreign_minister"]))
+ text=(f"🌐 <b>تجارت و دیپلماسی {escape(str(row['name']))}</b>\n\n"
+       f"⭐ اعتبار بین‌المللی: <b>{fmt.number(v['score'])} از ۱۰۰</b>\n"
+       f"📦 قراردادهای باز: <b>{fmt.number(v['open_contracts'])}</b>\n"
+       f"✅ قراردادهای موفق: <b>{fmt.number(v['fulfilled_contracts'])}</b>\n"
+       f"🤝 روابط رسمی: <b>{fmt.number(v['active_relations'])}</b>\n"
+       f"⛔ تحریم‌های مرتبط: <b>{fmt.number(v['sanctions'])}</b>\n\n"
+       "منابع پیشنهاددهنده هنگام ساخت قرارداد وارد Escrow می‌شوند. پذیرش، هر دو دارایی را در یک تراکنش جابه‌جا می‌کند؛ انقضا هم دارایی را خودکار پس می‌دهد.")
+ await show(update,context,text,kb.trade_home(can_manage))
+
 async def callback(update, context):
     query = update.callback_query
     if not query: return
@@ -206,7 +255,18 @@ async def callback(update, context):
             await answer(query, ); row, _, _ = await facts(update.effective_chat.id) if update.effective_chat.type in GROUPS else (None, 0, None); await show(update, context, fa.GUIDE if row else fa.GUIDE_EMPTY, kb.back())
         elif action == "country": await answer(query, ); await country_page(update, context)
         elif action == "economy": await answer(query, ); await economy_page(update, context)
+        elif action == "economyb": await answer(query); await economy_b_page(update,context)
         elif action == "centralbank": await answer(query); await central_bank_page(update,context)
+        elif action.startswith("budget:"):
+            row,_,_=await facts(update.effective_chat.id);p=await player(update);preset=action.split(":",1)[1]
+            await country_economy_b.set_budget_preset(int(row["id"]),p.id,preset,f"budget:{row['id']}:{p.id}:{preset}:{uuid4().hex[:12]}")
+            await answer(query,"بودجه ثبت شد؛ اثرش از چرخه روزانه بعدی دیده می‌شود.",show_alert=True);await economy_b_page(update,context)
+        elif action == "offices":
+            await answer(query);await offices_page(update,context)
+        elif action.startswith("appoint:"):
+            _,role,target=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_economy_b.appoint(int(row["id"]),p.id,role,int(target),f"appoint:{row['id']}:{role}:{uuid4().hex[:12]}")
+            await answer(query,"انتصاب ثبت شد.",show_alert=True);await economy_b_page(update,context)
         elif action.startswith("rate:"):
             row,_,_=await facts(update.effective_chat.id);p=await player(update);delta=100 if action.endswith("up") else -100
             value=await country_realism.set_interest(row["id"],p.id,delta)
@@ -220,6 +280,69 @@ async def callback(update, context):
         elif action == "citizens": await answer(query, ); await citizens_page(update, context)
         elif action == "politics": await answer(query, ); await politics_page(update, context)
         elif action == "project": await answer(query, ); await project_page(update, context)
+        elif action == "trade": await answer(query); await trade_page(update,context)
+        elif action == "tradenew":
+            row,_,_=await facts(update.effective_chat.id);rows=await country_trade.countries_except(int(row["id"]));await answer(query)
+            await show(update,context,"➕ <b>قرارداد تجاری تازه</b>\n\nکشور مقصد را انتخاب کن. در قدم بعد یکی از پیشنهادهای متعادل و محدود را می‌بینی.",kb.trade_countries(rows))
+        elif action.startswith("tradeto:"):
+            target=int(action.split(":")[1]);presets=get_config().section("country_trade.contracts.presets");await answer(query)
+            await show(update,context,"📦 <b>نوع قرارداد</b>\n\nمنبع پیشنهادی همان لحظه از کشور شما کم و تا پذیرش یا انقضا در Escrow نگه داشته می‌شود.",kb.trade_presets(target,presets))
+        elif action.startswith("tradepreset:"):
+            _,target,preset=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            contract=await country_trade.create_contract(int(row["id"]),int(target),p.id,preset,f"trade-create:{row['id']}:{uuid4().hex}")
+            await answer(query,f"قرارداد #{int(contract['id'])} ثبت شد و منبع در Escrow قرار گرفت.",show_alert=True);await trade_page(update,context)
+        elif action == "tradein":
+            row,_,_=await facts(update.effective_chat.id);rows=await country_trade.incoming(int(row["id"]));await answer(query)
+            body="پیشنهادی در انتظار نیست." if not rows else "هر پذیرش، منابع دو کشور را اتمیک جابه‌جا می‌کند."
+            await show(update,context,"📥 <b>پیشنهادهای دریافتی</b>\n\n"+body,kb.incoming_trade(rows))
+        elif action == "tradeout":
+            row,_,_=await facts(update.effective_chat.id);rows=await country_trade.outgoing(int(row["id"]));await answer(query)
+            body="قرارداد بازی نداری." if not rows else "لغو، دارایی نگه‌داری‌شده را از Escrow پس می‌دهد و کمی از اعتبار کم می‌کند."
+            await show(update,context,"📤 <b>پیشنهادهای من</b>\n\n"+body,kb.outgoing_trade(rows))
+        elif action.startswith("tradecancel:"):
+            cid=int(action.split(":")[1]);p=await player(update);ok=await country_trade.cancel_contract(cid,p.id,f"trade-cancel:{cid}:{uuid4().hex}")
+            await answer(query,"قرارداد لغو و دارایی Escrow پس داده شد." if ok else "این قرارداد دیگر قابل لغو نیست.",show_alert=True);await trade_page(update,context)
+        elif action == "traderef":
+            rows=await country_trade.recent_reference();await answer(query)
+            labels={"IRT":"تومان","food":"غذا","energy":"انرژی","oil":"نفت","minerals":"معدن","technology":"فناوری"}
+            lines=[f"• {labels.get(str(r['offered_asset']),r['offered_asset'])} ← {labels.get(str(r['requested_asset']),r['requested_asset'])}: نسبت میانگین {r['average_ratio']} · {r['trades']} معامله" for r in rows]
+            await show(update,context,"📈 <b>نرخ‌های مرجع بازار کشورها</b>\n\n"+("هنوز معامله تکمیل‌شده‌ای برای نرخ مرجع نداریم." if not lines else "\n".join(lines))+"\n\nاین اعداد فقط تاریخچه واقعی بازی‌اند و قیمت تضمینی نیستند.",kb.back("trade"))
+        elif action.startswith("tradeaccept:"):
+            cid=int(action.split(":")[1]);p=await player(update);result=await country_trade.accept_contract(cid,p.id,f"trade-accept:{cid}:{uuid4().hex}")
+            await answer(query,f"قرارداد انجام شد؛ تعرفه {result['tariff_bp']/100:.1f}٪ بود.",show_alert=True);await trade_page(update,context)
+        elif action == "relations":
+            row,_,_=await facts(update.effective_chat.id);pending=await country_trade.pending_relations(int(row["id"]));rows=await country_trade.countries_except(int(row["id"]));await answer(query)
+            if pending:
+                await show(update,context,"🤝 <b>پیشنهادهای دیپلماتیک دریافتی</b>\n\nپیشنهادها ۲۴ ساعت اعتبار دارند. پذیرش، تعرفه تجارت بعدی را تغییر می‌دهد.",kb.pending_relations(pending))
+            else:
+                await show(update,context,"🤝 <b>روابط خارجی</b>\n\nدوستی، شراکت تجاری و اتحاد به پذیرش کشور مقابل نیاز دارند و تعرفه تجارت را کاهش می‌دهند.",kb.relations_countries(rows))
+        elif action.startswith("relmenu:"):
+            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🤝 <b>اقدام دیپلماتیک</b>\n\nهمکاری با پذیرش دوطرفه فعال می‌شود. تحریم، تجارت مستقیم را می‌بندد و از اعتبار کشور تحریم‌کننده هم کم می‌کند.",kb.relation_actions(target))
+        elif action.startswith("relprop:"):
+            _,target,status=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_trade.propose_relation(int(row["id"]),int(target),p.id,status,f"relation-propose:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"پیشنهاد رسمی ثبت شد و ۲۴ ساعت اعتبار دارد.",show_alert=True);await trade_page(update,context)
+        elif action.startswith("relaccept:"):
+            target=int(action.split(":")[1]);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_trade.accept_relation(int(row["id"]),target,p.id,f"relation-accept:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"رابطه رسمی شد و تعرفه‌های بعدی بر همین اساس محاسبه می‌شوند.",show_alert=True);await trade_page(update,context)
+        elif action.startswith("sanction:"):
+            target=int(action.split(":")[1]);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_trade.impose_sanction(int(row["id"]),target,p.id,f"sanction:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"تحریم فعال شد؛ تجارت مستقیم بسته و از اعتبار کشور شما هم کم شد.",show_alert=True);await trade_page(update,context)
+        elif action.startswith("sanctionlift:"):
+            target=int(action.split(":")[1]);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            ok=await country_trade.lift_sanction(int(row["id"]),target,p.id,f"sanction-lift:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"تحریم برداشته شد." if ok else "تحریم فعالی از طرف کشور شما وجود نداشت.",show_alert=True);await trade_page(update,context)
+        elif action == "aid":
+            row,_,_=await facts(update.effective_chat.id);rows=await db.fetch("""SELECT DISTINCT c.id,c.name FROM countries c JOIN country_crises x ON x.country_id=c.id AND x.status='active' WHERE c.id<>$1 ORDER BY c.name LIMIT 50""",row["id"]);await answer(query)
+            await show(update,context,"🆘 <b>کمک اضطراری</b>\n\nفقط کشورهایی که بحران فعال دارند نمایش داده می‌شوند. کمک مستقیماً و اتمیک منتقل می‌شود و اعتبار بین‌المللی می‌سازد.",kb.aid_countries(rows))
+        elif action.startswith("aidto:"):
+            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🆘 <b>نوع کمک</b>\n\nیکی از بسته‌های محدود را انتخاب کن.",kb.aid_assets(target))
+        elif action.startswith("aidsend:"):
+            _,target,asset=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            amount=await country_trade.send_aid(int(row["id"]),int(target),p.id,asset,f"aid:{row['id']}:{target}:{asset}:{uuid4().hex}")
+            await answer(query,f"کمک به مقدار {fmt.number(amount)} ثبت و منتقل شد.",show_alert=True);await trade_page(update,context)
         elif action == "create":
             if update.effective_chat.type not in GROUPS or not await is_admin(update, context):
                 await answer(query, "فقط مدیر گروه می‌تواند ساخت را شروع کند.", show_alert=True); return

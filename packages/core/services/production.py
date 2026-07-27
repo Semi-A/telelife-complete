@@ -214,7 +214,13 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
         if country:
             bonus=int(await conn.fetchval("""SELECT COALESCE(sum(magnitude_basis_points),0) FROM national_project_effects
               WHERE country_id=$1 AND effect_code='work_output_bonus' AND (asset_code=$2 OR asset_code='all')""",int(country['id']),asset) or 0)
+            economy_modifier=int(await conn.fetchval(
+              "SELECT production_modifier_bp FROM country_economy_state WHERE country_id=$1",
+              int(country['id']),
+            ) or 10000)
+            # National projects and Release-B shortages/budgets both affect real work output.
             gross=floor(gross*(10000+min(bonus,5000))/10000)
+            gross=max(1,floor(gross*max(5000,min(15000,economy_modifier))/10000))
         player_amount=max(1,floor(gross*player_pct/100));country_amount=max(0,floor(gross*country_pct/100))
         tax=0;country_asset=asset if country else None
         if asset=='IRT':

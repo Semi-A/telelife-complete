@@ -11,7 +11,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, action_outbox, maintenance
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ class SchedulerService:
                     ("elections", country_jobs.resolve_due),
                     ("legacy_ads", country_jobs.queue_due_ads),
                     ("commerce", country_jobs.run_commerce),
+                    ("country_trade_expiry", country_trade.expire_due),
+                    ("country_relation_expiry", country_trade.expire_relations),
                     ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
                     ("telegram_actions", lambda: action_outbox.deliver_batch(life_bot, bot)),
                     ("maintenance", maintenance.minute_tick),
@@ -72,6 +74,7 @@ class SchedulerService:
                 await daily_reset.run()
                 await usd_market.daily_rollover()
                 await country_jobs.daily_events()
+                await scheduler_ops.run("country_economy_b", country_economy_b.catch_up)
                 await scheduler_ops.run("country_realism", country_realism.daily_tick)
             except asyncio.CancelledError:
                 raise

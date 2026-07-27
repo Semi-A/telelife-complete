@@ -37,20 +37,20 @@ async def player_resource(conn: asyncpg.Connection, player_id: int, asset: str) 
 async def change_player(conn: asyncpg.Connection, player_id: int, asset: str, delta: int) -> int:
     if asset == "IRT":
         value = await conn.fetchval(
-            "UPDATE players SET wallet_toman=wallet_toman+$2 WHERE id=$1 AND wallet_toman+$2>=0 RETURNING wallet_toman",
+            "UPDATE players SET wallet_toman=wallet_toman+$2::bigint WHERE id=$1::bigint AND wallet_toman+$2::bigint>=0 RETURNING wallet_toman",
             player_id, delta,
         )
     elif asset == "USD":
         value = await conn.fetchval(
-            "UPDATE players SET usd_cents=usd_cents+$2 WHERE id=$1 AND usd_cents+$2>=0 RETURNING usd_cents",
+            "UPDATE players SET usd_cents=usd_cents+$2::bigint WHERE id=$1::bigint AND usd_cents+$2::bigint>=0 RETURNING usd_cents",
             player_id, delta,
         )
     else:
         value = await conn.fetchval(
             """INSERT INTO player_resources(player_id,asset_code,quantity)
-            SELECT $1,$2,$3 WHERE $3>=0
-            ON CONFLICT(player_id,asset_code) DO UPDATE SET quantity=player_resources.quantity+$3,updated_at=now()
-            WHERE player_resources.quantity+$3>=0 RETURNING quantity""",
+            SELECT $1::bigint,$2::text,$3::bigint WHERE $3::bigint>=0
+            ON CONFLICT(player_id,asset_code) DO UPDATE SET quantity=player_resources.quantity+$3::bigint,updated_at=now()
+            WHERE player_resources.quantity+$3::bigint>=0 RETURNING quantity""",
             player_id, asset, delta,
         )
     if value is None:
@@ -61,15 +61,15 @@ async def change_player(conn: asyncpg.Connection, player_id: int, asset: str, de
 async def change_country(conn: asyncpg.Connection, country_id: int, asset: str, delta: int) -> int:
     if asset == "IRT":
         value = await conn.fetchval(
-            "UPDATE countries SET treasury_toman=treasury_toman+$2 WHERE id=$1 AND treasury_toman+$2>=0 RETURNING treasury_toman",
+            "UPDATE countries SET treasury_toman=treasury_toman+$2::bigint WHERE id=$1::bigint AND treasury_toman+$2::bigint>=0 RETURNING treasury_toman",
             country_id, delta,
         )
     else:
         value = await conn.fetchval(
             """INSERT INTO country_resources(country_id,asset_code,quantity)
-            SELECT $1,$2,$3 WHERE $3>=0
-            ON CONFLICT(country_id,asset_code) DO UPDATE SET quantity=country_resources.quantity+$3,updated_at=now()
-            WHERE country_resources.quantity+$3>=0 RETURNING quantity""",
+            SELECT $1::bigint,$2::text,$3::bigint WHERE $3::bigint>=0
+            ON CONFLICT(country_id,asset_code) DO UPDATE SET quantity=country_resources.quantity+$3::bigint,updated_at=now()
+            WHERE country_resources.quantity+$3::bigint>=0 RETURNING quantity""",
             country_id, asset, delta,
         )
     if value is None:

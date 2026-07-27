@@ -1,0 +1,43 @@
+assets:
+  allowed: [IRT, oil, food, minerals, energy, technology]
+contracts:
+  expiry_hours: 12
+  max_open_base: 3
+  max_open_reputation_bonus: 3
+  min_amount: 1
+  max_amount: 1000000
+  presets:
+    food_for_energy: {title: "۱۰۰ غذا در برابر ۸۰ انرژی", offered_asset: food, offered_amount: 100, requested_asset: energy, requested_amount: 80}
+    energy_for_minerals: {title: "۱۰۰ انرژی در برابر ۹۰ معدن", offered_asset: energy, offered_amount: 100, requested_asset: minerals, requested_amount: 90}
+    oil_for_technology: {title: "۸۰ نفت در برابر ۶۰ فناوری", offered_asset: oil, offered_amount: 80, requested_asset: technology, requested_amount: 60}
+    minerals_for_food: {title: "۱۰۰ معدن در برابر ۱۲۰ غذا", offered_asset: minerals, offered_amount: 100, requested_asset: food, requested_amount: 120}
+tariffs:
+  neutral_bp: 500
+  friend_bp: 300
+  trade_partner_bp: 100
+  defensive_ally_bp: 50
+  rival_bp: 1000
+  hostile_bp: 1500
+reputation:
+  initial: 50
+  contract_fulfilled_gain: 1
+  cancellation_penalty: 1
+  aid_gain: 2
+  sanction_imposer_cost: 3
+  minimum: 0
+  maximum: 100
+diplomacy:
+  proposal_hours: 24
+  statuses_requiring_acceptance: [friend, trade_partner, defensive_ally]
+  sanctions_block_direct_trade: true
+aid:
+  daily_limit_per_country: 1000
+  presets:
+    food: 50
+    energy: 50
+    IRT: 500000
+scheduler:
+  expiry_batch_size: 50
+retention:
+  closed_contract_days: 180
+  audit_days: 365

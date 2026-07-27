@@ -37,7 +37,7 @@ async def jobs(ctx,context):
  row=await production_repo.get(ctx.player.id)
  if row:
   a=production.accrue(row,__import__('datetime').datetime.now(__import__('datetime').UTC)); body=f"شغل: <b>{row['job_code']}</b>\nتولید ذخیره‌شده: <b>{fmt.number(a.stored)} / {fmt.number(a.capacity)}</b>\nنرخ: <b>{a.rate:.1f}</b> در ساعت\nسطح تولید: <b>{fmt.number(row['production_level'])}</b> · انبار: <b>{fmt.number(row['storage_level'])}</b>"
- else: body="هنوز شغلی نداری. شغل را با توجه به هدف اقتصادی‌ات انتخاب کن؛ انتخاب اولیه دائمی است."
+ else: body="هنوز شغلی نداری. از بین گزینه‌ها خودت شغلی را انتخاب کن که به سبک بازیت می‌خورد."
  await send_panel(context,ctx.message,fa.JOBS_PANEL.format(body=body),kb.jobs_panel(ctx.telegram_id,bool(row)),"profile",edit=True)
 async def market(ctx,context):
  v=await usd_market.view();p=await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
@@ -66,7 +66,7 @@ async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
    await personal_economy.acquire_housing(ctx.player.id,parsed.arg,"rent" if a=="hrent" else "owned",key(a,ctx.player.id));await q.answer(fa.ACTION_DONE,show_alert=True);await economy_panel(ctx,context)
   elif a=="jchoose":
    if not await production.choose(ctx.player.id,parsed.arg):raise ValueError("job_already_selected")
-   await q.answer("شغلت ثبت شد!",show_alert=True);await jobs(ctx,context)
+   await q.answer("عالیه؛ شغلت ثبت شد و درآمدش از همین حالا جمع می‌شود.",show_alert=True);await jobs(ctx,context)
   elif a=="jshift":
    await production.choose_shift(ctx.player.id,parsed.arg);await q.answer("نوع شیفت تغییر کرد.",show_alert=True);await jobs(ctx,context)
   elif a=="jcollect":

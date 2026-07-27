@@ -21,7 +21,7 @@ def private(username):
 def home(country, admin, citizen=False):
     if country:
         rows = [[b("🏛 شناسنامه کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
-                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project")]]
+                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project"),b("🌐 تجارت و دیپلماسی","trade")]]
         rows.append([b("🚪 خروج از شهروندی", "leave", "danger")] if citizen else [b("🤝 شهروند این کشور می‌شوم", "join", "success")])
         rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription", "primary"),b("✈️ مهاجرت", "migration")])
         if admin:rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
@@ -85,6 +85,23 @@ def migration_review(rows):
  for r in rows:buttons.extend([[b(f"✅ پذیرش {r['first_name']}",f"migaccept:{r['id']}","success"),b("رد",f"migreject:{r['id']}","danger")]])
  buttons.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(buttons)
 
+def country_economy_b(can_manage=False, president=False):
+    rows=[]
+    if can_manage:
+        rows += [[b("⚖️ بودجه متعادل","budget:balanced","primary"),b("🫶 تمرکز رفاه","budget:welfare")],
+                 [b("🏭 تمرکز رشد","budget:growth"),b("🛡 تمرکز امنیت","budget:security")]]
+    if president:
+        rows.append([b("👔 کابینه اولیه","offices")])
+    rows.append([b("↩️ اقتصاد کشور","economy"),b("🏠 خانه جهان","home")])
+    return InlineKeyboardMarkup(rows)
+
+def offices(rows):
+    buttons=[]
+    labels={"economy_minister":"وزیر اقتصاد","industry_minister":"وزیر صنعت","foreign_minister":"وزیر خارجه","army_commander":"فرمانده ارتش","intelligence_chief":"رئیس اطلاعات"}
+    for row in rows:
+        for role,label in labels.items():buttons.append([b(f"{label}: {row['first_name']}",f"appoint:{role}:{row['player_id']}")])
+    buttons.append([b("↩️ اقتصاد و بودجه","economyb")]);return InlineKeyboardMarkup(buttons)
+
 def central_bank(president=False):
     rows=[]
     if president:
@@ -92,3 +109,50 @@ def central_bank(president=False):
         rows.append([b("💵 خرید ذخیره ارزی ۱۰M","reserve:buy","success")])
     rows.append([b("↩️ اقتصاد کشور","economy"),b("🏠 خانه جهان","home")])
     return InlineKeyboardMarkup(rows)
+
+def trade_home(can_manage=False):
+ rows=[[b("📥 پیشنهادهای دریافتی","tradein","primary"),b("📤 پیشنهادهای من","tradeout")],
+       [b("🤝 روابط خارجی","relations"),b("🆘 کمک اضطراری","aid")],
+       [b("📈 نرخ‌های مرجع","traderef"),b("🏠 خانه جهان","home")]]
+ if can_manage:rows.insert(1,[b("➕ قرارداد تازه","tradenew","success")])
+ return InlineKeyboardMarkup(rows)
+
+def trade_countries(rows,action="tradeto"):
+ buttons=[[b(f"🌍 {r['name']}",f"{action}:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def trade_presets(target_id,presets):
+ buttons=[[b(str(spec['title']),f"tradepreset:{target_id}:{key}","primary" if i==0 else None)] for i,(key,spec) in enumerate(presets.items())]
+ buttons.append([b("↩️ انتخاب کشور","tradenew")]);return InlineKeyboardMarkup(buttons)
+
+def incoming_trade(rows):
+ buttons=[[b(f"✅ پذیرش #{r['id']} از {r['proposer_name']}",f"tradeaccept:{r['id']}","success")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def relations_countries(rows):
+ buttons=[]
+ for r in rows:
+  buttons.append([b(f"🤝 پیشنهاد همکاری با {r['name']}",f"relmenu:{r['id']}")])
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def relation_actions(target_id):
+ return InlineKeyboardMarkup([[b("🙂 دوستی",f"relprop:{target_id}:friend"),b("📦 شریک تجاری",f"relprop:{target_id}:trade_partner","primary")],
+  [b("🛡 متحد دفاعی",f"relprop:{target_id}:defensive_ally"),b("✅ پذیرش پیشنهاد",f"relaccept:{target_id}","success")],
+  [b("⛔ تحریم مستقیم",f"sanction:{target_id}","danger"),b("♻️ رفع تحریم",f"sanctionlift:{target_id}")],[b("↩️ روابط خارجی","relations")]])
+
+def aid_countries(rows):
+ buttons=[[b(f"🆘 {r['name']}",f"aidto:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def aid_assets(target_id):
+ return InlineKeyboardMarkup([[b("🌾 ارسال ۵۰ غذا",f"aidsend:{target_id}:food","success"),b("⚡ ارسال ۵۰ انرژی",f"aidsend:{target_id}:energy")],
+  [b("💰 ارسال ۵۰۰ هزار تومان",f"aidsend:{target_id}:IRT")],[b("↩️ انتخاب کشور","aid")]])
+
+
+def outgoing_trade(rows):
+ buttons=[[b(f"لغو #{r['id']} برای {r['recipient_name']}",f"tradecancel:{r['id']}","danger")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def pending_relations(rows):
+ buttons=[[b(f"✅ پذیرش {r['counterparty_name']}",f"relaccept:{r['counterparty_id']}","success")] for r in rows]
+ buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)

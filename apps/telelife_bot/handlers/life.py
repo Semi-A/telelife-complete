@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC,datetime
 from uuid import uuid4
 from html import escape
-from telegram import Update, InputFile
+from telegram import Update
 from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers.panel import show
@@ -11,14 +11,15 @@ from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp,market_chart
+from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
 SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
 ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
-def why(e):return ERR.get(str(e),"این کار انجام نشد؛ شرایط را دوباره بررسی کن.")
+def why(e):
+ return ERR.get(str(e),"فعلاً نشد انجامش بدیم. یک‌بار صفحه را تازه کن و دوباره امتحان کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def answer(q,text=None,show_alert=False):
  try:await q.answer(text,show_alert=show_alert)
@@ -65,16 +66,18 @@ async def jobs(ctx,c):
  await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),True))
 
 async def market(ctx,c):
- v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان"
- extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else ""
- rows=await market_chart.candles(24)
- previous=c.user_data.get("market_chart_message_id")
- if previous:
-  try:await c.bot.delete_message(chat_id=ctx.message.chat_id,message_id=previous)
-  except Exception:pass
- chart_message=await c.bot.send_photo(chat_id=ctx.message.chat_id,photo=InputFile(market_chart.render(rows),filename="usdt_30m.png"),caption="نمودار واقعی USDT/IRT · کندل ۳۰ دقیقه‌ای · ۲۴ ساعت اخیر\nمنبع نرخ: Zipodo · فاصله‌های بدون داده پر نمی‌شوند.")
- c.user_data["market_chart_message_id"]=chart_message.message_id
- await panel(ctx,c,fa.MARKET.format(buy=fmt.toman(v.buy_price),sell=fmt.toman(v.sell_price),health=fmt.number(v.health),status=status,usd=fmt.usd(p.usd_cents))+extra,kb.market(ctx.telegram_id,p.level>=10))
+ v=await usd_market.view();p=await fresh(ctx)
+ status="⛔ متوقف" if v.frozen else "✅ عادی" if v.health>=75 else "⚠️ پرنوسان"
+ access="\n\n🔒 خریدوفروش از سطح ۱۰ باز می‌شود؛ تا آن موقع می‌توانی قیمت‌ها را دنبال کنی." if p.level<10 else "\n\nقیمت را دیدی؟ پایین همین صفحه می‌توانی خرید یا فروش انجام بدهی."
+ text=("💱 <b>بازار دلار</b>\n\n"
+       f"🟢 قیمت خرید: <b>{fmt.toman(v.buy_price)}</b>\n"
+       f"🔴 قیمت فروش: <b>{fmt.toman(v.sell_price)}</b>\n"
+       f"💵 موجودی شما: <b>{fmt.usd(p.usd_cents)}</b>\n\n"
+       f"وضعیت بازار: <b>{status}</b>\n"
+       f"شاخص سلامت: <b>{fmt.number(v.health)} از ۱۰۰</b>"
+       +access)
+ await panel(ctx,c,text,kb.market(ctx.telegram_id,p.level>=10))
+
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
@@ -118,11 +121,11 @@ async def callback(update,c):
   if a in {'deposit','withdraw'}:await personal_economy.savings_transfer(ctx.player.id,int(parsed.arg),a,ik(a,ctx.player.id));await answer(q,"انتقال انجام شد.",show_alert=True);await savings_page(ctx,c);return
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
   if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
-  if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"شغل انتخاب شد.",show_alert=True);await jobs(ctx,c);return
+  if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"عالیه؛ شغلت ثبت شد و از همین حالا درآمدش جمع می‌شود.",show_alert=True);await jobs(ctx,c);return
   if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
   if a=='jcollect':
    r=await production.collect_purposeful(ctx.player.id,ik(a,ctx.player.id))
-   if not r.amount:msg="هنوز نتیجه قابل دریافت آماده نشده است؛ کمی بعد دوباره تلاش کن."
+   if not r.amount:msg="هنوز چیزی برای دریافت آماده نیست؛ کمی زمان بده و دوباره سر بزن."
    else:
     personal=f"💵 سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"📦 سهم شما: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}"
     national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")

@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 217
+تعداد کل فایل‌ها: 231
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -94,7 +94,10 @@ telelife_complete/
 │   ├── 0010_stars_subscriptions_ad_marketplace.sql
 │   ├── 0011_population_channels_migration.sql
 │   ├── 0012_reliability_live_market_engagement.sql
-│   └── 0013_country_identity_candles_realism.sql
+│   ├── 0013_country_identity_candles_realism.sql
+│   ├── 0014_free_tier_hardening.sql
+│   ├── 0015_purposeful_work_loop.sql
+│   └── 0016_national_projects_and_missions.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -132,6 +135,7 @@ telelife_complete/
 │   │   │   └── player.py
 │   │   ├── repositories/
 │   │   │   ├── __init__.py
+│   │   │   ├── action_outbox_repo.py
 │   │   │   ├── admin_repo.py
 │   │   │   ├── country_repo.py
 │   │   │   ├── election_repo.py
@@ -147,6 +151,7 @@ telelife_complete/
 │   │   │   └── world_access_repo.py
 │   │   ├── services/
 │   │   │   ├── __init__.py
+│   │   │   ├── action_outbox.py
 │   │   │   ├── admin.py
 │   │   │   ├── commerce.py
 │   │   │   ├── content_filter.py
@@ -154,6 +159,7 @@ telelife_complete/
 │   │   │   ├── country_economy.py
 │   │   │   ├── country_identity.py
 │   │   │   ├── country_missions.py
+│   │   │   ├── country_objectives.py
 │   │   │   ├── country_realism.py
 │   │   │   ├── daily.py
 │   │   │   ├── economy.py
@@ -161,6 +167,7 @@ telelife_complete/
 │   │   │   ├── engagement.py
 │   │   │   ├── governance.py
 │   │   │   ├── live_market.py
+│   │   │   ├── maintenance.py
 │   │   │   ├── market_chart.py
 │   │   │   ├── migration.py
 │   │   │   ├── missions.py
@@ -203,6 +210,7 @@ telelife_complete/
 │   ├── test_country_realism_contracts.py
 │   ├── test_daily.py
 │   ├── test_fmt.py
+│   ├── test_free_tier_hardening.py
 │   ├── test_glass_buttons.py
 │   ├── test_governance.py
 │   ├── test_hardening_contracts.py
@@ -212,6 +220,7 @@ telelife_complete/
 │   ├── test_message_driven_bots.py
 │   ├── test_migrator.py
 │   ├── test_missions.py
+│   ├── test_national_projects_missions_release.py
 │   ├── test_outbox_repo.py
 │   ├── test_panel_edit.py
 │   ├── test_persian_button_contracts.py
@@ -220,6 +229,7 @@ telelife_complete/
 │   ├── test_production_security.py
 │   ├── test_progression.py
 │   ├── test_project_integrity.py
+│   ├── test_purposeful_work_release.py
 │   ├── test_scaling_migration.py
 │   ├── test_supervisor.py
 │   ├── test_teleworld_onboarding.py
@@ -230,6 +240,7 @@ telelife_complete/
 │   └── test_xp.py
 ├── .dockerignore
 ├── .env.example
+├── .gitattributes
 ├── .gitignore
 ├── AUDIT_AND_DEPLOY_FA_2026-07-27.md
 ├── AUDIT_FINAL_FA_2026-07-27.md
@@ -248,7 +259,10 @@ telelife_complete/
 ├── RELEASE_AUDIT_FA.md
 ├── RELEASE_AUDIT_FA_2026-07-27.md
 ├── RELEASE_COMMERCE_FA.md
+├── RELEASE_HARDENING_FA.md
+├── RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md
 ├── RELEASE_NOTES_FA.md
+├── RELEASE_PURPOSEFUL_WORK_FA.md
 ├── RELEASE_SCALING_MIGRATION_FA.md
 ├── RELEASE_V2_FA.md
 ├── render.yaml
@@ -294,6 +308,19 @@ AD_REVIEW_NOTIFICATION_CHAT_ID=
 
 # Live USDT/IRT source (validated server-side; last good value is retained on failure).
 USDT_RATE_URL=https://api.zipodo.ir/usdt/
+```
+
+### `.gitattributes`
+
+```
+*.py text eol=lf
+*.sql text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
 ```
 
 ### `.gitignore`
@@ -364,6 +391,7 @@ def require_admin(
 """Authenticated, lightweight administration command center."""
 from __future__ import annotations
 from pathlib import Path
+from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -382,16 +410,28 @@ app.include_router(country_admin_router)
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
-    # JSON APIs already trigger CORS preflight; this also protects legacy form routes.
+    # Mutating admin APIs are same-origin JSON only. This is stateless and costs
+    # no extra service while blocking cross-site form and simple-request attacks.
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        host = request.headers.get("host", "").lower()
         origin = request.headers.get("origin")
-        host = request.headers.get("host")
-        if origin and host and origin.split("://", 1)[-1] != host:
-            return JSONResponse({"detail": "درخواست از مبدأ نامعتبر رد شد."}, status_code=403)
+        referer = request.headers.get("referer")
+        supplied = origin or referer
+        if supplied:
+            try: supplied_host = urlsplit(supplied).netloc.lower()
+            except ValueError: supplied_host = ""
+            if not host or supplied_host != host:
+                return JSONResponse({"detail": "درخواست از مبدأ نامعتبر رد شد."}, status_code=403)
+        if request.url.path.startswith("/api/admin"):
+            content_type=request.headers.get("content-type","").split(";",1)[0].strip().lower()
+            if content_type != "application/json":
+                return JSONResponse({"detail": "درخواست مدیریتی باید JSON باشد."}, status_code=415)
     response: Response = await call_next(request)
     response.headers.update({
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
         "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Cross-Origin-Opener-Policy": "same-origin",
         "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; "
           "script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
     })
@@ -430,7 +470,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from datetime import datetime
 from uuid import uuid4
-from fastapi import APIRouter, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
@@ -616,24 +656,7 @@ async def enqueue_news(body: NewsBody, actor: AdminActor) -> dict[str, bool]:
     return {"queued": await admin.enqueue_news(
         actor, body.text, destination, str(uuid4()))}
 
-# Backward-compatible form routes.
-@router.post("/ban/{player_id}")
-async def ban_form(player_id: int, actor: AdminActor,
-                   enabled: Annotated[bool, Form()],
-                   reason: Annotated[str | None, Form()] = None) -> dict[str, bool]:
-    return {"applied": await admin.ban(actor, player_id, enabled, reason, str(uuid4()))}
-
-@router.post("/grant-xp/{player_id}")
-async def grant_form(player_id: int, actor: AdminActor,
-                     amount: Annotated[int, Form(gt=0, le=1_000_000)]) -> dict[str, int]:
-    result = await admin.grant_xp(actor, player_id, amount, str(uuid4()))
-    return {"granted": result.granted if result else 0}
-
-@router.post("/feature/{key}")
-async def feature(key: str, actor: AdminActor,
-                  enabled: Annotated[bool, Form()]) -> dict[str, bool]:
-    return {"applied": await admin.feature(actor, key, enabled, str(uuid4()))}
-
+# State-changing admin routes intentionally accept JSON only.
 @router.get("/ads")
 async def ads(limit: Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
     return [dict(row) for row in await admin_repo.ads(limit)]
@@ -664,18 +687,10 @@ async def edit_ad_request(ad_id:int,body:AdEditBody,actor:AdminActor)->dict[str,
 async def approve_ad_request(ad_id:int,body:AdReviewBody,actor:AdminActor)->dict[str,bool]:
  row=await commerce.approve_ad(ad_id,actor,body.note)
  if not row:raise HTTPException(409,"وضعیت درخواست قابل تأیید نیست.")
- owner=await admin_repo.ad_owner(ad_id);payload,stars,title=await commerce.ad_invoice(ad_id,int(owner["telegram_id"]))
- from telegram import Bot,LabeledPrice
- async with Bot(get_settings().telelife_bot_token) as bot:
-  await bot.send_invoice(chat_id=owner["telegram_id"],title=f"پرداخت تبلیغ: {title}",description="درخواست تأیید شد. این صورتحساب ۴۸ ساعت اعتبار دارد.",payload=payload,currency="XTR",prices=[LabeledPrice("بسته تبلیغ",stars)],provider_token="")
  return {"approved":True}
 @router.post("/ad-requests/{ad_id}/reject")
 async def reject_ad_request(ad_id:int,body:AdRejectBody,actor:AdminActor)->dict[str,bool]:
  row=await commerce.reject_ad(ad_id,actor,body.reason)
- if row:
-  from telegram import Bot
-  owner=await admin_repo.ad_owner(ad_id)
-  async with Bot(get_settings().telelife_bot_token) as bot:await bot.send_message(owner["telegram_id"],f"✏️ درخواست تبلیغ #{ad_id} نیاز به اصلاح دارد:\n\n{body.reason}\n\nبرای اصلاح، درخواست تازه‌ای از بخش تبلیغات ثبت کن.")
  return {"rejected":bool(row)}
 @router.post("/ad-requests/{ad_id}/pause")
 async def pause_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:return {"paused":bool(await commerce.pause_ad(ad_id))}
@@ -1080,7 +1095,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, action_outbox, maintenance
 
 logger = logging.getLogger(__name__)
 
@@ -1117,6 +1132,8 @@ class SchedulerService:
                     ("legacy_ads", country_jobs.queue_due_ads),
                     ("commerce", country_jobs.run_commerce),
                     ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
+                    ("telegram_actions", lambda: action_outbox.deliver_batch(life_bot, bot)),
+                    ("maintenance", maintenance.minute_tick),
                     ("zipodo_rate", live_market.sync),
                     ("engagement", engagement.minute_tick),
                     ("market_snapshot", admin_repo.capture_market_snapshot),
@@ -1379,7 +1396,7 @@ from packages.core.utils import fmt
 
 ERRORS={
  "insufficient_balance":"موجودی کافی نیست.","amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.",
- "job_locked":"مشاغل از سطح ۵ باز می‌شوند.","job_not_found":"هنوز شغلی انتخاب نکرده‌ای.",
+ "job_locked":"مشاغل از سطح ۱ در دسترس هستند.","job_not_found":"هنوز شغلی انتخاب نکرده‌ای.",
  "housing_locked":"سطحت برای این خانه کافی نیست.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.",
  "market_frozen":"بازار فعلاً برای حفاظت از اقتصاد متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.",
  "daily_limit":"سقف معامله امروزت پر شده است.","invalid_housing":"انتخاب خانه معتبر نیست.",
@@ -1414,7 +1431,7 @@ async def market(ctx,context):
 async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  parsed=await guard_callback(update);q=update.callback_query
  if parsed is None or q is None:return
- if parsed.action not in {"economy","savings","housing","living","deposit","withdraw","jobs","jchoose","jcollect","jupgrade","market","mbuy","msell","hrent","hbuy"}:return
+ if parsed.action not in {"economy","savings","housing","living","deposit","withdraw","jobs","jchoose","jcollect","jshift","jupgrade","market","mbuy","msell","hrent","hbuy"}:return
  ctx=await resolve(update)
  if ctx is None:await q.answer();return
  try:
@@ -1433,15 +1450,17 @@ async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
   elif a=="jchoose":
    if not await production.choose(ctx.player.id,parsed.arg):raise ValueError("job_already_selected")
    await q.answer("شغلت ثبت شد!",show_alert=True);await jobs(ctx,context)
+  elif a=="jshift":
+   await production.choose_shift(ctx.player.id,parsed.arg);await q.answer("نوع شیفت تغییر کرد.",show_alert=True);await jobs(ctx,context)
   elif a=="jcollect":
-   amount,xp=await production.collect(ctx.player.id,key(a,ctx.player.id));await q.answer(f"{fmt.number(amount)} واحد و {fmt.number(xp)} XP دریافت شد.",show_alert=True);await jobs(ctx,context)
+   r=await production.collect_purposeful(ctx.player.id,key(a,ctx.player.id));await q.answer(f"سهم شما {fmt.number(r.amount)}؛ مالیات {fmt.toman(r.tax_toman)}؛ سهم کشور {fmt.number(r.country_amount)}",show_alert=True);await jobs(ctx,context)
   elif a=="jupgrade":
    lvl=await production.upgrade(ctx.player.id,parsed.arg,key(a,ctx.player.id));await q.answer(f"به سطح {fmt.number(lvl)} ارتقا یافت.",show_alert=True);await jobs(ctx,context)
   elif a in {"mbuy","msell"}:
    r=await usd_market.trade(ctx.player.id,"buy" if a=="mbuy" else "sell",int(parsed.arg),key(a,ctx.player.id));await q.answer(f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,context)
  except (ValueError,PermissionError) as exc:await q.answer(err(exc),show_alert=True)
 
-def register(app)->None:app.add_handler(CallbackQueryHandler(callback,pattern=r"^tl:(economy|savings|housing|living|deposit|withdraw|jobs|jchoose|jcollect|jupgrade|market|mbuy|msell|hrent|hbuy):"),group=-1)
+def register(app)->None:app.add_handler(CallbackQueryHandler(callback,pattern=r"^tl:(economy|savings|housing|living|deposit|withdraw|jobs|jchoose|jcollect|jshift|jupgrade|market|mbuy|msell|hrent|hbuy):"),group=-1)
 ```
 
 ### `apps\telelife_bot\handlers\life.py`
@@ -1465,7 +1484,8 @@ from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
-ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۵ باز می‌شوند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
+SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
+ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
 def why(e):return ERR.get(str(e),"این کار انجام نشد؛ شرایط را دوباره بررسی کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def answer(q,text=None,show_alert=False):
@@ -1475,12 +1495,12 @@ async def panel(ctx,c,text,mark):return await show(c,ctx.player.id,ctx.message.c
 async def fresh(ctx):return await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
 async def home(ctx,c):
  p=await fresh(ctx);st=await ui_state_repo.ensure_life(p.id);_,_,last=await daily.state(p.id);cur,need=progression.level_progress(p.level,p.xp);left=max(0,need-cur)
- step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "کارهای امروز را انجام بده و به سطح ۵ برس" if p.level<5 else "شغلت را انتخاب کن، کار کن و درآمدت را رشد بده")
+ step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "شغل بگیر، شیفت انجام بده و به رشد کشورت کمک کن")
  hint="🚀 مسیر شروع آماده ادامه است." if step<4 else "🎯 کارهای امروز بهترین راه رشد هستند."
  text=fa.HOME.format(name=escape(p.first_name),level=fmt.number(p.level),bar=fmt.progress_bar(cur,need,width=10),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
  await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step))
 async def journey(ctx,c):
- st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ تا سطح ۵ با کارهای روزانه رشد کن، سپس شغل انتخاب کن و درآمد بساز.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
+ st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
@@ -1507,9 +1527,11 @@ async def housing_page(ctx,c):
 async def jobs(ctx,c):
  p=await fresh(ctx);row=await production_repo.get(p.id)
  if row:
-  a=production.accrue(row,datetime.now(UTC));job=JOB_FA.get(str(row['job_code']),'شغل');asset=ASSET_FA.get(str(row['output_asset_code']),'درآمد');body=f"شغل: <b>{job}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}</b>\nسرعت کار: <b>{fmt.number(round(a.rate,1))} {asset} در ساعت</b>\n\nهر وقت مقداری آماده شد، «کار کن و درآمد بگیر» را بزن. اگر ظرفیت پر شود، تولید بیشتر متوقف می‌شود."
- else:body=("هنوز شغلی نداری. یکی را بر اساس نوع درآمدش انتخاب کن؛ انتخاب اولیه قابل تعویض نیست." if p.level>=5 else f"شغل از سطح ۵ باز می‌شود. اکنون سطح {fmt.number(p.level)} هستی؛ با کارهای امروز تجربه بگیر.")
- await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),p.level>=5))
+  a=production.accrue(row,datetime.now(UTC));job=JOB_FA.get(str(row['job_code']),'شغل');asset=ASSET_FA.get(str(row['output_asset_code']),'درآمد');mode=SHIFT_FA.get(str(row.get('shift_mode') or 'balanced'),'متعادل')
+  body=f"شغل: <b>{job}</b>\nشیفت فعلی: <b>{mode}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}</b>\nسرعت کار: <b>{fmt.number(round(a.rate,1))} {asset} در ساعت</b>\n\nهر دریافت، سهم شخصی، مالیات و اثر ملی را شفاف ثبت می‌کند."
+ else:body="از همین حالا یک شغل انتخاب کن؛ هر شیفت برای تو درآمد دارد و برای کشورت منبع می‌سازد."
+ await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),True))
+
 async def market(ctx,c):
  v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان"
  extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else ""
@@ -1565,8 +1587,15 @@ async def callback(update,c):
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
   if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
   if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"شغل انتخاب شد.",show_alert=True);await jobs(ctx,c);return
+  if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
   if a=='jcollect':
-   amount,gain=await production.collect(ctx.player.id,ik(a,ctx.player.id));msg=(f"{fmt.number(amount)} واحد درآمد و {fmt.number(gain)} تجربه گرفتی." if amount else "هنوز درآمد قابل دریافت آماده نشده است؛ کمی بعد دوباره تلاش کن.");await answer(q,msg,show_alert=True);await jobs(ctx,c);return
+   r=await production.collect_purposeful(ctx.player.id,ik(a,ctx.player.id))
+   if not r.amount:msg="هنوز نتیجه قابل دریافت آماده نشده است؛ کمی بعد دوباره تلاش کن."
+   else:
+    personal=f"💵 سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"📦 سهم شما: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}"
+    national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
+    msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه: +{fmt.number(r.xp)}"
+   await answer(q,msg,show_alert=True);await jobs(ctx,c);return
   if a=='jupgrade':lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"ارتقا به سطح {fmt.number(lvl)}",show_alert=True);await jobs(ctx,c);return
   if a in {'mbuy','msell'}:r=await usd_market.trade(ctx.player.id,'buy' if a=='mbuy' else 'sell',int(parsed.arg),ik(a,ctx.player.id));await answer(q,f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,c);return
   await answer(q,)
@@ -2018,8 +2047,10 @@ def jobs(owner, has_job, unlocked=True):
     if not unlocked:
         return k.row(B("🎯 رفتن به کارهای امروز", "missions", owner, style=Style.PRIMARY)).row(B("🏠 خانه", "home", owner)).build()
     if has_job:
-        k.row(B("🛠 کار کن و درآمد بگیر", "jcollect", owner, style=Style.SUCCESS))
-        k.row(B("⚙️ ارتقای مهارت", "jupgrade", owner, "production", Style.PRIMARY), B("🗄 افزایش ظرفیت", "jupgrade", owner, "storage"))
+        k.row(B("✅ دریافت نتیجه شیفت", "jcollect", owner, style=Style.SUCCESS))
+        k.row(B("⚖️ متعادل", "jshift", owner, "balanced", Style.PRIMARY), B("🏛 ملی", "jshift", owner, "national"))
+        k.row(B("🛡 امن", "jshift", owner, "safe"), B("💵 خصوصی", "jshift", owner, "private"))
+        k.row(B("⚙️ ارتقای مهارت", "jupgrade", owner, "production"), B("🗄 افزایش ظرفیت", "jupgrade", owner, "storage"))
     else:
         k.row(B("🌾 کشاورز", "jchoose", owner, "farmer", Style.PRIMARY), B("⛏ معدن‌کار", "jchoose", owner, "miner"))
         k.row(B("💻 برنامه‌نویس", "jchoose", owner, "programmer"), B("📈 بازرگان", "jchoose", owner, "trader"))
@@ -2910,7 +2941,7 @@ from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -2968,10 +2999,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "pstart", "subtreasury", "migration", "rate", "reserve"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pcon:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -3062,15 +3093,17 @@ async def project_page(update, context):
     row, _, _ = await facts(update.effective_chat.id)
     if not row: raise ValueError("country_not_found")
     project = await project_repo.active(row["id"])
+    objective=await country_objectives.today(row["id"])
     latest = project or await db.fetchrow("SELECT * FROM national_projects WHERE country_id=$1 ORDER BY id DESC LIMIT 1", row["id"])
     body = "هنوز پروژه‌ای آغاز نشده است."
     if latest:
         status = await project_repo.status(latest["id"])
         body = "\n".join(f"• {ASSET.get(str(x['asset_code']), 'دارایی')}: {fmt.number(x['contributed_amount'])} از {fmt.number(x['required_amount'])}" for x in status)
-        if latest["status"] == "completed": body = "✅ این پروژه ملی تکمیل شده است.\n\n" + body
-    markup = kb.project(True) if project else kb.back()
-    if latest is None: markup = kb.project(False)
-    await show(update, context, "🏗 <b>پروژه ملی</b>\n\n" + body + "\n\nهر شهروند فقط به اندازه نیاز باقی‌مانده کمک می‌کند.", markup)
+        if latest["status"] == "completed": body = "✅ آخرین پروژه تکمیل شده و اثرش روی تولید فعال است.\n\n" + body
+    daily=f"\n\n🎯 هدف کاری امروز کشور: {fmt.number(objective.progress)} از {fmt.number(objective.target)} شیفت · {fmt.number(objective.contributors)} مشارکت‌کننده"+(" ✅" if objective.complete else "")
+    available=await national_project.available(row["id"])
+    markup=kb.project(True) if project else kb.project(False,available)
+    await show(update, context, "🏗 <b>پروژه‌ها و هدف ملی</b>\n\n" + body + daily + "\n\nپروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.", markup)
 
 async def callback(update, context):
     query = update.callback_query
@@ -3206,11 +3239,17 @@ async def callback(update, context):
             election = await election_repo.open_for_country(row["id"])
             if not election or election["status"] != "voting": await answer(query, "رأی‌گیری باز نیست.", show_alert=True); return
             accepted = await elections.vote(election["id"], p.id, int(action.split(":", 1)[1])); await answer(query, "رأی ثبت شد." if accepted else "قبلاً رأی داده‌ای.", show_alert=True); await politics_page(update, context)
-        elif action == "pstart":
-            p = await player(update); row, _, _ = await facts(update.effective_chat.id)
-            if not row: raise ValueError("country_not_found")
-            if await db.fetchval("SELECT 1 FROM national_projects WHERE country_id=$1", row["id"]): await answer(query, "پروژه ملی این کشور قبلاً آغاز شده است و تکرارشدنی نیست.", show_alert=True); return
-            await national_project.start(row["id"], p.id); await answer(query, "پروژه ملی آغاز شد.", show_alert=True); await project_page(update, context)
+        elif action.startswith("pstart:"):
+            p=await player(update);row,_,_=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            project_key=action.split(":",1)[1];await national_project.start(row["id"],p.id,project_key);await answer(query,"پروژه ملی آغاز شد.",show_alert=True);await project_page(update,context)
+        elif action.startswith("ptreasury:"):
+            p=await player(update);row,_,_=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            project=await project_repo.active(row["id"])
+            if not project:await answer(query,"پروژه فعالی وجود ندارد.",show_alert=True);return
+            _,asset,amount=action.split(":");accepted,done=await national_project.treasury_contribute(project["id"],p.id,asset,int(amount),f"treasury-project:{p.id}:{query.id}")
+            await answer(query,f"{fmt.number(accepted)} واحد از دارایی کشور به پروژه رسید."+(" پروژه تکمیل شد!" if done else ""),show_alert=True);await project_page(update,context)
         elif action.startswith("pcon:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
@@ -3344,11 +3383,15 @@ def candidates(rows):
     buttons = [[b(f"🗳 رأی به {row['first_name']}", f"vote:{row['player_id']}", "primary" if i == 0 else None)] for i, row in enumerate(rows)]
     buttons.append([b("↩️ بازگشت", "politics")])
     return InlineKeyboardMarkup(buttons)
-def project(active):
+def project(active, available=None):
     if active:
-        return InlineKeyboardMarkup([[b("💵 کمک ۵۰ هزار تومان", "pcon:IRT:50000", "success")],
-                                     [b("🌾 کمک ۵۰ غذا", "pcon:food:50"), b("⛏ کمک ۵۰ ماده معدنی", "pcon:minerals:50")], [b("🏠 خانه جهان", "home")]])
-    return InlineKeyboardMarkup([[b("🏗 آغاز پروژه ملی", "pstart", "primary")], [b("🏠 خانه جهان", "home")]])
+        return InlineKeyboardMarkup([[b("💵 کمک شخصی ۵۰ هزار", "pcon:IRT:50000", "success"),b("🏛 از خزانه ۲۰۰ هزار","ptreasury:IRT:200000")],
+                                     [b("🌾 کمک ۵۰ غذا", "pcon:food:50"), b("⛏ کمک ۵۰ معدن", "pcon:minerals:50")],
+                                     [b("🛢 کمک ۵۰ نفت", "pcon:oil:50"),b("⚡ کمک ۵۰ انرژی", "pcon:energy:50")],
+                                     [b("🔬 کمک ۵۰ فناوری", "pcon:technology:50")], [b("🏠 خانه جهان", "home")]])
+    rows=[]
+    for key,title in (available or []):rows.append([b(f"🏗 آغاز {title}",f"pstart:{key}","primary" if not rows else None)])
+    rows.append([b("🏠 خانه جهان", "home")]);return InlineKeyboardMarkup(rows)
 
 def subscription(round_id:int,remaining:int):
  rows=[]
@@ -4967,6 +5010,109 @@ CREATE TABLE IF NOT EXISTS country_newspapers (
 );
 ```
 
+### `migrations\0014_free_tier_hardening.sql`
+
+```sql
+-- Free-tier operational hardening. Additive, idempotent and safe for live data.
+
+-- Keep only one useful row per Telegram/provider charge and speed reconciliation.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_star_payments_provider_charge
+    ON star_payments(provider_charge_id)
+    WHERE provider_charge_id IS NOT NULL AND provider_charge_id <> '';
+CREATE INDEX IF NOT EXISTS idx_star_payments_reconcile
+    ON star_payments(status, created_at DESC);
+
+-- Queue admin-to-user Telegram actions transactionally instead of performing
+-- remote calls inside the HTTP request.
+CREATE TABLE IF NOT EXISTS telegram_action_outbox (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    bot_name TEXT NOT NULL CHECK (bot_name IN ('telelife','teleworld')),
+    action TEXT NOT NULL CHECK (action IN ('send_message','send_invoice')),
+    chat_id BIGINT NOT NULL,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processing_token UUID,
+    processing_until TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    last_error_code TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (jsonb_typeof(payload) = 'object')
+);
+CREATE INDEX IF NOT EXISTS idx_telegram_action_outbox_claim
+    ON telegram_action_outbox(available_at, created_at)
+    WHERE completed_at IS NULL;
+
+-- Cheap operational queries on the existing scheduler table.
+CREATE INDEX IF NOT EXISTS idx_scheduler_job_runs_status_time
+    ON scheduler_job_runs(status, started_at DESC);
+
+-- Prevent unbounded growth on free PostgreSQL plans. Cleanup is performed by
+-- the existing minute scheduler and keeps recent operational history.
+```
+
+### `migrations\0015_purposeful_work_loop.sql`
+
+```sql
+-- Purposeful work loop: level-one jobs, shift choices, tax and national output.
+-- Additive and safe for existing player_jobs rows.
+ALTER TABLE player_jobs ADD COLUMN IF NOT EXISTS shift_mode TEXT NOT NULL DEFAULT 'balanced';
+ALTER TABLE player_jobs ADD COLUMN IF NOT EXISTS last_claim_at TIMESTAMPTZ;
+ALTER TABLE player_jobs ADD COLUMN IF NOT EXISTS total_claims BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE player_jobs ADD COLUMN IF NOT EXISTS total_tax_toman BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE player_jobs ADD COLUMN IF NOT EXISTS total_country_output BIGINT NOT NULL DEFAULT 0;
+
+ALTER TABLE player_jobs DROP CONSTRAINT IF EXISTS player_jobs_shift_mode_check;
+ALTER TABLE player_jobs ADD CONSTRAINT player_jobs_shift_mode_check
+  CHECK (shift_mode IN ('safe','balanced','national','private'));
+
+CREATE TABLE IF NOT EXISTS work_claims (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ country_id BIGINT REFERENCES countries(id) ON DELETE SET NULL,
+ job_code TEXT NOT NULL,
+ shift_mode TEXT NOT NULL CHECK (shift_mode IN ('safe','balanced','national','private')),
+ asset_code TEXT NOT NULL,
+ gross_amount BIGINT NOT NULL CHECK (gross_amount > 0),
+ player_amount BIGINT NOT NULL CHECK (player_amount >= 0),
+ country_amount BIGINT NOT NULL DEFAULT 0 CHECK (country_amount >= 0),
+ tax_toman BIGINT NOT NULL DEFAULT 0 CHECK (tax_toman >= 0),
+ xp_awarded INTEGER NOT NULL DEFAULT 0 CHECK (xp_awarded >= 0),
+ claimed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_work_claims_player_time ON work_claims(player_id,claimed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_work_claims_country_time ON work_claims(country_id,claimed_at DESC) WHERE country_id IS NOT NULL;
+```
+
+### `migrations\0016_national_projects_and_missions.sql`
+
+```sql
+-- Multiple useful national projects, treasury funding and durable completion effects.
+CREATE TABLE IF NOT EXISTS country_project_funding (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ project_id BIGINT NOT NULL REFERENCES national_projects(id) ON DELETE RESTRICT,
+ actor_player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ asset_code TEXT NOT NULL,
+ amount BIGINT NOT NULL CHECK(amount>0),
+ idempotency_key TEXT NOT NULL UNIQUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_country_project_funding_project ON country_project_funding(project_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS national_project_effects (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE RESTRICT,
+ project_id BIGINT NOT NULL UNIQUE REFERENCES national_projects(id) ON DELETE RESTRICT,
+ effect_code TEXT NOT NULL,
+ asset_code TEXT,
+ magnitude_basis_points INTEGER NOT NULL CHECK(magnitude_basis_points BETWEEN 1 AND 10000),
+ activated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_national_project_effects_country ON national_project_effects(country_id,effect_code,asset_code);
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -5502,6 +5648,32 @@ jobs:
 idempotency:
   collection_key_ttl_days: 90
   upgrade_key_ttl_days: 365
+purpose_loop:
+  available_from_level: 1
+  tax_percent: 8
+  national_output_asset_for_irt_jobs: technology
+  national_output_percent_for_irt_jobs: 12
+  shift_modes:
+    safe:
+      title: "شیفت امن"
+      player_percent: 85
+      country_percent: 10
+      xp_percent: 85
+    balanced:
+      title: "شیفت متعادل"
+      player_percent: 80
+      country_percent: 20
+      xp_percent: 100
+    national:
+      title: "شیفت ملی"
+      player_percent: 65
+      country_percent: 35
+      xp_percent: 125
+    private:
+      title: "شیفت خصوصی"
+      player_percent: 95
+      country_percent: 5
+      xp_percent: 75
 ```
 
 ### `packages\core\config\data\market.yaml`
@@ -5541,47 +5713,46 @@ exit_fee_max_toman: 50000000
 ### `packages\core\config\data\missions.yaml`
 
 ```yaml
-# Daily missions. Pool is sampled per player per day - deterministic by
-# (player_id, date) so a restart never reshuffles someone's missions.
 daily:
   count_per_day: 3
   reroll_allowed: false
-
 pool:
+  - key: work_shift
+    title: "نتیجه یک شیفت کاری را دریافت کن"
+    target: 1
+    reward_toman: 18000
+    reward_xp: 35
+    min_level: 1
+  - key: national_output
+    title: "با کارت برای کشور منبع تولید کن"
+    target: 1
+    reward_toman: 22000
+    reward_xp: 45
+    min_level: 1
+  - key: pay_work_tax
+    title: "با یک شیفت پولی به خزانه مالیات برسان"
+    target: 1
+    reward_toman: 25000
+    reward_xp: 50
+    min_level: 1
+  - key: project_contribution
+    title: "در یک پروژه ملی مشارکت کن"
+    target: 1
+    reward_toman: 30000
+    reward_xp: 60
+    min_level: 1
   - key: claim_daily
-    title: "جایزه روزانه‌تو بگیر"
+    title: "پاداش روزانه را برای حفظ زنجیره بگیر"
     target: 1
-    reward_toman: 15000
-    reward_xp: 30
+    reward_toman: 12000
+    reward_xp: 25
     min_level: 1
-
-  - key: check_profile
-    title: "یه سر به پروفایلت بزن"
-    target: 1
-    reward_toman: 8000
-    reward_xp: 15
-    min_level: 1
-
   - key: earn_xp_100
-    title: "۱۰۰ تا XP جمع کن"
+    title: "از فعالیت واقعی ۱۰۰ تجربه کسب کن"
     target: 100
     reward_toman: 40000
     reward_xp: 50
     min_level: 2
-
-  - key: group_active
-    title: "تو یه گروه فعال باش"
-    target: 1
-    reward_toman: 20000
-    reward_xp: 35
-    min_level: 2
-
-  - key: streak_keeper
-    title: "استریکتو نگه دار"
-    target: 1
-    reward_toman: 25000
-    reward_xp: 40
-    min_level: 3
 ```
 
 ### `packages\core\config\data\national_project.yaml`
@@ -5589,15 +5760,41 @@ pool:
 ```yaml
 projects:
   national_storage:
+    title: "انبار ملی"
     once_per_country: true
-    requirements:
-      IRT: 2500000
-      food: 250
-      minerals: 200
+    requirements: {IRT: 2500000, food: 250, minerals: 200}
     completion:
-      country_storage_capacity_bonus_fraction: 0.25
+      effect_code: work_output_bonus
+      effect_asset: all
+      magnitude_basis_points: 500
       contributor_reward_xp: 250
-
+  power_grid:
+    title: "شبکه برق سراسری"
+    once_per_country: true
+    requirements: {IRT: 3500000, oil: 180, minerals: 300}
+    completion:
+      effect_code: work_output_bonus
+      effect_asset: energy
+      magnitude_basis_points: 1500
+      contributor_reward_xp: 300
+  research_university:
+    title: "دانشگاه پژوهشی"
+    once_per_country: true
+    requirements: {IRT: 4000000, energy: 250, minerals: 180}
+    completion:
+      effect_code: work_output_bonus
+      effect_asset: technology
+      magnitude_basis_points: 1500
+      contributor_reward_xp: 350
+  food_network:
+    title: "شبکه امنیت غذایی"
+    once_per_country: true
+    requirements: {IRT: 3000000, energy: 180, minerals: 220}
+    completion:
+      effect_code: work_output_bonus
+      effect_asset: food
+      magnitude_basis_points: 1500
+      contributor_reward_xp: 300
 contribution:
   minimum_amount: 1
   maximum_amount_per_request: 1000000
@@ -5605,10 +5802,10 @@ contribution:
   citizenship_required: true
   use_ledger_for_every_asset: true
   require_idempotency_key: true
-
 permissions:
   start_without_president: citizen
   start_with_president: president
+  treasury_funding: president
 ```
 
 ### `packages\core\config\data\news.yaml`
@@ -5890,10 +6087,10 @@ from packages.core.db import pool as dbpool
 logger = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-# Releases before 0008 were distributed without an immutable migration manifest.
-# Some installations therefore have the same legacy version with a different
-# checksum. Never re-run those migrations: accept the recorded installation and
-# keep strict checksum enforcement for every migration released from 0008 onward.
+# Migrations through 0013 predate the repository-wide text normalization used
+# by this recovered distribution. Existing databases may therefore contain the
+# same migration history with different raw-text checksums. Never re-run those
+# versions: preserve their records and enforce immutable checksums from 0014 on.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0001_core_schema",
     "0002_progression",
@@ -5902,6 +6099,12 @@ LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0005_life_world_hardening",
     "0006_phase3_phase4_complete",
     "0007_unified_ui_onboarding",
+    "0008_world_access_lifecycle",
+    "0009_ads_governance_moderation",
+    "0010_stars_subscriptions_ad_marketplace",
+    "0011_population_channels_migration",
+    "0012_reliability_live_market_engagement",
+    "0013_country_identity_candles_realism",
 })
 
 _BOOTSTRAP = """
@@ -6213,6 +6416,53 @@ __all__ = [
     "progression_repo",
     "project_repo",
 ]
+```
+
+### `packages\core\repositories\action_outbox_repo.py`
+
+```python
+"""Transactional Telegram action outbox used by admin workflows."""
+from __future__ import annotations
+from typing import Any
+from uuid import UUID
+import asyncpg
+
+async def enqueue(conn: asyncpg.Connection, key: str, bot_name: str, action: str,
+                  chat_id: int, payload: dict[str, Any]) -> bool:
+    row = await conn.fetchval("""
+        INSERT INTO telegram_action_outbox
+          (idempotency_key, bot_name, action, chat_id, payload)
+        VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (idempotency_key) DO NOTHING RETURNING id
+    """, key, bot_name, action, chat_id, payload)
+    return row is not None
+
+async def claim(conn: asyncpg.Connection, token: UUID, limit: int = 20,
+                lease: int = 90, max_attempts: int = 8) -> list[asyncpg.Record]:
+    return list(await conn.fetch("""
+        WITH picked AS (
+          SELECT id FROM telegram_action_outbox
+          WHERE completed_at IS NULL AND attempts < $3 AND available_at <= now()
+            AND (processing_until IS NULL OR processing_until < now())
+          ORDER BY created_at,id FOR UPDATE SKIP LOCKED LIMIT $2
+        )
+        UPDATE telegram_action_outbox o SET processing_token=$1,
+          processing_until=now()+($4::double precision*interval '1 second'),
+          attempts=attempts+1
+        FROM picked WHERE o.id=picked.id RETURNING o.*
+    """, token, limit, max_attempts, lease))
+
+async def completed(conn: asyncpg.Connection, row_id: int, token: UUID) -> None:
+    await conn.execute("""UPDATE telegram_action_outbox SET completed_at=now(),
+      processing_token=NULL,processing_until=NULL,last_error_code=NULL
+      WHERE id=$1 AND processing_token=$2""", row_id, token)
+
+async def failed(conn: asyncpg.Connection, row_id: int, token: UUID,
+                 error: str, delay: int) -> None:
+    await conn.execute("""UPDATE telegram_action_outbox SET processing_token=NULL,
+      processing_until=NULL,last_error_code=$3,
+      available_at=now()+($4::double precision*interval '1 second')
+      WHERE id=$1 AND processing_token=$2""", row_id, token, error[:64], delay)
 ```
 
 ### `packages\core\repositories\admin_repo.py`
@@ -7378,6 +7628,19 @@ async def level_up(conn: asyncpg.Connection, player_id: int, kind: str) -> None:
         f"UPDATE player_jobs SET {column} = {column} + 1 WHERE player_id = $1",  # noqa: S608
         player_id,
     )
+
+async def set_shift_mode(conn: asyncpg.Connection, player_id: int, mode: str) -> None:
+    await conn.execute(
+        "UPDATE player_jobs SET shift_mode=$2,updated_at=now() WHERE player_id=$1",
+        player_id, mode,
+    )
+
+
+async def country_for_player(conn: asyncpg.Connection, player_id: int) -> asyncpg.Record | None:
+    return await conn.fetchrow(
+        """SELECT c.id,c.name FROM citizenships cs JOIN countries c ON c.id=cs.country_id
+        WHERE cs.player_id=$1 AND cs.is_active FOR SHARE OF c""", player_id
+    )
 ```
 
 ### `packages\core\repositories\progression_repo.py`
@@ -7565,6 +7828,27 @@ async def complete_if_ready(conn: asyncpg.Connection, project_id: int) -> bool:
         project_id,
     )
     return completed is not None
+async def completed_keys(country_id: int) -> set[str]:
+    rows=await db.fetch("SELECT project_key FROM national_projects WHERE country_id=$1",country_id)
+    return {str(row["project_key"]) for row in rows}
+
+async def contributors(conn: asyncpg.Connection, project_id: int) -> list[int]:
+    rows=await conn.fetch("SELECT DISTINCT player_id FROM project_contributions WHERE project_id=$1",project_id)
+    return [int(row["player_id"]) for row in rows]
+
+async def claim_country_funding(conn: asyncpg.Connection, project_id: int, actor: int,
+                                asset: str, amount: int, key: str) -> bool:
+    value=await conn.fetchval("""INSERT INTO country_project_funding(project_id,actor_player_id,asset_code,amount,idempotency_key)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id""",project_id,actor,asset,amount,key)
+    if value is None:return False
+    await conn.execute("""UPDATE project_requirements SET contributed_amount=LEAST(required_amount,contributed_amount+$3)
+      WHERE project_id=$1 AND asset_code=$2""",project_id,asset,amount)
+    return True
+
+async def apply_effect(conn: asyncpg.Connection, project_id: int, country_id: int,
+                       code: str, asset: str | None, magnitude: int) -> None:
+    await conn.execute("""INSERT INTO national_project_effects(country_id,project_id,effect_code,asset_code,magnitude_basis_points)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id) DO NOTHING""",country_id,project_id,code,asset,magnitude)
 ```
 
 ### `packages\core\repositories\ui_state_repo.py`
@@ -7722,6 +8006,55 @@ __all__ = [
     "unlocks",
     "xp",
 ]
+```
+
+### `packages\core\services\action_outbox.py`
+
+```python
+"""Retry-safe delivery of Telegram actions without extra infrastructure."""
+from __future__ import annotations
+import logging
+from typing import Any
+from uuid import uuid4
+from telegram import Bot, LabeledPrice
+from packages.core import db
+from packages.core.repositories import action_outbox_repo
+logger = logging.getLogger(__name__)
+
+async def enqueue(key: str, bot_name: str, action: str, chat_id: int,
+                  payload: dict[str, Any], *, conn=None) -> bool:
+    if conn is not None:
+        return await action_outbox_repo.enqueue(conn,key,bot_name,action,chat_id,payload)
+    async with db.transaction() as owned:
+        return await action_outbox_repo.enqueue(owned,key,bot_name,action,chat_id,payload)
+
+async def deliver_batch(life_bot: Bot, world_bot: Bot) -> dict[str,int]:
+    token=uuid4(); stats={"delivered":0,"failed":0}
+    async with db.transaction() as conn:
+        rows=await action_outbox_repo.claim(conn,token)
+    for row in rows:
+        try:
+            bot=life_bot if row["bot_name"]=="telelife" else world_bot
+            payload=row["payload"]
+            if row["action"]=="send_message":
+                await bot.send_message(chat_id=row["chat_id"],text=str(payload["text"]))
+            elif row["action"]=="send_invoice":
+                await bot.send_invoice(chat_id=row["chat_id"],title=str(payload["title"]),
+                    description=str(payload["description"]),payload=str(payload["invoice_payload"]),
+                    currency="XTR",prices=[LabeledPrice(str(payload["label"]),int(payload["stars"]))],
+                    provider_token="")
+            else: raise ValueError("unsupported_action")
+        except Exception as exc:
+            logger.warning("telegram action delivery failed",extra={"extra_fields":{"row_id":row["id"],"error":type(exc).__name__}})
+            delay=min(3600,30*(2**min(int(row["attempts"])-1,7)))
+            async with db.transaction() as conn:
+                await action_outbox_repo.failed(conn,row["id"],token,type(exc).__name__,delay)
+            stats["failed"]+=1
+        else:
+            async with db.transaction() as conn:
+                await action_outbox_repo.completed(conn,row["id"],token)
+            stats["delivered"]+=1
+    return stats
 ```
 
 ### `packages\core\services\admin.py`
@@ -7972,9 +8305,24 @@ async def buy_with_treasury(chat_id:int,player_id:int)->int:
   return price
 
 async def approve_ad(ad_id:int,actor:str,note:str|None=None):
- return await db.fetchrow("UPDATE ad_requests SET status='approved_unpaid',approved_by=$2,admin_note=$3,approved_at=now(),payment_expires_at=now()+interval '48 hours',updated_at=now() WHERE id=$1 AND status IN ('pending_review','changes_requested') RETURNING *",ad_id,actor,note)
+ from packages.core.repositories import action_outbox_repo
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("UPDATE ad_requests SET status='approved_unpaid',approved_by=$2,admin_note=$3,approved_at=now(),payment_expires_at=now()+interval '48 hours',updated_at=now() WHERE id=$1 AND status IN ('pending_review','changes_requested') RETURNING *",ad_id,actor,note)
+  if not row:return None
+  owner=await conn.fetchrow("SELECT p.telegram_id FROM players p WHERE p.id=$1",row["requester_player_id"])
+  if not owner:raise ValueError("player_not_found")
+  payload=f"ad:{ad_id}:{int(owner['telegram_id'])}:{uuid4().hex}"
+  await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('advertisement',$1,$2,$3,$4,$5)",ad_id,int(owner["telegram_id"]),int(row["price_stars"]),payload,row["payment_expires_at"])
+  await action_outbox_repo.enqueue(conn,f"ad-approval-invoice:{ad_id}:{payload}","telelife","send_invoice",int(owner["telegram_id"]),{"title":f"پرداخت تبلیغ: {row['title']}","description":"درخواست تأیید شد. این صورتحساب ۴۸ ساعت اعتبار دارد.","invoice_payload":payload,"label":"بسته تبلیغ","stars":int(row["price_stars"])})
+  return row
 async def reject_ad(ad_id:int,actor:str,note:str):
- return await db.fetchrow("UPDATE ad_requests SET status='changes_requested',approved_by=$2,admin_note=$3,updated_at=now() WHERE id=$1 AND status IN ('pending_review','approved_unpaid') RETURNING *",ad_id,actor,note)
+ from packages.core.repositories import action_outbox_repo
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("UPDATE ad_requests SET status='changes_requested',approved_by=$2,admin_note=$3,updated_at=now() WHERE id=$1 AND status IN ('pending_review','approved_unpaid') RETURNING *",ad_id,actor,note)
+  if not row:return None
+  owner=await conn.fetchrow("SELECT p.telegram_id FROM players p WHERE p.id=$1",row["requester_player_id"])
+  if owner:await action_outbox_repo.enqueue(conn,f"ad-revision:{ad_id}:{row['updated_at'].isoformat()}","telelife","send_message",int(owner["telegram_id"]),{"text":f"✏️ درخواست تبلیغ #{ad_id} نیاز به اصلاح دارد:\n\n{note}\n\nبرای اصلاح، درخواست تازه‌ای از بخش تبلیغات ثبت کن."})
+  return row
 
 async def list_ads(limit:int=100):
  return await db.fetch("""SELECT a.id,a.package_code,a.channel,a.title,a.description,a.target_url,a.image_mime,a.status,a.price_stars,a.impressions_planned,a.campaign_hours,a.admin_note,a.requested_start_at,a.payment_expires_at,a.paid_at,a.first_delivery_at,a.created_at,p.telegram_id,p.first_name,
@@ -8421,6 +8769,30 @@ async def report(country_id: int, action: str, asset: str, amount: int) -> bool:
             destination,
         )
         return True
+```
+
+### `packages\core\services\country_objectives.py`
+
+```python
+"""Daily country objective driven by real work claims."""
+from __future__ import annotations
+from dataclasses import dataclass
+from packages.core import db
+
+@dataclass(frozen=True,slots=True)
+class Objective:
+    target:int
+    progress:int
+    contributors:int
+    complete:bool
+
+async def today(country_id:int)->Objective:
+    citizens=int(await db.fetchval("SELECT count(*) FROM citizenships WHERE country_id=$1 AND is_active",country_id) or 0)
+    target=max(3,citizens*2)
+    row=await db.fetchrow("""SELECT count(*) claims,count(DISTINCT player_id) people FROM work_claims
+      WHERE country_id=$1 AND claimed_at>=date_trunc('day',now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'""",country_id)
+    progress=int(row['claims'] or 0);people=int(row['people'] or 0)
+    return Objective(target,min(progress,target),people,progress>=target)
 ```
 
 ### `packages\core\services\country_realism.py`
@@ -9061,6 +9433,30 @@ async def sync()->dict[str,object]:
         raise
 ```
 
+### `packages\core\services\maintenance.py`
+
+```python
+"""Bounded retention and stale-run recovery suitable for free database plans."""
+from __future__ import annotations
+from packages.core import db
+
+async def minute_tick() -> dict[str,int]:
+    stale=await db.execute("""UPDATE scheduler_job_runs SET status='failed',finished_at=now(),
+      error_type='StaleRun',error_message='Recovered after process interruption'
+      WHERE status='running' AND started_at < now()-interval '20 minutes'""")
+    # Small deletes avoid long locks and cap growth without a paid monitoring stack.
+    jobs=await db.execute("""DELETE FROM scheduler_job_runs WHERE id IN (
+      SELECT id FROM scheduler_job_runs WHERE started_at < now()-interval '30 days'
+      ORDER BY started_at LIMIT 200)""")
+    outbox=await db.execute("""DELETE FROM telegram_action_outbox WHERE id IN (
+      SELECT id FROM telegram_action_outbox WHERE completed_at < now()-interval '30 days'
+      ORDER BY completed_at LIMIT 200)""")
+    def count(tag:str)->int:
+        try:return int(tag.rsplit(' ',1)[-1])
+        except (ValueError,IndexError):return 0
+    return {"stale_runs":count(stale),"jobs_pruned":count(jobs),"actions_pruned":count(outbox)}
+```
+
 ### `packages\core\services\market_chart.py`
 
 ```python
@@ -9404,6 +9800,8 @@ async def start(
     ):
         raise PermissionError("citizen_required")
 
+    projects=get_config().section("national_project.projects")
+    if key not in projects:raise ValueError("invalid_project")
     requirements: dict[str, Any] = get_config().section(
         f"national_project.projects.{key}.requirements"
     )
@@ -9481,17 +9879,43 @@ async def contribute(
         completed = await project_repo.complete_if_ready(conn, project_id)
 
     if completed:
-        reward = get_config().int_(
-            f"national_project.projects.{project_key}.completion.contributor_reward_xp"
-        )
-        await xp.grant(
-            player_id,
-            "national_project",
-            idempotency_key=f"project:{project_id}:xp:{player_id}",
-            amount=reward,
-        )
-
+        completion=get_config().section(f"national_project.projects.{project_key}.completion")
+        async with db.transaction() as conn:
+            project=await project_repo.lock(conn,project_id)
+            await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
+            people=await project_repo.contributors(conn,project_id)
+        reward=int(completion["contributor_reward_xp"])
+        for contributor in people:
+            await xp.grant(contributor,"national_project",idempotency_key=f"project:{project_id}:xp:{contributor}",amount=reward)
+    if accepted:
+        from packages.core.services import missions
+        await missions.report_progress(player_id,"project_contribution")
     return accepted, completed
+
+async def treasury_contribute(project_id:int,player_id:int,asset:str,amount:int,key:str)->tuple[int,bool]:
+    if amount<=0:raise ValueError("amount_must_be_positive")
+    async with db.transaction() as conn:
+        project=await project_repo.lock(conn,project_id)
+        if not project or project["status"]!="active":raise ValueError("project_not_active")
+        country=await ledger_repo.lock_country(conn,int(project["country_id"]))
+        if not country or int(country["president_player_id"] or 0)!=player_id:raise PermissionError("president_required")
+        remaining=await project_repo.remaining(conn,project_id,asset)
+        if remaining is None:raise ValueError("asset_not_required")
+        accepted=min(amount,remaining)
+        if accepted<=0:return 0,False
+        if not await project_repo.claim_country_funding(conn,project_id,player_id,asset,accepted,key):return 0,False
+        balance=await ledger_repo.change_country(conn,int(project["country_id"]),asset,-accepted)
+        await ledger_repo.insert(conn,player_id=player_id,country_id=int(project["country_id"]),key=f"{key}:country",reason="project_treasury_funding",asset=asset,account=ledger_repo.country_account(asset),amount=-accepted,balance=balance,metadata={"project_id":project_id})
+        completed=await project_repo.complete_if_ready(conn,project_id)
+    if completed:
+        completion=get_config().section(f"national_project.projects.{project['project_key']}.completion")
+        async with db.transaction() as conn:
+            await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
+    return accepted,completed
+
+async def available(country_id:int)->list[tuple[str,str]]:
+    projects=get_config().section("national_project.projects");done=await project_repo.completed_keys(country_id)
+    return [(key,str(spec["title"])) for key,spec in projects.items() if key not in done]
 ```
 
 ### `packages\core\services\news.py`
@@ -9782,7 +10206,7 @@ async def choose(player_id: int, job: str) -> bool:
     player = await db.fetchrow("SELECT level FROM players WHERE id=$1", player_id)
     if player is None:
         raise ValueError("player_not_found")
-    if int(player["level"]) < 5:
+    if int(player["level"]) < get_config().int_("jobs.purpose_loop.available_from_level"):
         raise ValueError("job_locked")
     jobs = get_config().section("jobs.jobs")
     if job not in jobs:
@@ -9880,6 +10304,82 @@ async def upgrade(player_id: int, kind: str, key: str, at: datetime | None = Non
         )
         await production_repo.level_up(conn, player_id, kind)
         return target
+@dataclass(frozen=True, slots=True)
+class WorkReceipt:
+    amount: int
+    xp: int
+    asset: str
+    tax_toman: int
+    country_amount: int
+    country_asset: str | None
+    country_name: str | None
+    shift_mode: str
+
+
+def shift_modes() -> dict[str, dict[str, object]]:
+    return get_config().section("jobs.purpose_loop.shift_modes")
+
+
+async def choose_shift(player_id: int, mode: str) -> str:
+    modes=shift_modes()
+    if mode not in modes:raise ValueError("invalid_shift")
+    async with db.transaction() as conn:
+        row=await production_repo.lock(conn,player_id)
+        if not row:raise ValueError("job_not_found")
+        accrual=accrue(row,datetime.now(UTC))
+        await production_repo.checkpoint(conn,player_id,accrual.stored,datetime.now(UTC))
+        await production_repo.set_shift_mode(conn,player_id,mode)
+    return mode
+
+
+async def collect_purposeful(player_id: int, key: str, at: datetime | None = None) -> WorkReceipt:
+    """Claim one accumulated shift and atomically split its impact."""
+    now=at or datetime.now(UTC);cfg=get_config()
+    async with db.transaction() as conn:
+        row=await production_repo.lock(conn,player_id)
+        if not row:raise ValueError("job_not_found")
+        existing=await conn.fetchrow("SELECT * FROM work_claims WHERE idempotency_key=$1",key)
+        if existing:
+            return WorkReceipt(0,0,str(existing['asset_code']),0,0,None,None,str(existing['shift_mode']))
+        accrual=accrue(row,now);gross=accrual.stored
+        if gross<cfg.int_("jobs.production.minimum_collection_amount"):
+            return WorkReceipt(0,0,str(row['output_asset_code']),0,0,None,None,str(row.get('shift_mode') or 'balanced'))
+        mode=str(row.get('shift_mode') or 'balanced');spec=cfg.section(f"jobs.purpose_loop.shift_modes.{mode}")
+        asset=str(row['output_asset_code']);country=await production_repo.country_for_player(conn,player_id)
+        player_pct=int(spec['player_percent']);country_pct=int(spec['country_percent']) if country else 0
+        if country:
+            bonus=int(await conn.fetchval("""SELECT COALESCE(sum(magnitude_basis_points),0) FROM national_project_effects
+              WHERE country_id=$1 AND effect_code='work_output_bonus' AND (asset_code=$2 OR asset_code='all')""",int(country['id']),asset) or 0)
+            gross=floor(gross*(10000+min(bonus,5000))/10000)
+        player_amount=max(1,floor(gross*player_pct/100));country_amount=max(0,floor(gross*country_pct/100))
+        tax=0;country_asset=asset if country else None
+        if asset=='IRT':
+            tax=floor(player_amount*cfg.int_("jobs.purpose_loop.tax_percent")/100) if country else 0
+            player_amount-=tax
+            country_asset=str(cfg.get("jobs.purpose_loop.national_output_asset_for_irt_jobs")) if country else None
+            country_amount=floor(gross*cfg.int_("jobs.purpose_loop.national_output_percent_for_irt_jobs")/100) if country else 0
+        balance=await ledger_repo.change_player(conn,player_id,asset,player_amount)
+        await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:player",reason="purposeful_work_player",asset=asset,account=ledger_repo.player_account(asset),amount=player_amount,balance=balance,metadata={"job":row['job_code'],"shift":mode,"gross":gross})
+        if country and tax:
+            treasury=await ledger_repo.change_country(conn,int(country['id']),'IRT',tax)
+            await ledger_repo.insert(conn,player_id=player_id,country_id=int(country['id']),key=f"{key}:tax",reason="work_tax",asset='IRT',account='treasury',amount=tax,balance=treasury,metadata={"job":row['job_code'],"shift":mode})
+        if country and country_amount and country_asset:
+            national=await ledger_repo.change_country(conn,int(country['id']),country_asset,country_amount)
+            await ledger_repo.insert(conn,player_id=player_id,country_id=int(country['id']),key=f"{key}:country",reason="national_work_output",asset=country_asset,account=ledger_repo.country_account(country_asset),amount=country_amount,balance=national,metadata={"job":row['job_code'],"shift":mode})
+        fraction=gross/accrual.capacity if accrual.capacity else 0
+        award=floor(cfg.int_("jobs.production.collection_xp_at_full_capacity")*fraction*int(spec['xp_percent'])/100) if fraction>=cfg.float_("jobs.production.minimum_collection_fraction_for_xp") else 0
+        await conn.execute("""INSERT INTO work_claims(idempotency_key,player_id,country_id,job_code,shift_mode,asset_code,gross_amount,player_amount,country_amount,tax_toman,xp_awarded)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",key,player_id,int(country['id']) if country else None,row['job_code'],mode,asset,gross,player_amount,country_amount,tax,award)
+        await conn.execute("""UPDATE player_jobs SET stored_amount=0,production_updated_at=$2,last_claim_at=$2,total_claims=total_claims+1,
+          total_tax_toman=total_tax_toman+$3,total_country_output=total_country_output+$4,updated_at=now() WHERE player_id=$1""",player_id,now,tax,country_amount)
+    if award:
+        result=await xp.grant(player_id,"purposeful_work",idempotency_key=f"{key}:xp",amount=award);award=result.granted
+    from packages.core.services import missions
+    await missions.report_progress(player_id,"work_shift")
+    if country_amount:await missions.report_progress(player_id,"national_output")
+    if tax:await missions.report_progress(player_id,"pay_work_tax")
+    if award:await missions.report_progress(player_id,"earn_xp_100",award)
+    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode)
 ```
 
 ### `packages\core\services\progression.py`
@@ -11113,6 +11613,51 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - Syntax تمام فایل‌های Python و تست‌های واحد اقتصاد/URL/بسته‌ها بررسی شد.
 ```
 
+### `RELEASE_HARDENING_FA.md`
+
+```markdown
+# انتشار Hardening رایگان TeleLife
+
+این نسخه بدون سرویس پولی جدید روی همان معماری تک‌پردازه اجرا می‌شود.
+
+## تغییرات
+- سازگاری فقط‌خواندنی checksum برای تاریخچه بازیابی‌شده `0001` تا `0013`؛ مهاجرت `0014` و نسخه‌های آینده سخت‌گیر می‌مانند.
+- انتقال صدور فاکتور و اعلان اصلاح تبلیغ از درخواست HTTP به Outbox تراکنشی با retry و lease.
+- افزودن migration جدید و افزایشی `0014_free_tier_hardening.sql`؛ هیچ migration قدیمی تغییر داده نشده است.
+- الزام JSON برای APIهای تغییردهنده مدیریت و حذف routeهای فرم قدیمی.
+- تقویت Origin/Referer و هدرهای امنیتی بدون نیاز به سرویس خارجی.
+- بازیابی jobهای گیرکرده و پاک‌سازی محدود و تدریجی تاریخچه قدیمی برای کنترل حجم دیتابیس رایگان.
+- ایندکس‌های reconciliation پرداخت و عملیات.
+
+## استقرار
+همان متغیرهای محیطی قبلی کافی‌اند. دستور اجرای فعلی را تغییر ندهید. هنگام اولین اجرای این نسخه فقط migration `0014` باید اعمال شود؛ `0001` تا `0013` دوباره اجرا نمی‌شوند.
+
+## نکته پایداری
+Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ارسال پیام کلید idempotency سمت سرور ارائه نمی‌کند؛ lease و ثبت تکمیل احتمال تکرار را کم می‌کند، اما قطع پردازش دقیقاً پس از ارسال و پیش از ثبت تکمیل می‌تواند پیام را دوباره ارسال کند. عملیات مالی settlement در دیتابیس همچنان قفل و idempotent است.
+```
+
+### `RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md`
+
+```markdown
+# وضعیت توسعه: پروژه‌های ملی و مأموریت‌های معنادار — انجام شد
+
+تاریخ: ۲۰۲۶-۰۷-۲۷
+
+## انجام‌شده
+- چهار پروژه ملی واقعی: انبار ملی، شبکه برق، دانشگاه پژوهشی و شبکه امنیت غذایی.
+- هر کشور می‌تواند پروژه‌ها را به‌ترتیب و فقط یک‌بار تکمیل کند.
+- پروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.
+- مشارکت شخصی با پول و منابع حفظ و حسابرسی می‌شود.
+- رهبر می‌تواند با دارایی عمومی کشور پروژه را تأمین کند؛ برداشت از خزانه/منابع اتمیک و Ledgerدار است.
+- XP تکمیل پروژه به تمام مشارکت‌کنندگان واقعی می‌رسد، نه فقط آخرین نفر.
+- مأموریت‌های نمایشی حذف و با مأموریت کار، تولید ملی، مالیات و مشارکت پروژه جایگزین شدند.
+- پیشرفت مأموریت از رویداد واقعی Claim و Contribution تغذیه می‌شود.
+- هدف روزانه کشوری بر اساس تعداد شهروندان و شیفت‌های واقعی محاسبه و در صفحه پروژه نشان داده می‌شود.
+- migration جدید `0016_national_projects_and_missions.sql` افزایشی است.
+- migrationهای `0001` تا `0015` دست‌نخورده‌اند.
+- هیچ سرویس پولی جدید اضافه نشده است.
+```
+
 ### `RELEASE_NOTES_FA.md`
 
 ```markdown
@@ -11156,6 +11701,39 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - باند نوسان، شاخص سلامت، Freeze اضطراری، تثبیت دقیقه‌ای و تاریخچه قیمت
 - حذف فرمان‌های متنی کاربری؛ فقط `/start` به‌عنوان نقطه ورود الزامی تلگرام باقی مانده است
 - ناوبری Life و World بر پایه Inline Keyboard رنگی و ویرایش همان پیام
+```
+
+### `RELEASE_PURPOSEFUL_WORK_FA.md`
+
+```markdown
+# وضعیت توسعه: حلقه کار هدفمند — انجام شد
+
+تاریخ انتشار: ۲۰۲۶-۰۷-۲۷
+
+## این بخش تکمیل شده است
+
+- شغل‌ها از **سطح ۱** قابل انتخاب‌اند.
+- تولید تنبل و ظرفیت انبار قبلی حفظ شده است.
+- چهار نوع شیفت اضافه شد: امن، متعادل، ملی و خصوصی.
+- دریافت نتیجه شیفت در یک تراکنش انجام می‌شود.
+- سهم شخصی بازیکن ثبت می‌شود.
+- برای مشاغل پولی، مالیات به خزانه کشور واریز می‌شود.
+- برای مشاغل منابعی، بخشی از تولید مستقیماً به منابع کشور می‌رود.
+- مشاغل پولی برای کشور فناوری تولید می‌کنند تا اثر ملی داشته باشند.
+- تمام تغییرات اقتصادی در Ledger با کلید یکتا ثبت می‌شوند.
+- جدول `work_claims` برای حسابرسی هر Claim اضافه شد.
+- Callback تکراری امکان Mint دوباره همان Claim را ندارد.
+- نتیجه کار به‌صورت شفاف شامل سهم بازیکن، مالیات، سهم کشور و XP نمایش داده می‌شود.
+- اعداد Balance در `jobs.yaml` قابل تنظیم‌اند.
+- هیچ زیرساخت یا سرویس پولی جدیدی اضافه نشده است.
+
+## Migration
+
+فایل جدید `0015_purposeful_work_loop.sql` افزایشی است. فایل‌های `0001` تا `0014` تغییر نکرده‌اند.
+
+## بخش بعدی پیشنهادی
+
+پروژه‌های ملی و مأموریت‌های روزانه معنادار که از رویدادهای واقعی کار، مالیات و تولید کشور تغذیه شوند.
 ```
 
 ### `RELEASE_SCALING_MIGRATION_FA.md`
@@ -11888,6 +12466,44 @@ def test_persian_digits_applied():
     assert "5" not in fmt.number(12345)
 ```
 
+### `tests\test_free_tier_hardening.py`
+
+```python
+"""Source contracts for the no-cost hardening release."""
+from pathlib import Path
+
+ROOT=Path(__file__).resolve().parents[1]
+def text(path:str)->str:return (ROOT/path).read_text(encoding="utf-8")
+
+def test_recovered_history_ends_at_0013_and_0014_is_strict():
+    source=text("packages/core/db/migrator.py")
+    legacy=source.split("LEGACY_CHECKSUM_VERSIONS = frozenset({",1)[1].split("})",1)[0]
+    assert '"0013_country_identity_candles_realism"' in legacy
+    assert '"0014_free_tier_hardening"' not in legacy
+    assert "Create a new migration instead of editing history" in source
+
+def test_admin_telegram_calls_use_transactional_outbox():
+    router=text("apps/admin/routers/country_admin.py")
+    commerce=text("packages/core/services/commerce.py")
+    assert "send_invoice(" not in router
+    assert "send_message(" not in router
+    assert "action_outbox_repo.enqueue" in commerce
+    assert "async with db.transaction() as conn" in commerce
+
+def test_admin_mutations_are_json_only():
+    app=text("apps/admin/main.py")
+    router=text("apps/admin/routers/country_admin.py")
+    assert 'content_type != "application/json"' in app
+    assert "Form(" not in router
+
+def test_free_tier_jobs_are_bounded():
+    maintenance=text("packages/core/services/maintenance.py")
+    assert "LIMIT 200" in maintenance
+    assert "interval '30 days'" in maintenance
+    scheduler=text("apps/scheduler/main.py")
+    assert '"telegram_actions"' in scheduler and '"maintenance"' in scheduler
+```
+
 ### `tests\test_glass_buttons.py`
 
 ```python
@@ -12054,13 +12670,18 @@ def test_checksum_is_stable():
     b = migrator._checksum("SELECT 1;")
     assert a == b and len(a) == 16
 
-def test_only_pre_manifest_migrations_are_legacy_compatible():
+def test_only_pre_normalization_migrations_are_legacy_compatible():
     assert migrator.LEGACY_CHECKSUM_VERSIONS == {
         "0001_core_schema", "0002_progression", "0003_country_layer",
         "0004_admin_command_center", "0005_life_world_hardening",
         "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
+        "0008_world_access_lifecycle", "0009_ads_governance_moderation",
+        "0010_stars_subscriptions_ad_marketplace",
+        "0011_population_channels_migration",
+        "0012_reliability_live_market_engagement",
+        "0013_country_identity_candles_realism",
     }
-    assert "0008_world_access_lifecycle" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0014_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
 
 
 def test_new_migrations_remain_checksum_strict():
@@ -12102,6 +12723,37 @@ def test_level_gating_limits_the_pool():
     high = select_for(12345, 10, DAY)
     assert len(low) <= len(high)
     assert all(int(m.get("min_level", 1)) <= 1 for m in low)
+```
+
+### `tests\test_national_projects_missions_release.py`
+
+```python
+from pathlib import Path
+from packages.core.config import get_config
+from packages.core.services import missions
+
+def test_four_useful_projects_have_real_effects():
+    projects=get_config().section('national_project.projects')
+    assert set(projects)=={'national_storage','power_grid','research_university','food_network'}
+    for spec in projects.values():
+        assert spec['requirements'] and int(spec['completion']['magnitude_basis_points'])>0
+
+def test_missions_are_action_based_not_navigation_based():
+    keys={x['key'] for x in get_config().get('missions.pool')}
+    assert {'work_shift','national_output','pay_work_tax','project_contribution'}<=keys
+    assert 'check_profile' not in keys
+
+def test_daily_selection_remains_deterministic():
+    from datetime import date
+    a=[x['key'] for x in missions.select_for(42,1,date(2026,7,27))]
+    b=[x['key'] for x in missions.select_for(42,1,date(2026,7,27))]
+    assert a==b and len(a)==3
+
+def test_migration_is_additive_and_release_declared():
+    sql=Path('migrations/0016_national_projects_and_missions.sql').read_text()
+    assert 'DROP TABLE' not in sql and 'DROP COLUMN' not in sql
+    assert 'national_project_effects' in sql and 'country_project_funding' in sql
+    assert Path('RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md').exists()
 ```
 
 ### `tests\test_outbox_repo.py`
@@ -12297,6 +12949,41 @@ def test_required_runtime_directories_exist():
     assert (ROOT / "apps/admin/templates").is_dir()
     assert (ROOT / "apps/admin/static").is_dir()
     assert (ROOT / "migrations").is_dir()
+```
+
+### `tests\test_purposeful_work_release.py`
+
+```python
+from datetime import UTC,datetime,timedelta
+from pathlib import Path
+from packages.core.config import get_config
+from packages.core.services.production import accrue,shift_modes
+
+class R(dict):
+    __getattr__=dict.__getitem__
+
+def test_jobs_are_available_at_level_one_by_policy():
+    assert get_config().int_("jobs.purpose_loop.available_from_level")==1
+
+def test_shift_modes_are_balanced_and_bounded():
+    modes=shift_modes();assert set(modes)=={"safe","balanced","national","private"}
+    for spec in modes.values():
+        assert 0<int(spec["player_percent"])<=100
+        assert 0<=int(spec["country_percent"])<=100
+        assert 0<int(spec["xp_percent"])<=200
+
+def test_national_shift_contributes_more_than_private():
+    modes=shift_modes();assert int(modes["national"]["country_percent"])>int(modes["private"]["country_percent"])
+    assert int(modes["national"]["player_percent"])<int(modes["private"]["player_percent"])
+
+def test_existing_accrual_behavior_is_preserved():
+    now=datetime.now(UTC);row=R(job_code="farmer",production_level=1,storage_level=1,stored_amount=0,production_updated_at=now-timedelta(hours=2))
+    result=accrue(row,now);assert result.stored==20 and result.capacity==60
+
+def test_release_is_declared_done_and_migration_is_additive():
+    assert Path("RELEASE_PURPOSEFUL_WORK_FA.md").exists()
+    sql=Path("migrations/0015_purposeful_work_loop.sql").read_text()
+    assert "DROP TABLE" not in sql and "work_claims" in sql and "IF NOT EXISTS" in sql
 ```
 
 ### `tests\test_scaling_migration.py`

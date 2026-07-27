@@ -48,8 +48,8 @@ async def trade(player_id:int,side:str,cents:int,key:str)->TradeResult:
         fee=(gross*cfg.int_("market.usd.fee_basis_points")+9999)//10000
         wallet_delta=-(gross+fee) if side=="buy" else gross-fee
         usd_delta=cents if side=="buy" else -cents
-        changed=await conn.fetchrow("""UPDATE players SET wallet_toman=wallet_toman+$2,usd_cents=usd_cents+$3
-          WHERE id=$1 AND wallet_toman+$2>=0 AND usd_cents+$3>=0 RETURNING wallet_toman,usd_cents""",player_id,wallet_delta,usd_delta)
+        changed=await conn.fetchrow("""UPDATE players SET wallet_toman=wallet_toman+$2::bigint,usd_cents=usd_cents+$3::bigint
+          WHERE id=$1::bigint AND wallet_toman+$2::bigint>=0 AND usd_cents+$3::bigint>=0 RETURNING wallet_toman,usd_cents""",player_id,wallet_delta,usd_delta)
         if changed is None: raise ValueError("insufficient_balance")
         steps=max(1,cents//cfg.int_("market.usd.impact_cents_per_step")); move=min(cfg.int_("market.usd.max_trade_move_basis_points"),steps*cfg.int_("market.usd.impact_basis_points_per_step"))
         candidate=(reference*(10000+(move if side=="buy" else -move)))//10000

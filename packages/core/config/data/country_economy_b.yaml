@@ -1,0 +1,44 @@
+consumption:
+  food_per_citizen_daily: 2
+  energy_per_citizen_daily: 1
+  base_food_daily: 10
+  base_energy_daily: 8
+  maximum_citizens_counted: 10000
+  shortage_floor_modifier_bp: 6000
+budget:
+  daily_spend_cap_toman: 2000000
+  treasury_spend_bp: 100
+  minimum_operating_spend_toman: 25000
+  presets:
+    balanced: {welfare: 2000, production: 2500, technology: 1500, defense: 1000, intelligence: 500, diplomacy: 500, emergency: 2000}
+    welfare: {welfare: 3500, production: 1800, technology: 1000, defense: 700, intelligence: 300, diplomacy: 400, emergency: 2300}
+    growth: {welfare: 1200, production: 3500, technology: 2500, defense: 700, intelligence: 300, diplomacy: 300, emergency: 1500}
+    security: {welfare: 1200, production: 1800, technology: 1000, defense: 2500, intelligence: 1300, diplomacy: 500, emergency: 1700}
+satisfaction:
+  baseline: 70
+  daily_max_change: 8
+  full_food_bonus: 2
+  full_energy_bonus: 1
+  welfare_bonus_max: 3
+  completed_project_bonus_max: 2
+  high_tax_penalty_threshold_percent: 15
+  high_tax_penalty: 2
+  crisis_penalty_max: 5
+production:
+  minimum_modifier_bp: 6000
+  maximum_modifier_bp: 12000
+  technology_budget_bonus_bp_max: 600
+  production_budget_bonus_bp_max: 800
+  low_satisfaction_penalty_bp_max: 1500
+crisis:
+  shortage_trigger_bp: 2500
+  shortage_resolve_bp: 500
+  treasury_stress_days: 2
+  emergency_mitigation_bp_max: 3000
+  recovery_satisfaction_bonus: 2
+offices:
+  economy_minister_can_set_budget: true
+  minimum_reputation: 0
+retention:
+  daily_rows_days: 120
+  resolved_crises_days: 180

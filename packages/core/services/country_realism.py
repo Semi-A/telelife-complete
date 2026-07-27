@@ -30,7 +30,10 @@ async def daily_tick()->dict[str,int]:
    interest_drag=max(0,policy_gap)//25
    organic_growth=250+resources//max(1000,citizens*100)-unemployment//20-interest_drag
    growth=max(-10000,min(10000,organic_growth+shock_growth))
-   satisfaction=max(0,min(100,70-inflation//150-unemployment//200+min(15,treasury//max(1,50_000_000))))
+   release_b=await conn.fetchrow("SELECT satisfaction,food_shortage_bp,energy_shortage_bp FROM country_economy_state WHERE country_id=$1",c['id'])
+   base_satisfaction=int(release_b['satisfaction']) if release_b else 70
+   shortage_penalty=((int(release_b['food_shortage_bp'])+int(release_b['energy_shortage_bp']))//2500) if release_b else 0
+   satisfaction=max(0,min(100,base_satisfaction-inflation//500-unemployment//500-shortage_penalty+min(5,treasury//max(1,100_000_000))))
    gdp=max(0,citizens*5_000_000+resources*1000+treasury//10)
    result=await conn.execute("""INSERT INTO country_indicator_daily(country_id,indicator_date,inflation_bp,unemployment_bp,satisfaction,growth_bp,gdp_toman)
     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING""",c['id'],day,inflation,unemployment,satisfaction,growth,gdp)
