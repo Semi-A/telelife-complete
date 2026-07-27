@@ -17,7 +17,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 # Never re-run those versions: preserve their records and enforce immutable
 # checksums for every migration introduced after the recovered baseline.
 # This recovered distribution may differ byte-for-byte from migrations already
-# applied by earlier releases. Never re-run shipped history. Starting with 0021,
+# applied by earlier releases. Never re-run shipped history. Starting with 0023,
 # checksums are strict and changing an applied migration remains a hard failure.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0001_core_schema", "0002_progression", "0003_country_layer",
@@ -29,9 +29,13 @@ LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0014_free_tier_hardening", "0015_purposeful_work_loop",
     "0016_national_projects_and_missions", "0017_country_economy_release_b",
     "0018_country_trade_diplomacy_release_c", "0019_life_progression_system",
-    "0020_admin_operations_10",
+    "0020_admin_operations_10", "0021_multi_admin_hardening",
+    "0022_ui_panel_expiry",
 })
-STRICT_CHECKSUM_FROM = "0021_multi_admin_hardening"
+# 0021 and 0022 belong to the recovered project history and may already exist
+# with checksums produced from older line endings/source dumps. 0023 is the
+# first migration created by this release and is therefore the strict boundary.
+STRICT_CHECKSUM_FROM = "0023_country_social_life"
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (

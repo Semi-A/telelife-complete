@@ -33,3 +33,10 @@ def test_new_migrations_remain_checksum_strict():
     source = (migrator.Path(migrator.__file__)).read_text(encoding="utf-8")
     assert "if version in LEGACY_CHECKSUM_VERSIONS" in source
     assert "Create a new migration instead of editing history" in source
+
+def test_recovered_0021_and_0022_are_legacy_but_0023_is_strict():
+    from packages.core.db import migrator
+    assert "0021_multi_admin_hardening" in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0022_ui_panel_expiry" in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert migrator.STRICT_CHECKSUM_FROM == "0023_country_social_life"
+    assert "0023_country_social_life" not in migrator.LEGACY_CHECKSUM_VERSIONS
