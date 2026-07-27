@@ -32,6 +32,7 @@ async def _adjust_rep(conn,country_id:int,delta:int,field:str|None=None)->None:
  await conn.execute(f"UPDATE country_international_reputation SET {field_sql} score=GREATEST($3::int,LEAST($4::int,score+$2::int)),updated_at=now() WHERE country_id=$1",country_id,delta,minimum,maximum)
 
 async def create_contract(proposer_id:int,recipient_id:int,actor_id:int,preset:str,key:str):
+ pair(proposer_id,recipient_id)  # reject self-trade before taking duplicate locks
  cfg=get_config();presets=cfg.section("country_trade.contracts.presets")
  if preset not in presets:raise ValueError("invalid_trade_preset")
  spec=presets[preset];offered_asset=str(spec["offered_asset"]);requested_asset=str(spec["requested_asset"]);offered=int(spec["offered_amount"]);requested=int(spec["requested_amount"])
@@ -131,8 +132,9 @@ async def accept_relation(country_id:int,target_id:int,actor_id:int,key:str)->bo
   if not await _authorized(conn,country_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
   row=await conn.fetchrow("SELECT * FROM country_relations WHERE country_low_id=$1 AND country_high_id=$2 FOR UPDATE",lo,hi)
   if not row or not row["proposed_status"] or int(row["proposed_by_country_id"] or 0)==country_id or row["proposal_expires_at"]<=datetime.now(UTC):raise ValueError("relation_proposal_missing")
+  inserted=await conn.fetchval("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'relation_accepted',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,target_id,actor_id,key,{"status":str(row["proposed_status"])})
+  if not inserted:return False
   await conn.execute("UPDATE country_relations SET status=proposed_status,proposed_status=NULL,proposed_by_country_id=NULL,proposal_expires_at=NULL,changed_by_player_id=$3,updated_at=now() WHERE country_low_id=$1 AND country_high_id=$2",lo,hi,actor_id)
-  await conn.execute("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'relation_accepted',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING",country_id,target_id,actor_id,key,{"status":str(row["proposed_status"])})
   return True
 
 async def impose_sanction(country_id:int,target_id:int,actor_id:int,key:str)->bool:
@@ -146,6 +148,7 @@ async def impose_sanction(country_id:int,target_id:int,actor_id:int,key:str)->bo
   return True
 
 async def send_aid(donor_id:int,recipient_id:int,actor_id:int,asset:str,key:str)->int:
+ pair(donor_id,recipient_id)  # self-aid would inflate reputation without transfer
  cfg=get_config();presets=cfg.section("country_trade.aid.presets")
  if asset not in presets:raise ValueError("invalid_aid_asset")
  amount=int(presets[asset])
@@ -154,8 +157,10 @@ async def send_aid(donor_id:int,recipient_id:int,actor_id:int,asset:str,key:str)
   if not await _authorized(conn,donor_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
   crisis=await conn.fetchrow("SELECT id FROM country_crises WHERE country_id=$1 AND status='active' ORDER BY severity DESC,id LIMIT 1 FOR UPDATE",recipient_id)
   if not crisis:raise ValueError("recipient_has_no_crisis")
-  used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM country_humanitarian_aid WHERE donor_country_id=$1 AND sent_at>=date_trunc('day',now())",donor_id) or 0)
-  if asset!="IRT" and used+amount>cfg.int_("country_trade.aid.daily_limit_per_country"):raise ValueError("aid_daily_limit")
+  # The limit is per asset: summing IRT and resource units together is
+  # dimensionally invalid and made the cap depend on unrelated donations.
+  used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM country_humanitarian_aid WHERE donor_country_id=$1 AND asset_code=$2 AND sent_at>=date_trunc('day',now())",donor_id,asset) or 0)
+  if used+amount>cfg.int_("country_trade.aid.daily_limit_per_country"):raise ValueError("aid_daily_limit")
   inserted=await conn.fetchval("INSERT INTO country_humanitarian_aid(donor_country_id,recipient_country_id,asset_code,amount,crisis_id,sent_by_player_id,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",donor_id,recipient_id,asset,amount,crisis["id"],actor_id,key)
   if not inserted:return 0
   dbal=await ledger_repo.change_country(conn,donor_id,asset,-amount);rbal=await ledger_repo.change_country(conn,recipient_id,asset,amount)

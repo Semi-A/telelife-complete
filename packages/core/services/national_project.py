@@ -121,16 +121,36 @@ async def contribute(
         )
 
         completed = await project_repo.complete_if_ready(conn, project_id)
-
-    if completed:
-        completion=get_config().section(f"national_project.projects.{project_key}.completion")
-        async with db.transaction() as conn:
-            project=await project_repo.lock(conn,project_id)
-            await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
-            people=await project_repo.contributors(conn,project_id)
-        reward=int(completion["contributor_reward_xp"])
-        for contributor in people:
-            await xp.grant(contributor,"national_project",idempotency_key=f"project:{project_id}:xp:{contributor}",amount=reward)
+        people: list[int] = []
+        reward = 0
+        if completed:
+            # Completion and its durable gameplay effect are one atomic state
+            # transition. Committing "completed" first could leave a project
+            # permanently effect-less if the process died before a second tx.
+            completion = get_config().section(
+                f"national_project.projects.{project_key}.completion"
+            )
+            await project_repo.apply_effect(
+                conn,
+                project_id,
+                int(project["country_id"]),
+                str(completion["effect_code"]),
+                str(completion.get("effect_asset") or "all"),
+                int(completion["magnitude_basis_points"]),
+            )
+            people = await project_repo.contributors(conn, project_id)
+            reward = int(completion["contributor_reward_xp"])
+            # Reward delivery participates in the completion transaction. If
+            # the process dies, status/effect/rewards all roll back together;
+            # otherwise a completed project could never replay missed rewards.
+            for contributor in people:
+                await xp.grant(
+                    contributor,
+                    "national_project",
+                    idempotency_key=f"project:{project_id}:xp:{contributor}",
+                    amount=reward,
+                    conn=conn,
+                )
     if accepted:
         from packages.core.services import missions
         await missions.report_progress(player_id,"project_contribution")
@@ -149,12 +169,17 @@ async def treasury_contribute(project_id:int,player_id:int,asset:str,amount:int,
         if accepted<=0:return 0,False
         if not await project_repo.claim_country_funding(conn,project_id,player_id,asset,accepted,key):return 0,False
         balance=await ledger_repo.change_country(conn,int(project["country_id"]),asset,-accepted)
-        await ledger_repo.insert(conn,player_id=player_id,country_id=int(project["country_id"]),key=f"{key}:country",reason="project_treasury_funding",asset=asset,account=ledger_repo.country_account(asset),amount=-accepted,balance=balance,metadata={"project_id":project_id})
+        await ledger_repo.insert(conn,player_id=None,country_id=int(project["country_id"]),key=f"{key}:country",reason="project_treasury_funding",asset=asset,account=ledger_repo.country_account(asset),amount=-accepted,balance=balance,metadata={"project_id":project_id})
         completed=await project_repo.complete_if_ready(conn,project_id)
-    if completed:
-        completion=get_config().section(f"national_project.projects.{project['project_key']}.completion")
-        async with db.transaction() as conn:
+        if completed:
+            completion=get_config().section(f"national_project.projects.{project['project_key']}.completion")
+            # Keep project status, effect and contributor rewards atomic even
+            # when the treasury supplies the final required unit.
             await project_repo.apply_effect(conn,project_id,int(project["country_id"]),str(completion["effect_code"]),str(completion.get("effect_asset") or "all"),int(completion["magnitude_basis_points"]))
+            people=await project_repo.contributors(conn,project_id)
+            reward=int(completion["contributor_reward_xp"])
+            for contributor in people:
+                await xp.grant(contributor,"national_project",idempotency_key=f"project:{project_id}:xp:{contributor}",amount=reward,conn=conn)
     return accepted,completed
 
 async def available(country_id:int)->list[tuple[str,str]]:

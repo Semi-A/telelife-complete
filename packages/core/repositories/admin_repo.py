@@ -87,15 +87,36 @@ async def news_rows(limit: int = 100) -> list[asyncpg.Record]:
     """, limit)
 
 async def market_history(hours: int = 24) -> list[asyncpg.Record]:
+    """Return real 30-minute OHLC candles from persisted market snapshots."""
     return await db.fetch("""
-        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error,
+        WITH samples AS (
+          SELECT s.asset_code,s.captured_at,s.price_toman,
+            date_bin(interval '30 minutes',s.captured_at,TIMESTAMPTZ '2000-01-01 00:00:00+00') bucket
+          FROM market_price_snapshots s
+          WHERE s.captured_at >= now()-($1::int * interval '1 hour')
+        ), ranked AS (
+          SELECT *,row_number() OVER(PARTITION BY asset_code,bucket ORDER BY captured_at) first_rank,
+                   row_number() OVER(PARTITION BY asset_code,bucket ORDER BY captured_at DESC) last_rank
+          FROM samples
+        ), candles AS (
+          SELECT asset_code,bucket,
+            max(price_toman) FILTER(WHERE first_rank=1) open,
+            max(price_toman) high,min(price_toman) low,
+            max(price_toman) FILTER(WHERE last_rank=1) close,
+            count(*) samples
+          FROM ranked GROUP BY asset_code,bucket
+        )
+        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,
+               p.source_checked_at,p.source_error,
                COALESCE(jsonb_agg(jsonb_build_object(
-                 'time',s.captured_at,'price',s.price_toman) ORDER BY s.captured_at)
-                 FILTER (WHERE s.captured_at IS NOT NULL),'[]'::jsonb) AS points
-        FROM market_prices p
-        LEFT JOIN market_price_snapshots s ON s.asset_code=p.asset_code
-          AND s.captured_at >= now()-($1::int * interval '1 hour')
-        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error
+                 'time',c.bucket,'open',c.open,'high',c.high,'low',c.low,
+                 'close',c.close,'price',c.close,'samples',c.samples
+               ) ORDER BY c.bucket) FILTER(WHERE c.bucket IS NOT NULL),'[]'::jsonb) candles,
+               COALESCE(jsonb_agg(jsonb_build_object('time',c.bucket,'price',c.close)
+                 ORDER BY c.bucket) FILTER(WHERE c.bucket IS NOT NULL),'[]'::jsonb) points
+        FROM market_prices p LEFT JOIN candles c ON c.asset_code=p.asset_code
+        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,
+                 p.source_checked_at,p.source_error
         ORDER BY CASE p.asset_code WHEN 'USD' THEN 0 ELSE 1 END,p.asset_code
     """, hours)
 

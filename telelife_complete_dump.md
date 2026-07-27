@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 259
+تعداد کل فایل‌ها: 269
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -42,7 +42,8 @@ telelife_complete/
 │   │   │   ├── panel.py
 │   │   │   ├── profile.py
 │   │   │   ├── progression.py
-│   │   │   └── start.py
+│   │   │   ├── start.py
+│   │   │   └── ux.py
 │   │   ├── keyboards/
 │   │   │   ├── __init__.py
 │   │   │   └── main.py
@@ -101,13 +102,16 @@ telelife_complete/
 │   ├── 0017_country_economy_release_b.sql
 │   ├── 0018_country_trade_diplomacy_release_c.sql
 │   ├── 0019_life_progression_system.sql
-│   └── 0020_admin_operations_10.sql
+│   ├── 0020_admin_operations_10.sql
+│   ├── 0021_multi_admin_hardening.sql
+│   └── 0022_ui_panel_expiry.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
 │   │   │   ├── __init__.py
 │   │   │   ├── errors.py
-│   │   │   └── runtime.py
+│   │   │   ├── runtime.py
+│   │   │   └── start_limit.py
 │   │   ├── config/
 │   │   │   ├── data/
 │   │   │   │   ├── commerce.yaml
@@ -160,6 +164,7 @@ telelife_complete/
 │   │   │   ├── __init__.py
 │   │   │   ├── action_outbox.py
 │   │   │   ├── admin.py
+│   │   │   ├── admin_accounts.py
 │   │   │   ├── admin_security.py
 │   │   │   ├── commerce.py
 │   │   │   ├── content_filter.py
@@ -205,6 +210,7 @@ telelife_complete/
 │   │   │   └── fmt.py
 │   │   ├── __init__.py
 │   │   ├── logging.py
+│   │   ├── monitor.py
 │   │   ├── runtime_status.py
 │   │   ├── settings.py
 │   │   └── supervisor.py
@@ -230,6 +236,7 @@ telelife_complete/
 │   ├── test_glass_buttons.py
 │   ├── test_governance.py
 │   ├── test_hardening_contracts.py
+│   ├── test_hotfix_2026_07_27.py
 │   ├── test_interval_bindings.py
 │   ├── test_life_progression_system.py
 │   ├── test_live_market.py
@@ -237,6 +244,7 @@ telelife_complete/
 │   ├── test_message_driven_bots.py
 │   ├── test_migrator.py
 │   ├── test_missions.py
+│   ├── test_multi_admin_hardening.py
 │   ├── test_national_projects_missions_release.py
 │   ├── test_outbox_repo.py
 │   ├── test_panel_edit.py
@@ -282,6 +290,7 @@ telelife_complete/
 ├── README.md
 ├── README_FA.md
 ├── RELEASE_2026_07_27_FA.md
+├── RELEASE_8_5_HARDENING_FA.md
 ├── RELEASE_AUDIT_FA.md
 ├── RELEASE_AUDIT_FA_2026-07-27.md
 ├── RELEASE_B_REPORT_FA.md
@@ -293,6 +302,7 @@ telelife_complete/
 ├── RELEASE_PURPOSEFUL_WORK_FA.md
 ├── RELEASE_REBUILD_2026-07-27_FA.md
 ├── RELEASE_SCALING_MIGRATION_FA.md
+├── RELEASE_UX_COMPLETE_FA.md
 ├── RELEASE_V2_FA.md
 ├── render.yaml
 ├── requirements.txt
@@ -428,36 +438,44 @@ venv/
 
 ```python
 """Authentication dependencies shared by the admin application and routers."""
-
 from __future__ import annotations
 
-import secrets
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from packages.core.settings import get_settings
+from packages.core.services import admin_accounts
 
 security = HTTPBasic(auto_error=False)
 
 
-def require_admin(
+@dataclass(frozen=True, slots=True)
+class AdminPrincipal:
+    username: str
+    role: str
+    source: str
+
+
+async def require_admin(
     credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
-) -> str:
-    """Authenticate an admin with constant-time credential comparisons."""
-    settings = get_settings()
+) -> AdminPrincipal:
+    """Authenticate the bootstrap account or an enabled database admin."""
     if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
-    username_ok = secrets.compare_digest(credentials.username, settings.admin_username)
-    password_ok = secrets.compare_digest(credentials.password, settings.admin_password)
-    if not (username_ok and password_ok):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Basic"},
+            detail="نام کاربری و گذرواژه لازم است.",
+            headers={"WWW-Authenticate": "Basic realm=TeleLife Admin"},
         )
-    return credentials.username
+    identity = await admin_accounts.authenticate(credentials.username, credentials.password)
+    if identity is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="نام کاربری یا گذرواژه نادرست است.",
+            headers={"WWW-Authenticate": "Basic realm=TeleLife Admin"},
+        )
+    return AdminPrincipal(identity.username, identity.role, identity.source)
 ```
 
 ### `apps\admin\main.py`
@@ -466,6 +484,8 @@ def require_admin(
 """Authenticated, lightweight administration command center."""
 from __future__ import annotations
 from pathlib import Path
+import logging
+from uuid import uuid4
 from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -477,11 +497,25 @@ from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.runtime_status import snapshot
 
+logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app = FastAPI(title="TeleLife Admin", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(country_admin_router)
+
+@app.exception_handler(Exception)
+async def admin_unhandled_error(request: Request, exc: Exception) -> JSONResponse:
+    incident_id = uuid4().hex[:12]
+    logger.exception(
+        "admin request failed",
+        extra={"extra_fields":{"incident_id":incident_id,"path":request.url.path,"method":request.method}},
+    )
+    return JSONResponse(
+        {"detail":"عملیات سمت سرور کامل نشد.","incident_id":incident_id},
+        status_code=500,
+        headers={"Cache-Control":"no-store"},
+    )
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -525,7 +559,7 @@ async def readyz() -> JSONResponse:
     return JSONResponse({"ready": db_ok}, status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, _: str = Depends(require_admin)) -> HTMLResponse:
+async def dashboard(request: Request, _ = Depends(require_admin)) -> HTMLResponse:
     row = await admin_repo.dashboard_stats()
     return templates.TemplateResponse(request, "dashboard.html", {"stats": dict(row) if row else {}})
 ```
@@ -550,14 +584,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from apps.admin.auth import require_admin
+from apps.admin.auth import AdminPrincipal, require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, admin_security, commerce, live_market, scheduler_ops, engagement
+from packages.core.services import admin, admin_accounts, admin_security, commerce, live_market, scheduler_ops, engagement
 from packages.core.settings import get_settings
 
-AdminActor = Annotated[str, Depends(require_admin)]
+AdminActor = Annotated[AdminPrincipal, Depends(require_admin)]
 async def enforce_admin_request(request: Request, actor: AdminActor) -> None:
-    await admin_security.verify_request(request, actor)
+    await admin_security.verify_request(request, actor.username, actor.role)
 
 router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin),Depends(enforce_admin_request)])
 
@@ -621,13 +655,61 @@ class IncidentBody(BaseModel):
     status: Literal["acknowledged","investigating","resolved"]
     note: str | None = Field(default=None,max_length=1000)
 
+class AdminCreateBody(BaseModel):
+    username: str = Field(min_length=3,max_length=64,pattern=r"^[A-Za-z0-9_.-]+$")
+    password: str = Field(min_length=12,max_length=256)
+    role: Literal["viewer","support","content","economy","operator","superadmin"]
+
+class AdminUpdateBody(BaseModel):
+    role: Literal["viewer","support","content","economy","operator","superadmin"] | None = None
+    enabled: bool | None = None
+    password: str | None = Field(default=None,min_length=12,max_length=256)
+
 @router.post("/action-preview")
 async def action_preview(body:PreviewBody,actor:AdminActor)->dict[str,object]:
-    return await admin_security.issue_preview(actor,body.method,body.path,body.payload)
+    return await admin_security.issue_preview(actor.username,actor.role,body.method,body.path,body.payload)
 
 @router.get("/me")
 async def me(actor:AdminActor)->dict[str,str]:
-    return {"username":actor,"role":get_settings().admin_role}
+    return {"username":actor.username,"role":actor.role,"source":actor.source}
+
+@router.get("/admins")
+async def admin_identities(actor:AdminActor)->list[dict[str,object]]:
+    return await admin_accounts.list_identities()
+
+@router.post("/admins",status_code=201)
+async def create_admin(body:AdminCreateBody,actor:AdminActor)->dict[str,object]:
+    try:
+        return await admin_accounts.create_identity(actor.username,body.username,body.password,body.role)
+    except ValueError as exc:
+        messages={
+            "admin_exists":"این نام کاربری از قبل وجود دارد.",
+            "admin_reserved":"این نام کاربری در تنظیمات اصلی رزرو شده است.",
+            "invalid_admin_username":"نام کاربری معتبر نیست.",
+            "invalid_admin_password":"گذرواژه باید حداقل ۱۲ نویسه باشد.",
+            "invalid_admin_role":"نقش معتبر نیست.",
+        }
+        raise HTTPException(409 if str(exc)=="admin_exists" else 400,messages.get(str(exc),"ساخت مدیر انجام نشد.")) from exc
+
+@router.patch("/admins/{username}")
+async def update_admin(username:str,body:AdminUpdateBody,actor:AdminActor)->dict[str,object]:
+    if body.role is None and body.enabled is None and body.password is None:
+        raise HTTPException(400,"حداقل یک تغییر لازم است.")
+    try:
+        return await admin_accounts.update_identity(
+            actor.username,username,role=body.role,enabled=body.enabled,password=body.password
+        )
+    except ValueError as exc:
+        messages={
+            "admin_not_found":"مدیر پیدا نشد.",
+            "admin_environment_managed":"حساب اصلی از متغیرهای محیطی مدیریت می‌شود.",
+            "admin_cannot_disable_self":"نمی‌توانی حساب خودت را غیرفعال کنی.",
+            "last_superadmin":"حداقل یک مدیر ارشد فعال باید باقی بماند.",
+            "invalid_admin_username":"نام کاربری معتبر نیست.",
+            "invalid_admin_password":"گذرواژه باید حداقل ۱۲ نویسه باشد.",
+        }
+        code=404 if str(exc)=="admin_not_found" else 409
+        raise HTTPException(code,messages.get(str(exc),"ویرایش مدیر انجام نشد.")) from exc
 
 @router.get("/search")
 async def global_search(q:Annotated[str,Query(min_length=2,max_length=100)]) -> dict[str,list[dict[str,object]]]:
@@ -639,7 +721,7 @@ async def incidents(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,
 
 @router.patch("/incidents/{incident_id}")
 async def incident_update(incident_id:int,body:IncidentBody,actor:AdminActor)->dict[str,object]:
-    row=await admin_repo.update_incident(incident_id,body.status,actor,body.note)
+    row=await admin_repo.update_incident(incident_id,body.status,actor.username,body.note)
     if not row:raise HTTPException(404,"رخداد پیدا نشد.")
     return dict(row)
 
@@ -649,7 +731,7 @@ async def anomalies(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,
 
 @router.post("/undo/{action_id}")
 async def undo(action_id:int,actor:AdminActor)->dict[str,bool]:
-    try:return {"undone":await admin_repo.undo_action(action_id,actor)}
+    try:return {"undone":await admin_repo.undo_action(action_id,actor.username)}
     except ValueError as exc:raise HTTPException(409,"عملیات دیگر قابل بازگردانی نیست.") from exc
 
 @router.get("/undos")
@@ -682,7 +764,7 @@ async def set_feature_flag(key: str, body: FeatureBody, actor: AdminActor) -> di
     allowed = {"economy_frozen", "usd_market_frozen", "ads_frozen", "registrations_frozen"}
     if key not in allowed:
         raise HTTPException(400, "این کلید مدیریتی مجاز نیست.")
-    return {"applied": await admin.feature(actor, key, body.enabled, str(uuid4()))}
+    return {"applied": await admin.feature(actor.username, key, body.enabled, str(uuid4()))}
 
 @router.get("/ledger")
 async def ledger(limit: Annotated[int, Query(ge=1, le=500)] = 100,
@@ -707,7 +789,7 @@ async def sync_market(actor: AdminActor) -> dict[str, object]:
 
 @router.post("/operations/market/freeze")
 async def freeze_market(body: FreezeBody, actor: AdminActor) -> dict[str, bool]:
-    return {"applied":await admin.feature(actor,"usd_market_frozen",body.enabled,str(uuid4()))}
+    return {"applied":await admin.feature(actor.username,"usd_market_frozen",body.enabled,str(uuid4()))}
 
 @router.post("/operations/jobs/{job_name}/run")
 async def run_job(job_name: str, actor: AdminActor) -> dict[str, bool]:
@@ -755,19 +837,19 @@ async def market(hours: Annotated[int, Query(ge=1, le=720)] = 24) -> list[dict[s
 @router.post("/users/{player_id}/ban")
 async def ban_json(player_id: int, body: BanBody, actor: AdminActor) -> dict[str, bool]:
     try:
-        return {"applied": await admin.ban(actor, player_id, body.enabled, body.reason, str(uuid4()))}
+        return {"applied": await admin.ban(actor.username, player_id, body.enabled, body.reason, str(uuid4()))}
     except ValueError as exc:
         raise fail(exc) from exc
 
 @router.post("/users/{player_id}/xp")
 async def xp_json(player_id: int, body: XPBody, actor: AdminActor) -> dict[str, int]:
-    result = await admin.grant_xp(actor, player_id, body.amount, str(uuid4()))
+    result = await admin.grant_xp(actor.username, player_id, body.amount, str(uuid4()))
     return {"granted": result.granted if result else 0}
 
 @router.post("/market/{asset}")
 async def price(asset: str, body: PriceBody, actor: AdminActor) -> dict[str, bool]:
     try:
-        return {"applied": await admin.set_market_price(actor, asset, body.price, str(uuid4()))}
+        return {"applied": await admin.set_market_price(actor.username, asset, body.price, str(uuid4()))}
     except ValueError as exc:
         raise fail(exc) from exc
 
@@ -776,7 +858,7 @@ async def country_asset(country_id: int, body: CountryAssetBody,
                         actor: AdminActor) -> dict[str, int]:
     try:
         return {"balance": await admin.adjust_country_asset(
-            actor, country_id, body.asset, body.delta, str(uuid4()))}
+            actor.username, country_id, body.asset, body.delta, str(uuid4()))}
     except ValueError as exc:
         raise fail(exc) from exc
 
@@ -785,7 +867,7 @@ async def president(country_id: int, body: PresidentBody,
                     actor: AdminActor) -> dict[str, bool]:
     try:
         return {"applied": await admin.set_president(
-            actor, country_id, body.player_id, str(uuid4()))}
+            actor.username, country_id, body.player_id, str(uuid4()))}
     except ValueError as exc:
         raise fail(exc) from exc
 
@@ -795,7 +877,7 @@ async def enqueue_news(body: NewsBody, actor: AdminActor) -> dict[str, bool]:
     if destination is None:
         raise HTTPException(400, "GLOBAL_NEWS_CHAT_ID تنظیم نشده است.")
     return {"queued": await admin.enqueue_news(
-        actor, body.text, destination, str(uuid4()))}
+        actor.username, body.text, destination, str(uuid4()))}
 
 # State-changing admin routes intentionally accept JSON only.
 @router.get("/ads")
@@ -804,12 +886,12 @@ async def ads(limit: Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,objec
 
 @router.post("/ads")
 async def create_ad(body:AdBody,actor:AdminActor)->dict[str,int]:
-    try:return {"id":await admin.create_ad(actor,body.title,body.text,body.destination,body.scheduled_at,body.repeat_minutes,str(uuid4()))}
+    try:return {"id":await admin.create_ad(actor.username,body.title,body.text,body.destination,body.scheduled_at,body.repeat_minutes,str(uuid4()))}
     except ValueError as exc:raise fail(exc) from exc
 
 @router.post("/ads/{ad_id}/queue")
 async def queue_ad(ad_id:int,actor:AdminActor)->dict[str,bool]:
-    try:return {"queued":await admin.queue_ad(actor,ad_id,str(uuid4()))}
+    try:return {"queued":await admin.queue_ad(actor.username,ad_id,str(uuid4()))}
     except ValueError as exc:raise fail(exc) from exc
 
 @router.get("/ad-requests")
@@ -826,12 +908,12 @@ async def edit_ad_request(ad_id:int,body:AdEditBody,actor:AdminActor)->dict[str,
  return {"updated":bool(await commerce.edit_ad(ad_id,body.title,body.description,body.target_url,body.requested_start_at))}
 @router.post("/ad-requests/{ad_id}/approve")
 async def approve_ad_request(ad_id:int,body:AdReviewBody,actor:AdminActor)->dict[str,bool]:
- row=await commerce.approve_ad(ad_id,actor,body.note)
+ row=await commerce.approve_ad(ad_id,actor.username,body.note)
  if not row:raise HTTPException(409,"وضعیت درخواست قابل تأیید نیست.")
  return {"approved":True}
 @router.post("/ad-requests/{ad_id}/reject")
 async def reject_ad_request(ad_id:int,body:AdRejectBody,actor:AdminActor)->dict[str,bool]:
- row=await commerce.reject_ad(ad_id,actor,body.reason)
+ row=await commerce.reject_ad(ad_id,actor.username,body.reason)
  return {"rejected":bool(row)}
 @router.post("/ad-requests/{ad_id}/pause")
 async def pause_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:return {"paused":bool(await commerce.pause_ad(ad_id))}
@@ -876,7 +958,12 @@ body{background:radial-gradient(circle at 72% -18%,#123356 0,transparent 32%),ra
 @media(max-width:1250px){.incident-feed{width:100%;margin-top:305px}.incident-core{min-height:720px}.radar-stage{left:50%;transform:translateX(-50%)}}@media(max-width:1050px){.command-grid{grid-template-columns:1fr}.command-side{grid-template-columns:1fr 1fr}}@media(max-width:700px){.command-mast{align-items:flex-start;gap:18px;flex-direction:column}.command-side{grid-template-columns:1fr}.incident-core{min-height:750px}.radar-stage{width:270px;height:270px}.incident-feed{margin-top:275px}.world-map{height:270px}.world-node{font-size:8px}.topbar{margin-inline:-15px;padding-inline:15px}}
 @media(prefers-reduced-motion:reduce){.radar-stage b,.radar-stage i,.sync-state i,.world-node i{animation:none!important}}
 .ops-intelligence{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.ops-list{display:grid;gap:7px;max-height:220px;overflow:auto}.ops-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid var(--line);background:#04111f}.ops-row b{font-size:11px}.ops-row small{color:var(--dim);font-size:9px}.kbd{border:1px solid var(--line);padding:5px 8px;color:var(--muted);font:9px "JetBrains Mono"}.command-palette{max-width:680px;background:#061321}.command-palette form{padding:28px}.command-palette input{font-size:16px;padding:15px}.search-results{display:grid;gap:14px;max-height:430px;overflow:auto;margin-top:16px}.search-results section h3{color:var(--cyan);font-size:10px;letter-spacing:1px}.search-results section button{width:100%;display:flex;justify-content:space-between;border:1px solid var(--line);background:#081a29;color:var(--ink);padding:12px;cursor:pointer}.search-results small,.incident small{display:block;color:var(--dim);font-size:9px;margin-top:5px}@media(max-width:850px){.ops-intelligence{grid-template-columns:1fr}}
-.incident-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.incident-actions .small-btn{padding:6px 8px;font-size:9px}
+.incident-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.incident-actions .small-btn{padding:6px 8px;font-size:9px}/* Multi-admin access desk */
+#view-admins .table-panel{border-top:2px solid var(--violet)}
+#view-admins .safety-note{margin-top:14px}
+.check-row{display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:10px}
+.check-row input{width:auto}
+button[hidden]{display:none!important}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -885,14 +972,34 @@ body{background:radial-gradient(circle at 72% -18%,#123356 0,transparent 32%),ra
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const fa=new Intl.NumberFormat("fa-IR"), money=n=>`${fa.format(Number(n||0))} تومان`;
-const state={market:[],asset:"USD",ops:null,opsTimer:null};
+const state={market:[],asset:"USD",ops:null,opsTimer:null,me:null,loading:new Set()};
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";clearTimeout(el._t);el._t=setTimeout(()=>el.className="",3500)}
-async function api(url,options={}){const method=(options.method||'GET').toUpperCase(),headers={"Content-Type":"application/json",...(options.headers||{})};if(!['GET','HEAD','OPTIONS'].includes(method)&&url!='/api/admin/action-preview'){let payload={};try{payload=options.body?JSON.parse(options.body):{}}catch{}const preview=await api('/api/admin/action-preview',{method:'POST',body:JSON.stringify({method,path:url,payload}),headers:{"X-Preview-Bootstrap":"1"}});headers["X-Admin-Preview"]=preview.token}const res=await fetch(url,{...options,method,headers});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
+async function api(url,options={}){
+  const method=(options.method||"GET").toUpperCase();
+  const headers={Accept:"application/json",...(options.headers||{})};
+  if(!["GET","HEAD","OPTIONS"].includes(method))headers["Content-Type"]="application/json";
+  if(!["GET","HEAD","OPTIONS"].includes(method)&&url!=="/api/admin/action-preview"){
+    let payload={};
+    try{payload=options.body?JSON.parse(options.body):{}}catch{throw Error("داده ارسالی معتبر نیست")}
+    const preview=await api("/api/admin/action-preview",{method:"POST",body:JSON.stringify({method,path:url,payload}),headers:{"X-Preview-Bootstrap":"1"}});
+    headers["X-Admin-Preview"]=preview.token;
+  }
+  let res;
+  try{res=await fetch(url,{...options,method,headers})}catch{throw Error("ارتباط با سرور برقرار نشد؛ اتصال را بررسی کنید.")}
+  const contentType=res.headers.get("content-type")||"";
+  const data=contentType.includes("application/json")?await res.json().catch(()=>({})):{};
+  if(res.status===401)throw Error("نشست ورود معتبر نیست؛ صفحه را تازه کنید و دوباره وارد شوید.");
+  if(res.status===403)throw Error(typeof data.detail==="string"?data.detail:"برای این عملیات دسترسی ندارید.");
+  if(res.status===409)throw Error(typeof data.detail==="string"?data.detail:"اطلاعات هم‌زمان تغییر کرده؛ صفحه را تازه کنید.");
+  if(res.status===422){const detail=Array.isArray(data.detail)?data.detail.map(x=>x.msg).join("، "):data.detail;throw Error(detail||"اطلاعات فرم کامل یا معتبر نیست.")}
+  if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:`خطای سرور (${res.status})`);
+  return data;
+}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
-function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده",engagement:"ماندگاری کاربران",ledger:"دفتر اقتصاد",audit:"گزارش حسابرسی",controls:"کنترل سامانه"}[name];history.replaceState(null,"",`#${name}`);load(name)}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده",engagement:"ماندگاری کاربران",ledger:"دفتر اقتصاد",audit:"گزارش حسابرسی",controls:"کنترل سامانه",admins:"مدیران پنل"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
-async function overview(){const [cc,h]=await Promise.all([api('/api/admin/command-center'),api('/healthz')]);const o=cc.overview||{};$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i class="${v.status==='healthy'?'source-live':'source-stale'}">${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';renderCommand(cc);state.command=cc;loadOperationalTools();$("#last-sync").textContent=new Date().toLocaleTimeString('fa-IR');} 
+async function overview(){const results=await Promise.allSettled([api('/api/admin/command-center'),api('/healthz')]);if(results[0].status==='rejected')throw results[0].reason;const cc=results[0].value,h=results[1].status==='fulfilled'?results[1].value:{services:{}};const o=cc.overview||{};$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i class="${v.status==='healthy'?'source-live':'source-stale'}">${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';renderCommand(cc);state.command=cc;loadOperationalTools();$("#last-sync").textContent=new Date().toLocaleTimeString('fa-IR');} 
 function renderCommand(cc){const alerts=cc.alerts||[],summary=cc.summary||{},integrity=cc.integrity||{};$("#critical-count").textContent=fa.format(summary.critical||0);$("#warning-count").textContent=fa.format(summary.warning||0);$("#crisis-count").textContent=fa.format(summary.crises||0);$("#ledger-24").textContent=fa.format(integrity.ledger_24h||0);$("#net-irt").textContent=money(integrity.net_irt_24h||0);$("#incident-feed").innerHTML=alerts.map((a,i)=>`<article class="incident ${esc(a.severity)}" style="animation-delay:${i*.06}s"><div><h3>${esc(a.title)}</h3><p>${esc(a.detail)}</p><small>${esc(a.status||'open')} · ${fa.format(a.occurrences||1)} بار</small></div><div class="incident-actions"><button class="small-btn" data-incident-go="${esc(a.action_view||a.action)}">بررسی</button>${a.status==='resolved'?'':`<button class="small-btn" data-incident-ack="${a.id}">پذیرش</button><button class="small-btn danger" data-incident-resolve="${a.id}">حل شد</button>`}</div></article>`).join('');$$('[data-incident-go]').forEach(b=>b.onclick=()=>go(b.dataset.incidentGo));$$('[data-incident-ack]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentAck,'acknowledged'));$$('[data-incident-resolve]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentResolve,'resolved'));const spots=[[13,41],[25,67],[39,35],[51,61],[63,29],[74,55],[84,38],[91,70]];$("#world-nodes").innerHTML=(cc.countries||[]).slice(0,8).map((x,i)=>`<button class="world-node ${x.crisis?'crisis':''}" style="left:${spots[i][0]}%;top:${spots[i][1]}%" data-go="countries"><i></i>${esc(x.name)} · ${fa.format(x.citizens||0)}</button>`).join('');$$('#world-nodes [data-go]').forEach(b=>b.onclick=()=>go('countries'));}
 
 async function setIncident(id,status){try{await api(`/api/admin/incidents/${id}`,{method:'PATCH',body:JSON.stringify({status,note:status==='resolved'?'حل‌شده از مرکز فرماندهی':null})});toast(status==='resolved'?'رخداد حل شد':'مسئولیت رخداد پذیرفته شد');await overview()}catch(e){toast(e.message,true)}}
@@ -956,7 +1063,17 @@ const flagMeta={economy_frozen:['توقف کامل اقتصاد','تراکنش�
 async function controls(){const rows=await api('/api/admin/feature-flags'),map=Object.fromEntries(rows.map(x=>[x.key,x]));$('#flag-grid').innerHTML=Object.entries(flagMeta).map(([key,[title,desc]])=>{const on=Boolean(map[key]?.enabled);return `<article class="control-card ${on?'danger-zone':''}"><div><h3>${title}</h3><p>${desc} · ${map[key]?`آخرین تغییر ${date(map[key].updated_at)}`:'هنوز تنظیم نشده'}</p></div><button class="toggle ${on?'on':''}" data-flag="${key}" data-enabled="${on}" aria-label="${title}"><i></i></button></article>`}).join('');$$('[data-flag]').forEach(b=>b.onclick=()=>confirmFlag(b.dataset.flag,b.dataset.enabled==='true'))}
 function confirmFlag(key,on){const [title,desc]=flagMeta[key];openDialog(on?`غیرفعال‌کردن: ${title}`:`فعال‌کردن: ${title}`,"تأیید عملیات حساس",`<p class="confirm-copy">${desc}</p><label>برای تأیید بنویس «تأیید»<input id="f-confirm-word" autocomplete="off"></label>`,async()=>{if($('#f-confirm-word').value.trim()!=='تأیید')return toast('واژه تأیید درست وارد نشده است',true);try{await api(`/api/admin/feature-flags/${key}`,{method:'PUT',body:JSON.stringify({enabled:!on})});$('#action-dialog').close();toast('کنترل سامانه به‌روزرسانی شد');controls()}catch(e){toast(e.message,true)}})}
 $$('[data-reload]').forEach(b=>b.onclick=()=>load(b.dataset.reload));let ledgerTimer;$('#ledger-player').oninput=()=>{clearTimeout(ledgerTimer);ledgerTimer=setTimeout(ledger,350)};
-function load(name){({overview,market,operations,engagement,players,countries,news,ads,requests,ledger,audit,controls}[name]||overview)().catch(e=>toast(e.message,true))}
+const roleFa={viewer:"مشاهده‌گر",support:"پشتیبانی",content:"محتوا",economy:"اقتصاد",operator:"اپراتور",superadmin:"مدیر ارشد"};
+async function admins(){
+  state.me=state.me||await api('/api/admin/me');
+  if(state.me.role!=="superadmin"){$('#admins-body').innerHTML='<tr><td colspan="6">فقط مدیر ارشد می‌تواند حساب‌های مدیریتی را ببیند.</td></tr>';$('#add-admin').hidden=true;return}
+  const rows=await api('/api/admin/admins');
+  $('#admins-body').innerHTML=rows.map(x=>`<tr><td><b>${esc(x.username)}</b><small>${x.username===state.me.username?'حساب فعلی':''}</small></td><td><span class="badge">${roleFa[x.role]||esc(x.role)}</span></td><td>${x.source==='environment'?'اصلی محیطی':'ساخته‌شده در پنل'}</td><td>${date(x.last_login_at)}</td><td><span class="badge ${x.enabled?'':'danger'}">${x.enabled?'فعال':'غیرفعال'}</span></td><td><div class="row-actions">${x.source==='environment'?'—':`<button class="small-btn" data-admin-edit="${esc(x.username)}" data-role="${esc(x.role)}" data-enabled="${x.enabled}">ویرایش</button>`}</div></td></tr>`).join('')||'<tr><td colspan="6">مدیر دیگری ساخته نشده است.</td></tr>';
+  $$('[data-admin-edit]').forEach(b=>b.onclick=()=>adminEditDialog(b.dataset.adminEdit,b.dataset.role,b.dataset.enabled==='true'));
+}
+function adminCreateDialog(){openDialog('افزودن مدیر','حساب مستقل با کمترین دسترسی لازم',`<label>نام کاربری<input id="f-admin-user" minlength="3" maxlength="64" autocomplete="off"></label><label>گذرواژه موقت<input id="f-admin-pass" type="password" minlength="12" maxlength="256" autocomplete="new-password"></label><label>نقش<select id="f-admin-role"><option value="viewer">مشاهده‌گر</option><option value="support">پشتیبانی</option><option value="content">محتوا</option><option value="economy">اقتصاد</option><option value="operator">اپراتور</option><option value="superadmin">مدیر ارشد</option></select></label>`,async()=>{try{await api('/api/admin/admins',{method:'POST',body:JSON.stringify({username:$('#f-admin-user').value.trim(),password:$('#f-admin-pass').value,role:$('#f-admin-role').value})});$('#action-dialog').close();toast('مدیر جدید ساخته شد');await admins()}catch(e){toast(e.message,true)}})}
+function adminEditDialog(username,role,enabled){openDialog(`ویرایش ${username}`,'نقش، وضعیت یا گذرواژه',`<label>نقش<select id="f-admin-role">${Object.entries(roleFa).map(([k,v])=>`<option value="${k}" ${k===role?'selected':''}>${v}</option>`).join('')}</select></label><label>گذرواژه تازه <small>اختیاری</small><input id="f-admin-pass" type="password" minlength="12" maxlength="256" autocomplete="new-password"></label><label class="check-row"><input id="f-admin-enabled" type="checkbox" ${enabled?'checked':''}> حساب فعال باشد</label>`,async()=>{try{const password=$('#f-admin-pass').value;const body={role:$('#f-admin-role').value,enabled:$('#f-admin-enabled').checked};if(password)body.password=password;await api(`/api/admin/admins/${encodeURIComponent(username)}`,{method:'PATCH',body:JSON.stringify(body)});$('#action-dialog').close();toast('دسترسی مدیر به‌روز شد');await admins()}catch(e){toast(e.message,true)}})}
+function load(name){({overview,market,operations,engagement,players,countries,news,ads,requests,ledger,audit,controls,admins}[name]||overview)().catch(e=>toast(e.message,true))}
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
 
 // Visibility-aware command-centre polling: fast while watched, silent in background.
@@ -970,6 +1087,7 @@ async function runGlobalSearch(){const q=$('#global-search').value.trim();if(q.l
 async function loadOperationalTools(){try{const [anomalies,undos]=await Promise.all([api('/api/admin/anomalies?limit=20'),api('/api/admin/undos?limit=20')]);if($('#anomaly-list'))$('#anomaly-list').innerHTML=anomalies.map(x=>`<div class="ops-row"><span class="badge danger">${esc(x.anomaly)}</span><b>${esc(x.first_name)} #${x.id}</b><small>${money(x.wealth)} · ${fa.format(x.tx_count)} تراکنش</small></div>`).join('')||'<div class="empty">ناهنجاری پرخطر پیدا نشد.</div>';if($('#undo-list'))$('#undo-list').innerHTML=undos.map(x=>`<div class="ops-row"><span class="badge">${esc(x.action_type)}</span><b>${esc(x.target_key)}</b><button class="small-btn" data-undo="${x.id}">بازگردانی</button></div>`).join('')||'<div class="empty">عملیات قابل بازگردانی وجود ندارد.</div>';$$('[data-undo]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/undo/${b.dataset.undo}`,{method:'POST',body:'{}'});toast('عملیات با موفقیت بازگردانی شد');loadOperationalTools()}catch(e){toast(e.message,true)}})}catch(e){console.warn(e)}}
 function connectIncidentStream(){if(!window.EventSource)return;const es=new EventSource('/api/admin/events');es.addEventListener('incidents',e=>{if((location.hash.slice(1)||'overview')!=='overview')return;try{const alerts=JSON.parse(e.data),cc=state.command||{};cc.alerts=alerts;cc.summary={...(cc.summary||{}),critical:alerts.filter(x=>x.severity==='critical'&&x.status!=='resolved').length,warning:alerts.filter(x=>x.severity==='warning'&&x.status!=='resolved').length};renderCommand(cc)}catch{}});es.onerror=()=>console.warn('incident stream reconnecting')}
 mountCommandTools();document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#command-palette').showModal();setTimeout(()=>$('#global-search').focus(),30)}});connectIncidentStream();
+if($('#add-admin'))$('#add-admin').onclick=adminCreateDialog;
 ```
 
 ### `apps\admin\templates\base.html`
@@ -1002,6 +1120,7 @@ mountCommandTools();document.addEventListener('keydown',e=>{if((e.ctrlKey||e.met
     <button class="nav" data-view="ledger"><span>≜</span><em>دفتر اقتصاد</em></button>
     <button class="nav" data-view="audit"><span>⌾</span><em>حسابرسی</em></button>
     <button class="nav" data-view="controls"><span>⏻</span><em>کنترل سامانه</em></button>
+    <button class="nav" data-view="admins"><span>♙</span><em>مدیران</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -1080,6 +1199,11 @@ mountCommandTools();document.addEventListener('keydown',e=>{if((e.ctrlKey||e.met
 <section class="view" id="view-audit">
   <div class="section-lead"><div><p class="eyebrow">ردپای تغییرات حساس</p><h2>گزارش حسابرسی مدیران</h2><p>چه کسی، چه زمانی و روی کدام بازیکن یا کشور تغییر اعمال کرده است.</p></div><button class="secondary" data-reload="audit">تازه‌سازی</button></div>
   <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>زمان</th><th>مدیر</th><th>عملیات</th><th>هدف</th><th>جزئیات</th><th>شناسه درخواست</th></tr></thead><tbody id="audit-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-admins">
+  <div class="section-lead"><div><p class="eyebrow">دسترسی و مسئولیت</p><h2>مدیران پنل</h2><p>حساب‌های مستقل با نقش محدود بسازید؛ هر تغییر در حسابرسی ثبت می‌شود.</p></div><button id="add-admin" class="primary">افزودن مدیر</button></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>مدیر</th><th>نقش</th><th>منبع</th><th>آخرین ورود</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="admins-body"><tr><td colspan="6">در حال دریافت…</td></tr></tbody></table></div></article>
+  <article class="panel safety-note"><div class="safety-mark">!</div><div><h3>حساب اصلی محیطی</h3><p>حساب ساخته‌شده با ADMIN_USERNAME از داخل پنل حذف یا ویرایش نمی‌شود تا راه بازیابی اضطراری باقی بماند.</p></div></article>
 </section>
 <section class="view" id="view-controls">
   <div class="section-lead"><div><p class="eyebrow">کلیدهای توقف امن</p><h2>کنترل سامانه</h2><p>هر تغییر ثبت حسابرسی می‌شود. توقف اضطراری را فقط هنگام رخداد واقعی فعال کن.</p></div></div>
@@ -1529,6 +1653,16 @@ async def guard_callback(update: Update) -> Callback | None:
     if not parsed.owned_by(query.from_user.id):
         await query.answer(fa.NOT_YOUR_PANEL, show_alert=True)
         return None
+    player = await player_repo.get_by_telegram_id(query.from_user.id)
+    if player is not None:
+        from packages.core import db
+        valid = await db.fetchval("""SELECT life_expires_at>now() FROM player_ui_state
+          WHERE player_id=$1 AND life_chat_id=$2 AND life_message_id=$3""",
+          player.id, query.message.chat_id if query.message else 0,
+          query.message.message_id if query.message else 0)
+        if valid is False:
+            await query.answer("⌛ این پنل منقضی شده است؛ /start را بزن تا پنل تازه باز شود.",show_alert=True)
+            return None
     return parsed
 
 
@@ -1652,12 +1786,14 @@ from datetime import UTC,datetime
 from uuid import uuid4
 from html import escape
 from telegram import Update
-from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
+from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
+from apps.telelife_bot.handlers import ux
 from apps.telelife_bot.handlers.panel import show
 from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
+from packages.core.bot.start_limit import allow_start
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
 from packages.core.services import daily,life_progression,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
@@ -1684,6 +1820,10 @@ async def home(ctx,c):
 async def journey(ctx,c):
  st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
+async def today_page(ctx,c):
+ p=await fresh(ctx);view=await ux.today_view(p)
+ await panel(ctx,c,view.text,kb.today(ctx.telegram_id,view.actions))
+
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
  text=fa.PROFILE.format(name=escape(p.first_name),level=fmt.number(p.level),rank=fmt.number(rank),bar=fmt.progress_bar(cur,need),xp=fmt.number(cur),need=fmt.number(need),wallet=fmt.toman(p.wallet_toman),savings=fmt.toman(p.savings_toman),usd=fmt.usd(p.usd_cents),happy=fmt.number(p.happiness),rep=fmt.number(p.reputation),streak=fmt.number(streak))
@@ -1753,6 +1893,11 @@ async def unlock_page(ctx,c):
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
  await panel(ctx,c,fa.UNLOCKS.format(rows="\n".join(rows)),kb.back(ctx.telegram_id))
 async def start(update,c):
+ user,chat=update.effective_user,update.effective_chat
+ if not user or not chat:return
+ if not await allow_start(c,user.id,chat.id):
+  if update.effective_message:await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
+  return
  ctx=await resolve(update)
  if ctx:await home(ctx,c)
 async def text_start(update,c):
@@ -1770,8 +1915,8 @@ async def callback(update,c):
   from apps.telelife_bot.handlers.advertising import begin
   await begin(update,c);return
  try:
-  if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
-   await answer(q,);fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
+  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
+   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
   if a=='jstep':
    step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
    if step!=expected:await answer(q,'این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
@@ -1790,7 +1935,11 @@ async def callback(update,c):
    await xp.grant(ctx.player.id,'mission_complete',idempotency_key=f"mission-xp:{ctx.player.id}:{parsed.arg}:{xp.day_key('d',0)}",amount=m.reward_xp);await answer(q,"پاداش مأموریت دریافت شد.",show_alert=True);await missions_page(ctx,c);return
   if a in {'deposit','withdraw'}:await personal_economy.savings_transfer(ctx.player.id,int(parsed.arg),a,ik(a,ctx.player.id));await answer(q,"انتقال انجام شد.",show_alert=True);await savings_page(ctx,c);return
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
-  if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
+  if a in {'hrent','hbuy'}:
+   p=await fresh(ctx);tenure='rent' if a=='hrent' else 'owned';text=ux.housing_preview(p,parsed.arg,tenure)
+   await answer(q,);await panel(ctx,c,text,kb.confirm(ctx.telegram_id,'housing','hconfirm',f"{tenure},{parsed.arg}",'housing'));return
+  if a=='hconfirm':
+   tenure,code=parsed.arg.split(',',1);await personal_economy.acquire_housing(ctx.player.id,code,tenure,ik(a,ctx.player.id));await answer(q,"✅ خانه ثبت شد. حالا هزینه زندگی روزانه‌ات را در بخش دارایی و بانک ببین.",show_alert=True);await economy(ctx,c);return
   if a=='abuy':await life_progression.buy_asset(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,"دارایی خریده شد و اثرش فعال است.",show_alert=True);await assets_page(ctx,c);return
   if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"عالیه؛ شغلت ثبت شد و از همین حالا درآمدش جمع می‌شود.",show_alert=True);await jobs(ctx,c);return
   if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
@@ -1802,12 +1951,24 @@ async def callback(update,c):
     national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
     msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه زندگی: +{fmt.number(r.xp)}\n🛠 مهارت {SKILL_FA.get(r.skill_code or '',r.skill_code or 'شغلی')}: سطح {fmt.number(r.skill_level)} · {fmt.number(r.skill_xp)}/{fmt.number(r.skill_needed)}"
    await answer(q,msg,show_alert=True);await jobs(ctx,c);return
-  if a=='jupgrade':lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"ارتقا به سطح {fmt.number(lvl)}",show_alert=True);await jobs(ctx,c);return
-  if a in {'mbuy','msell'}:r=await usd_market.trade(ctx.player.id,'buy' if a=='mbuy' else 'sell',int(parsed.arg),ik(a,ctx.player.id));await answer(q,f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,c);return
+  if a=='jupgrade':
+   p=await fresh(ctx);row=await production_repo.get(p.id)
+   if not row:raise ValueError('job_not_found')
+   await answer(q,);await panel(ctx,c,ux.upgrade_preview(row,parsed.arg,p.wallet_toman),kb.confirm(ctx.telegram_id,'upgrade','juconfirm',parsed.arg,'jobs'));return
+  if a=='juconfirm':
+   lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"✅ ارتقا به سطح {fmt.number(lvl)} انجام شد. نتیجه آن را در نرخ و ظرفیت جدید می‌بینی.",show_alert=True);await jobs(ctx,c);return
+  if a in {'mbuy','msell'}:
+   p=await fresh(ctx);side='buy' if a=='mbuy' else 'sell';await answer(q,)
+   await panel(ctx,c,await ux.market_preview(p,side,int(parsed.arg)),kb.confirm(ctx.telegram_id,'market','mconfirm',f"{side},{parsed.arg}",'market'));return
+  if a=='mconfirm':
+   side,cents=parsed.arg.split(',',1);r=await usd_market.trade(ctx.player.id,side,int(cents),ik(a,ctx.player.id));await answer(q,f"✅ معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}. موجودی تازه در همین صفحه نمایش داده می‌شود.",show_alert=True);await market(ctx,c);return
   await answer(q,)
- except (ValueError,PermissionError) as e:await answer(q,why(e),show_alert=True)
+ except (ValueError,PermissionError) as e:
+  code=str(e);await answer(q,why(e),show_alert=True)
+  if code in {'insufficient_balance','insufficient_player_balance','housing_locked','market_locked','job_not_found','max_level_reached','market_frozen'}:
+   await panel(ctx,c,ux.actionable_error(code,player=ctx.player),kb.back(ctx.telegram_id,'home'))
 def register(app):
- app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'));app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT,text_start))
+ app.add_handler(CommandHandler('start',start));app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'));app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,text_start))
 ```
 
 ### `apps\telelife_bot\handlers\panel.py`
@@ -1819,6 +1980,7 @@ from telegram import Message
 from telegram.error import BadRequest,Forbidden
 from telegram.ext import ContextTypes
 from packages.core.repositories import ui_state_repo
+from packages.core.ui import schedule_cleanup
 
 async def show(context:ContextTypes.DEFAULT_TYPE,player_id:int,chat_id:int,text:str,markup,*,message:Message|None=None):
  state=await ui_state_repo.ensure_life(player_id); target=None
@@ -1838,6 +2000,8 @@ async def show(context:ContextTypes.DEFAULT_TYPE,player_id:int,chat_id:int,text:
  if target is None:
   target=await context.bot.send_message(chat_id=chat_id,text=text,reply_markup=markup)
  await ui_state_repo.set_life_panel(player_id,chat_id,target.message_id if target else int(state["life_message_id"]))
+ if target is not None:
+  schedule_cleanup(context,target,"profile")
  return target
 ```
 
@@ -2173,6 +2337,139 @@ def register(application) -> None:  # type: ignore[no-untyped-def]
     application.add_handler(CommandHandler("start", start))
 ```
 
+### `apps\telelife_bot\handlers\ux.py`
+
+```python
+"""Contextual guidance and previews for the active TeleLife panel."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from html import escape
+from typing import Any
+
+from packages.core.config import get_config
+from packages.core.repositories import production_repo
+from packages.core.services import daily, missions, personal_economy, production, usd_market
+from packages.core.utils import fmt
+
+HOUSING_FA = {"room": "اتاق", "apartment": "آپارتمان", "villa": "ویلا"}
+
+
+@dataclass(frozen=True, slots=True)
+class TodayView:
+    text: str
+    actions: tuple[str, ...]
+
+
+async def today_view(player: Any) -> TodayView:
+    """Prioritise ready rewards, urgent costs and the next useful action."""
+    streak, _, last_claim = await daily.state(player.id)
+    ready_daily = daily.claimable(last_claim)
+    items = await missions.ensure_today(player.id, max(1, player.level))
+    completed = sum(1 for item in items if item.done)
+    claimable = sum(1 for item in items if item.done and not item.claimed)
+    economy = await personal_economy.view(player.id)
+    job = await production_repo.get(player.id)
+    accrual = production.accrue(job, datetime.now(UTC)) if job else None
+
+    rows = ["☀️ <b>امروز من</b>", ""]
+    actions: list[str] = []
+    if ready_daily:
+        rows.append("🟢 هدیه روزانه آماده دریافت است.")
+        actions.append("daily")
+    else:
+        rows.append(f"✅ هدیه روزانه دریافت شده · زنجیره {fmt.number(streak)} روز")
+    rows.append(f"{'🟢' if claimable else '🟡'} مأموریت‌ها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""))
+    if claimable:
+        actions.append("missions")
+    if accrual and accrual.stored > 0:
+        ratio = round((accrual.stored / accrual.capacity) * 100) if accrual.capacity else 0
+        rows.append(f"🟢 درآمد شغل: {fmt.number(accrual.stored)} واحد آماده · انبار {fmt.number(ratio)}٪")
+        actions.append("jobs")
+    elif job:
+        rows.append("▫️ درآمد شغل در حال جمع‌شدن است.")
+    else:
+        rows.append("🟡 هنوز شغلی انتخاب نکرده‌ای.")
+        actions.append("jobs")
+    if economy.living_due:
+        icon = "⚠️" if economy.wallet < economy.living_due else "🟡"
+        rows.append(f"{icon} هزینه زندگی: {fmt.toman(economy.living_due)}")
+        actions.append("economy")
+    else:
+        rows.append("✅ هزینه زندگی تسویه است.")
+    rows.extend(("", "🎯 <b>پیشنهاد بعدی</b>"))
+    if ready_daily:
+        rows.append("هدیه را بگیر و سپس مأموریت‌های امروز را ادامه بده.")
+    elif claimable:
+        rows.append("پاداش مأموریت کامل‌شده را دریافت کن.")
+    elif accrual and accrual.stored:
+        rows.append("نتیجه شیفت را بگیر تا درآمد و تجربه ثبت شود.")
+    elif economy.living_due:
+        rows.append("هزینه زندگی را بررسی کن تا بدهی روی هم جمع نشود.")
+    else:
+        rows.append("یک مأموریت یا شیفت شغلی را جلو ببر.")
+    return TodayView("\n".join(rows), tuple(dict.fromkeys(actions))[:3])
+
+
+def upgrade_preview(row: Any, kind: str, wallet: int) -> str:
+    cfg = get_config()
+    current = int(row[f"{kind}_level"])
+    target = current + 1
+    section = "jobs.storage.upgrade_cost_toman" if kind == "storage" else "jobs.production_levels.upgrade_cost_toman"
+    if not cfg.has(f"{section}.{target}"):
+        raise ValueError("max_level_reached")
+    cost = cfg.int_(f"{section}.{target}")
+    title = "ظرفیت انبار" if kind == "storage" else "بازده تولید"
+    extra = "ساعت بیشتری پیش از پرشدن انبار فرصت داری." if kind == "storage" else "سرعت درآمد شغل افزایش می‌یابد."
+    return (f"⚙️ <b>پیش‌نمایش ارتقای {title}</b>\n\n"
+            f"سطح فعلی: <b>{fmt.number(current)}</b>\nسطح جدید: <b>{fmt.number(target)}</b>\n"
+            f"هزینه: <b>{fmt.toman(cost)}</b>\nموجودی پس از ارتقا: <b>{fmt.toman(wallet-cost)}</b>\n\n{extra}")
+
+
+def housing_preview(player: Any, code: str, tenure: str) -> str:
+    spec = get_config().section("phase3.housing.options").get(code)
+    if not spec:
+        raise ValueError("invalid_housing")
+    cost = int(spec["weekly_rent_toman"] if tenure == "rent" else spec["purchase_toman"])
+    title = escape(str(spec.get("title") or HOUSING_FA.get(code, code)))
+    mode = "اجاره هفت‌روزه" if tenure == "rent" else "خرید دائمی"
+    return (f"🏠 <b>پیش‌نمایش {mode} {title}</b>\n\nهزینه: <b>{fmt.toman(cost)}</b>\n"
+            f"هزینه زندگی روزانه: <b>{fmt.toman(int(spec.get('daily_living_toman',0)))}</b>\n"
+            f"حداقل سطح: <b>{fmt.number(spec['min_level'])}</b>\n"
+            f"موجودی پس از پرداخت: <b>{fmt.toman(player.wallet_toman-cost)}</b>\n\n"
+            "با تأیید، خانه فعلی جایگزین می‌شود و اثر شادی آن اعمال خواهد شد.")
+
+
+async def market_preview(player: Any, side: str, cents: int) -> str:
+    view = await usd_market.view()
+    unit = view.buy_price if side == "buy" else view.sell_price
+    toman = unit * cents // 100
+    fee_bp = get_config().int_("market.usd.fee_basis_points")
+    fee = toman * fee_bp // 10_000
+    total = toman + fee if side == "buy" else toman - fee
+    after_wallet = player.wallet_toman - total if side == "buy" else player.wallet_toman + total
+    after_usd = player.usd_cents + cents if side == "buy" else player.usd_cents - cents
+    verb = "خرید" if side == "buy" else "فروش"
+    return (f"💵 <b>پیش‌نمایش {verb} {fmt.usd(cents)}</b>\n\nنرخ محاسبه: <b>{fmt.toman(unit)}</b>\n"
+            f"ارزش معامله: <b>{fmt.toman(toman)}</b>\nکارمزد: <b>{fmt.toman(fee)}</b>\n"
+            f"دریافت/پرداخت نهایی: <b>{fmt.toman(total)}</b>\n\n"
+            f"کیف پول پس از معامله: <b>{fmt.toman(after_wallet)}</b>\nدلار پس از معامله: <b>{fmt.usd(after_usd)}</b>")
+
+
+def actionable_error(code: str, *, player: Any | None = None) -> str:
+    messages = {
+        "insufficient_balance": "❌ <b>موجودی کافی نیست</b>\n\nمبلغ لازم بیشتر از کیف پول فعلی است. درآمد شغل را دریافت کن، مبلغ کمتری انتخاب کن یا از پس‌انداز برداشت کن.",
+        "insufficient_player_balance": "❌ <b>موجودی کافی نیست</b>\n\nابتدا درآمد آماده را دریافت کن یا موجودی کیف پول را افزایش بده.",
+        "housing_locked": "🔒 <b>این خانه هنوز باز نشده است</b>\n\nدر صفحه مرکز پیشرفت، سطح لازم و بهترین مسیر رسیدن به آن را ببین.",
+        "market_locked": "🔒 <b>بازار ارز از سطح ۱۰ باز می‌شود</b>\n\nمأموریت‌ها و نتیجه شیفت‌ها سریع‌ترین مسیر دریافت تجربه‌اند.",
+        "job_not_found": "💼 <b>هنوز شغلی نداری</b>\n\nابتدا یک شغل انتخاب کن تا درآمد با گذشت زمان جمع شود.",
+        "max_level_reached": "✅ <b>این بخش در بالاترین سطح است</b>\n\nنیازی به ارتقای بیشتر نیست؛ روی دارایی یا هدف بعدی تمرکز کن.",
+        "market_frozen": "⏸ <b>بازار موقتاً متوقف است</b>\n\nقیمت‌ها قابل مشاهده‌اند، اما معامله تا بازشدن بازار انجام نمی‌شود.",
+    }
+    return messages.get(code, "❌ عملیات کامل نشد. صفحه را تازه کن و شرایط نمایش‌داده‌شده را دوباره بررسی کن.")
+```
+
 ### `apps\telelife_bot\keyboards\__init__.py`
 
 ```python
@@ -2198,10 +2495,10 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
     if onboarding < 4:
         k.row(B("🚀 ادامه مسیر شروع", "journey", owner, style=Style.PRIMARY))
     else:
-        k.row(B("🎯 کارهای امروز", "missions", owner, style=Style.PRIMARY),
+        k.row(B("☀️ امروز من", "today", owner, style=Style.PRIMARY),
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     if onboarding < 4:
-        k.row(B("🎯 کارهای امروز", "missions", owner),
+        k.row(B("☀️ امروز من", "today", owner),
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
@@ -2285,6 +2582,19 @@ def assets(owner, rows):
             k.row(B(f"خرید {item.title}", "abuy", owner, item.code, Style.PRIMARY))
     k.row(B("🧭 مرکز پیشرفت", "progress", owner), B("🏠 خانه", "home", owner))
     return k.build()
+
+def today(owner, actions):
+    labels={"daily":"🎁 دریافت هدیه","missions":"🎯 دریافت پاداش مأموریت","jobs":"💼 رفتن به شغل","economy":"💳 بررسی هزینه زندگی"}
+    styles={"daily":Style.SUCCESS,"missions":Style.SUCCESS,"jobs":Style.PRIMARY,"economy":Style.PRIMARY}
+    k=Keyboard()
+    for action in actions:
+        k.row(B(labels.get(action,"ادامه"),action,owner,style=styles.get(action,Style.GLASS)))
+    k.row(B("🔄 تازه‌سازی امروز", "today", owner),B("🏠 خانه", "home", owner))
+    return k.build()
+
+def confirm(owner, token, confirm_action, arg, back_action):
+    return (Keyboard().row(B("✅ تأیید و اجرا",confirm_action,owner,arg,Style.SUCCESS))
+            .row(B("↩️ انصراف",back_action,owner)).build())
 ```
 
 ### `apps\telelife_bot\main.py`
@@ -3154,11 +3464,13 @@ from datetime import UTC,datetime
 from html import escape
 from telegram.constants import ChatMemberStatus, ChatType
 from telegram.error import BadRequest, Forbidden
-from telegram.ext import CallbackQueryHandler, MessageHandler, PreCheckoutQueryHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, PreCheckoutQueryHandler, filters
 from telegram import LabeledPrice
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
+from packages.core.bot.start_limit import allow_start
+from packages.core.ui import schedule_cleanup
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
 from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade
 from packages.core.services import world_access
@@ -3171,7 +3483,9 @@ GOV = {code: item[0] for code, item in fa.GOVERNMENT_DETAILS.items()}
 ASSET = {"IRT":"تومان", "food":"غذا", "minerals":"مواد معدنی", "oil":"نفت", "energy":"انرژی", "technology":"فناوری"}
 ERRORS = {
     "citizen_required":"ابتدا شهروند این کشور شو.", "president_required":"فقط رهبر کشور می‌تواند این کار را انجام دهد.",
-    "already_citizen_elsewhere":"اکنون شهروند کشور دیگری هستی؛ ابتدا از آن خارج شو.",
+    "already_citizen_elsewhere":"اکنون شهروند کشور دیگری هستی؛ از همین پنل قوانین مهاجرت را ببین یا شهروندی فعلی را لغو کن.",
+    "citizenship_too_new":"برای جلوگیری از جابه‌جایی سوءاستفاده‌آمیز، لغو مستقیم تا ۷ روز پس از عضویت ممکن نیست.",
+    "leader_must_transfer_power":"رهبر باید ابتدا قدرت را واگذار کند.", "migration_pending":"ابتدا درخواست مهاجرت در انتظار را تعیین تکلیف کن.",
     "election_already_open":"یک انتخابات فعال وجود دارد.", "project_not_active":"پروژه فعالی وجود ندارد.",
     "country_already_exists":"این گروه از قبل کشور دارد.", "insufficient_balance":"موجودی کافی نیست.",
     "insufficient_player_balance":"موجودی کیف پولت کافی نیست.", "country_not_found":"کشوری پیدا نشد.",
@@ -3199,16 +3513,23 @@ async def show(update, context, text, markup):
     message_id = query.message.message_id if query and query.message else int(state["message_id"]) if state else None
     if message_id:
         try:
-            await context.bot.edit_message_text(chat_id=chat.id, message_id=message_id, text=text, reply_markup=markup)
+            edited = await context.bot.edit_message_text(chat_id=chat.id, message_id=message_id, text=text, reply_markup=markup)
             await ui_state_repo.set_world(chat.id, message_id)
+            if hasattr(edited, "message_id"):
+                schedule_cleanup(context, edited, "world")
+            elif query and query.message:
+                schedule_cleanup(context, query.message, "world")
             return
         except BadRequest as exc:
             if "message is not modified" in str(exc).lower():
+                if query and query.message:
+                    schedule_cleanup(context, query.message, "world")
                 return
         except Forbidden:
             pass
     sent = await context.bot.send_message(chat.id, text, reply_markup=markup)
     await ui_state_repo.set_world(chat.id, sent.message_id)
+    schedule_cleanup(context, sent, "world")
 
 async def facts(chat_id):
     row = await country_repo.by_chat(chat_id)
@@ -3261,12 +3582,21 @@ async def home(update, context):
     p = await player(update)
     citizenship = await country_repo.citizenship(p.id) if row else None
     citizen = bool(citizenship and citizenship["is_active"] and int(citizenship["country_id"]) == int(row["id"]))
+    official_role = None
+    if row and citizen:
+        if int(row["president_player_id"] or 0) == p.id:
+            official_role = "president"
+        else:
+            official_role = await db.fetchval(
+                "SELECT role_code FROM country_offices WHERE country_id=$1 AND player_id=$2 LIMIT 1",
+                row["id"], p.id,
+            )
     if not row:
         await show(update, context, fa.HOME_EMPTY, kb.home(False, await is_admin(update, context)))
         return
     goal = "شهروند جذب کنید" if row["status"] == "forming" else "انتخابات رهبر را کامل کنید" if not row["president_player_id"] else "پروژه و اقتصاد کشور را رشد دهید"
     text = fa.HOME.format(name=escape(str(row["name"])), status=STATUS.get(row["status"], "نامشخص"), citizens=fmt.number(count), leader=escape(str(leader or "هنوز انتخاب نشده")), treasury=fmt.toman(row["treasury_toman"]), goal=goal)
-    await show(update, context, text, kb.home(True, await is_admin(update, context), citizen))
+    await show(update, context, text, kb.home(True, await is_admin(update, context), citizen, official_role))
 
 async def country_page(update, context):
     row, count, leader = await facts(update.effective_chat.id)
@@ -3402,6 +3732,18 @@ async def callback(update, context):
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
         elif action == "guide":
             await answer(query, ); row, _, _ = await facts(update.effective_chat.id) if update.effective_chat.type in GROUPS else (None, 0, None); await show(update, context, fa.GUIDE if row else fa.GUIDE_EMPTY, kb.back())
+        elif action == "country_today":
+            await answer(query);row,count,leader=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            project=await project_repo.active(row["id"]);election=await election_repo.open_for_country(row["id"])
+            crisis=bool(await db.fetchval("SELECT 1 FROM country_crises WHERE country_id=$1 AND status='active'",row["id"]))
+            text=(f"☀️ <b>امروز {escape(str(row['name']))}</b>\n\n"
+                  f"{'⚠️ بحران فعال نیازمند رسیدگی است.' if crisis else '✅ بحران فعالی ثبت نشده است.'}\n"
+                  f"{'🟢 پروژه ملی فعال است.' if project else '▫️ پروژه ملی فعالی وجود ندارد.'}\n"
+                  f"{'🗳 انتخابات در جریان است.' if election else '▫️ انتخابات بازی وجود ندارد.'}\n"
+                  f"👥 جمعیت: <b>{fmt.number(count)}</b> · خزانه: <b>{fmt.toman(row['treasury_toman'])}</b>\n\n"
+                  "بهترین اقدام را از دکمه‌های مرتبط همین صفحه انتخاب کن.")
+            await show(update,context,text,kb.home(True,await is_admin(update,context),True));return
         elif action == "country": await answer(query, ); await country_page(update, context)
         elif action == "economy": await answer(query, ); await economy_page(update, context)
         elif action == "economyb": await answer(query); await economy_b_page(update,context)
@@ -3546,16 +3888,38 @@ async def callback(update, context):
         elif action == "subtreasury":
             p=await player(update);price=await commerce.buy_with_treasury(update.effective_chat.id,p.id);await answer(query,f"اشتراک با {fmt.toman(price)} از خزانه فعال شد.",show_alert=True);await home(update,context)
         elif action == "join":
-            p = await player(update); joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "شهروند شدی." if joined else "از قبل شهروندی.", show_alert=True); await home(update, context)
+            p = await player(update)
+            try:
+                joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id)
+            except ValueError as exc:
+                if str(exc) == "migration_required":
+                    await answer(query)
+                    await show(update, context, "🌐 <b>شهروند کشور دیگری هستی</b>\n\nبرای پیوستن به این کشور، یکی از مسیرهای قانونی را انتخاب کن: مهاجرت با عوارض و محدودیت سیاسی، یا لغو شهروندی فعلی در صورت گذشت حداقل ۷ روز. رهبر کشور و کاربر دارای درخواست مهاجرت باز نمی‌توانند لغو مستقیم انجام دهند.", kb.citizenship_elsewhere())
+                    return
+                raise
+            await answer(query, "شهروند شدی." if joined else "از قبل شهروند همین کشور هستی.", show_alert=True); await home(update, context)
+        elif action == "migration_rules":
+            await answer(query)
+            await show(update, context, "✈️ <b>قوانین مهاجرت</b>\n\n• فاصله دو مهاجرت: ۳۰ روز\n• عوارض خروج: ۵٪ دارایی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان\n• مهلت بررسی مقصد: ۷۲ ساعت\n• نشان مهاجر: ۳۰ روز\n• محدودیت فعالیت سیاسی: ۱۴ روز\n\nلغو مستقیم شهروندی فقط پس از ۷ روز، برای افراد غیررهبر و بدون درخواست مهاجرت باز ممکن است.", kb.citizenship_elsewhere())
+        elif action == "citizenship_cancel_ask":
+            await answer(query)
+            await show(update, context, "⚠️ <b>لغو شهروندی فعلی</b>\n\nبا تأیید، عضویت فعلی غیرفعال می‌شود. دارایی شخصی حفظ می‌شود، اما دسترسی‌های شهروندی کشور را از دست می‌دهی. این کار برای رهبر یا عضویت کمتر از ۷ روز مجاز نیست.", kb.citizenship_cancel_confirm())
+        elif action == "citizenship_cancel_confirm":
+            p = await player(update); await countries.cancel_citizenship(p.id)
+            await answer(query, "شهروندی فعلی لغو شد؛ اکنون می‌توانی به کشور مقصد بپیوندی.", show_alert=True); await home(update, context)
         elif action == "leave":
-            await answer(query,"برای جلوگیری از دورزدن عوارض و محدودیت زمانی، خروج مستقیم بسته است؛ از بخش «مهاجرت» کشور مقصد را انتخاب کن.",show_alert=True)
+            await answer(query,"برای جلوگیری از دورزدن عوارض و محدودیت زمانی، از بخش مهاجرت استفاده کن؛ لغو مستقیم فقط طبق قوانین نمایش‌داده‌شده ممکن است.",show_alert=True)
         elif action.startswith("donate:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
             citizenship = await country_repo.citizenship(p.id)
             if not citizenship or not citizenship["is_active"] or int(citizenship["country_id"]) != int(row["id"]): raise PermissionError("citizen_required")
-            await economy.transfer(p.id, row["id"], "IRT", int(action.split(":", 1)[1]), reason="donation", idempotency_key=f"world-donate:{p.id}:{query.id}")
-            await answer(query, "کمک مالی ثبت شد.", show_alert=True); await country_page(update, context)
+            amount=int(action.split(":",1)[1]);await answer(query)
+            await show(update,context,f"💰 <b>پیش‌نمایش کمک به {escape(str(row['name']))}</b>\n\nمبلغ انتقال: <b>{fmt.toman(amount)}</b>\nکیف پول پس از کمک: <b>{fmt.toman(p.wallet_toman-amount)}</b>\nخزانه کشور پس از کمک: <b>{fmt.toman(int(row['treasury_toman'])+amount)}</b>\n\nاین انتقال در دفتر اقتصاد ثبت می‌شود.",kb.confirm_world(f"donateok:{amount}","country"));return
+        elif action.startswith("donateok:"):
+            p=await player(update);row,_,_=await facts(update.effective_chat.id);amount=int(action.split(":",1)[1])
+            await economy.transfer(p.id,row["id"],"IRT",amount,reason="donation",idempotency_key=f"world-donate:{p.id}:{query.id}")
+            await answer(query,"✅ کمک ثبت شد؛ اثر آن را در خزانه تازه‌شده می‌بینی.",show_alert=True);await country_page(update,context)
         elif action == "estart":
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
@@ -3645,6 +4009,16 @@ async def text(update, context):
             await show(update, context, f"ساخت کشور انجام نشد: {ERRORS.get(str(exc), 'اطلاعات معتبر نبود.')}\n\nاز صفحه اصلی دوباره تلاش کن.", kb.back()); return
         context.chat_data.pop(FLOW, None); await home(update, context)
 
+
+async def start(update, context):
+    user, chat = update.effective_user, update.effective_chat
+    if not user or not chat: return
+    if not await allow_start(context, user.id, chat.id):
+        if update.effective_message:
+            await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
+        return
+    await home(update, context)
+
 async def precheckout(update,context):
  q=update.pre_checkout_query;ok=await commerce.precheckout(q.invoice_payload,q.from_user.id,q.total_amount);await q.answer(ok=ok,error_message=None if ok else "صورتحساب نامعتبر یا منقضی شده است.")
 async def successful_payment(update,context):
@@ -3653,10 +4027,11 @@ async def successful_payment(update,context):
  purpose=await commerce.settle(payment.invoice_payload,update.effective_user.id,payment.total_amount,payment.telegram_payment_charge_id,payment.provider_payment_charge_id or None)
  await update.effective_message.reply_text("✅ سهم شما ثبت شد. با تکمیل هدف جمعیت‌محور، اشتراک ۳۰روزه گروه فعال می‌شود." if purpose=="subscription" else "✅ پرداخت ثبت شد.")
 def register(app):
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback, pattern=r"^tw:"))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-    app.add_handler(MessageHandler(filters.TEXT, text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))
 ```
 
 ### `apps\teleworld_bot\keyboards.py`
@@ -3682,18 +4057,47 @@ def access(ready=False):
 def private(username):
     return InlineKeyboardMarkup([[InlineKeyboardButton("➕ افزودن به گروه", url=f"https://t.me/{username}?startgroup=true", style="primary")], [b("📘 راهنمای استفاده", "guide")]])
 
-def home(country, admin, citizen=False):
+def home(country, admin, citizen=False, official_role=None):
+    """Reveal only actions relevant to this member's current country role."""
     if country:
-        rows = [[b("🏛 شناسنامه کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
-                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project"),b("🌐 تجارت و دیپلماسی","trade")]]
-        rows.append([b("🚪 خروج از شهروندی", "leave", "danger")] if citizen else [b("🤝 شهروند این کشور می‌شوم", "join", "success")])
-        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription", "primary"),b("✈️ مهاجرت", "migration")])
-        if admin:rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
-        rows.append([b("📘 راهنمای همین مرحله", "guide"), b("🔄 تازه‌سازی", "home")])
+        if not citizen:
+            rows = [[b("🤝 شهروند این کشور می‌شوم", "join", "success")],
+                    [b("🏛 وضعیت کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
+                    [b("📘 قوانین شهروندی", "migration_rules"), b("🔄 تازه‌سازی", "home")]]
+            return InlineKeyboardMarkup(rows)
+        rows = [[b("☀️ وضعیت امروز کشور", "country_today", "primary")],
+                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")],
+                [b("🏗 پروژه ملی", "project"), b("🌐 تجارت و دیپلماسی", "trade")],
+                [b("✈️ مهاجرت", "migration"), b("🏛 شناسنامه", "country")]]
+        if official_role in {"president", "economy_minister", "industry_minister"}:
+            rows.insert(2,[b("⚙️ مدیریت حوزه من", "economyb", "success")])
+        if official_role in {"president", "foreign_minister"}:
+            rows.insert(3,[b("🤝 عملیات دیپلماسی", "trade", "success")])
+        if official_role == "president" or admin:
+            rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
+        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription"), b("🔄 تازه‌سازی", "home")])
         return InlineKeyboardMarkup(rows)
     if admin:
         return InlineKeyboardMarkup([[b("🏗 ساخت کشور", "create", "primary")], [b("📘 راهنمای ساخت کشور", "guide")], [b("🔄 تازه‌سازی", "home")]])
     return InlineKeyboardMarkup([[b("📘 برای ساخت کشور چه کنیم؟", "guide", "primary")], [b("🔄 تازه‌سازی", "home")]])
+
+
+
+def confirm_world(confirm_action, back_action="home"):
+ return InlineKeyboardMarkup([[b("✅ تأیید و اجرا",confirm_action,"success")],[b("↩️ انصراف",back_action,"primary")]])
+
+def citizenship_elsewhere():
+    return InlineKeyboardMarkup([
+        [b("✈️ قوانین مهاجرت", "migration_rules", "primary")],
+        [b("🚪 لغو شهروندی فعلی", "citizenship_cancel_ask", "danger")],
+        [b("🏠 خانه جهان", "home")],
+    ])
+
+def citizenship_cancel_confirm():
+    return InlineKeyboardMarkup([
+        [b("تأیید لغو شهروندی", "citizenship_cancel_confirm", "danger")],
+        [b("انصراف", "home", "primary")],
+    ])
 
 def governments():
     items=[("🏛 جمهوری","republic"),("🗳 ریاستی","presidential"),("🏢 پارلمانی","parliamentary"),("⚖️ نیمه‌ریاستی","semi_presidential"),("👑 پادشاهی","monarchy"),("📜 مشروطه","constitutional_monarchy"),("🛡 دیکتاتوری","dictatorship"),("🧭 فدرال","federal"),("🤝 شورایی","council"),("👥 مستقیم","direct_democracy"),("⛪ دینی","theocracy"),("🎖 شورای نظامی","military_junta"),("💠 الیگارشی","oligarchy")]
@@ -4408,28 +4812,21 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 ### `HOTFIX_2026-07-27_FA.md`
 
 ```markdown
-# Hotfix آماده انتشار — ۲۷ ژوئیهٔ ۲۰۲۶
+# هات‌فیکس TeleLife / TeleWorld — ۲۰۲۶-۰۷-۲۷
 
-## اصلاح‌های انجام‌شده
+## اصلاحات
+- افزودن متد `GameConfig.has()` و رفع کرش ارتقای تولید/انبار.
+- محدودیت `/start`: حداکثر دو بار در بازهٔ لغزان ۶۰ ثانیه برای هر کاربر و گفت‌وگو، در هر دو بات.
+- غیرفعال‌شدن دکمه‌های پنل‌های TeleLife و TeleWorld پس از ۶۰ ثانیه؛ هر تعامل معتبر تایمر را از نو تنظیم می‌کند.
+- نمایش پنل عملیاتی هنگام شهروندبودن در کشور دیگر: قوانین مهاجرت، لغو شهروندی و انصراف.
+- لغو مستقیم شهروندی با قوانین ضدسوءاستفاده: حداقل ۷ روز عضویت، ممنوع برای رهبر، و ممنوع هنگام وجود درخواست مهاجرت باز.
+- اصلاح سربرگ HTML خبر حکومتی و افزودن خلاصهٔ روزانه با تگ‌های متوازن.
+- اصلاح ثبت واقعی هندلر `/start` در هر دو بات و جلوگیری از بلعیده‌شدن فرمان توسط هندلر متن عمومی.
 
-- ناسازگاری checksum دیتابیس مستقر برای `0014_free_tier_hardening` به‌عنوان بخشی از خط مبنای بازیابی‌شده مدیریت شد؛ رکورد دیتابیس حفظ می‌شود و SQL تاریخی دوباره اجرا نمی‌شود.
-- کنترل تغییرناپذیری برای migrationهای جدید از `0015_purposeful_work_loop` به بعد همچنان سخت‌گیرانه است؛ تغییر فایل اعمال‌شده باعث توقف امن می‌شود.
-- تست‌های رگرسیون migration با خط مبنای واقعی به‌روزرسانی شدند.
-- وابستگی runtime مربوط به `Pillow` بین `requirements.txt` و `pyproject.toml` همگام شد.
-- `.dockerignore` امن اضافه شد تا secret محلی، cache، تاریخچه Git و دامپ‌های بزرگ وارد image نشوند.
-- `MANIFEST.sha256` تازه برای کنترل تمام فایل‌های بسته تولید شد.
-
-## اعتبارسنجی انجام‌شده
-
-- Parse و compile تمام فایل‌های Python: موفق
-- Parse تمام فایل‌های YAML: موفق
-- بررسی syntax فایل JavaScript پنل: موفق
-- تست رفتاری migrator برای mismatch نسخه ۱۴، اعمال نسخه ۱۵ و رد tamper نسخه ۱۵: موفق
-- کنترل زنجیره ۱۸ migration و manifest تمام فایل‌ها: موفق
-
-## محدودیت تأیید
-
-محیط تحویل آفلاین است و dependencyهای اجرایی، PostgreSQL و credentialهای Telegram را ندارد؛ بنابراین اجرای `pytest` کامل و smoke test زنده در این محیط ممکن نبود. پیش از تغییر ترافیک production، image را در CI/staging بسازید، `python -m pytest -q` را اجرا کنید و startup را روی clone یا backup دیتابیس production بررسی کنید.
+## کنترل کیفیت
+- تمام فایل‌های Python با AST و `compileall` بررسی شدند.
+- تست‌های رگرسیون هدفمند برای `GameConfig.has`، قالب خبر، محدودیت استارت، انقضای پنل و پنل شهروندی اضافه شد.
+- اجرای کامل pytest در محیط تحویل ممکن نبود، چون وابستگی‌های runtime پروژه (`python-telegram-bot` و `pytest`) در sandbox نصب نبودند؛ پیش از استقرار در محیط پروژه اجرا شود: `python -m pytest -q`.
 ```
 
 ### `LIFE_PROGRESSION_RELEASE_FA.md`
@@ -5879,6 +6276,35 @@ CREATE TABLE IF NOT EXISTS admin_reversible_actions (
 CREATE INDEX IF NOT EXISTS idx_admin_undo_available ON admin_reversible_actions(expires_at) WHERE undone_at IS NULL;
 ```
 
+### `migrations\0021_multi_admin_hardening.sql`
+
+```sql
+-- Database-backed admin accounts and reliable incident lifecycle.
+ALTER TABLE admin_identities ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE admin_identities ADD COLUMN IF NOT EXISTS created_by TEXT;
+ALTER TABLE admin_identities ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE admin_identities ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_admin_identities_enabled_role
+    ON admin_identities(role, username) WHERE enabled;
+
+-- Existing rows created by the earlier RBAC migration have no credential and
+-- intentionally remain unable to authenticate until a superadmin sets one.
+ALTER TABLE admin_identities DROP CONSTRAINT IF EXISTS admin_identity_password_shape;
+ALTER TABLE admin_identities ADD CONSTRAINT admin_identity_password_shape
+    CHECK (password_hash IS NULL OR password_hash LIKE 'pbkdf2_sha256$%');
+```
+
+### `migrations\0022_ui_panel_expiry.sql`
+
+```sql
+-- Persist panel expiry so stale callbacks remain invalid after restart/replicas.
+ALTER TABLE player_ui_state ADD COLUMN IF NOT EXISTS life_expires_at TIMESTAMPTZ;
+ALTER TABLE world_ui_state ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_player_ui_expiry ON player_ui_state(life_expires_at);
+CREATE INDEX IF NOT EXISTS idx_world_ui_expiry ON world_ui_state(expires_at);
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -6025,6 +6451,44 @@ def run_bot(service: Service, register: RegisterFn) -> None:
     asyncio.run(standalone())
 ```
 
+### `packages\core\bot\start_limit.py`
+
+```python
+"""Small in-process limiter dedicated to /start commands."""
+from __future__ import annotations
+
+import asyncio
+from collections import defaultdict, deque
+from time import monotonic
+from typing import Any
+
+_WINDOW_SECONDS = 60.0
+_MAX_STARTS = 2
+_LOCK_KEY = "_start_rate_limit_lock"
+_BUCKETS_KEY = "_start_rate_limit_buckets"
+
+
+async def allow_start(context: Any, user_id: int, chat_id: int) -> bool:
+    """Allow at most two /start commands per user/chat in a rolling minute."""
+    data = context.application.bot_data
+    lock = data.get(_LOCK_KEY)
+    if lock is None:
+        lock = data[_LOCK_KEY] = asyncio.Lock()
+    async with lock:
+        buckets = data.get(_BUCKETS_KEY)
+        if buckets is None:
+            buckets = data[_BUCKETS_KEY] = defaultdict(deque)
+        key = (int(user_id), int(chat_id))
+        bucket = buckets[key]
+        now = monotonic()
+        while bucket and now - bucket[0] >= _WINDOW_SECONDS:
+            bucket.popleft()
+        if len(bucket) >= _MAX_STARTS:
+            return False
+        bucket.append(now)
+        return True
+```
+
 ### `packages\core\config\__init__.py`
 
 ```python
@@ -6067,12 +6531,13 @@ timezone: Asia/Tehran
 
 menu_cleanup:
   enabled: true
-  default_timeout_seconds: 120
+  default_timeout_seconds: 60
   panels:
-    profile: 120
-    settings: 90
+    profile: 60
+    settings: 60
     market: 60
-    house: 120
+    house: 60
+    world: 60
 
 rate_limit:
   private_messages_per_minute: 25
@@ -6650,6 +7115,7 @@ political_hold_days: 14
 exit_fee_percent: 5
 exit_fee_min_toman: 500000
 exit_fee_max_toman: 50000000
+citizenship_cancellation_min_days: 7
 ```
 
 ### `packages\core\config\data\missions.yaml`
@@ -6924,6 +7390,14 @@ class GameConfig:
             node = node[key]
         return node
 
+    def has(self, path: str) -> bool:
+        """Return whether a dotted path exists."""
+        try:
+            self.get(path)
+        except ConfigError:
+            return False
+        return True
+
     def int_(self, path: str, default: int | object = _MISSING) -> int:
         value = self.get(path, default)
         if isinstance(value, bool):
@@ -7035,22 +7509,22 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 # the same applied SQL with checksums calculated from the pre-normalized bytes.
 # Never re-run those versions: preserve their records and enforce immutable
 # checksums for every migration introduced after the recovered baseline.
+# This recovered distribution may differ byte-for-byte from migrations already
+# applied by earlier releases. Never re-run shipped history. Starting with 0021,
+# checksums are strict and changing an applied migration remains a hard failure.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
-    "0001_core_schema",
-    "0002_progression",
-    "0003_country_layer",
-    "0004_admin_command_center",
-    "0005_life_world_hardening",
-    "0006_phase3_phase4_complete",
-    "0007_unified_ui_onboarding",
-    "0008_world_access_lifecycle",
-    "0009_ads_governance_moderation",
-    "0010_stars_subscriptions_ad_marketplace",
-    "0011_population_channels_migration",
-    "0012_reliability_live_market_engagement",
-    "0013_country_identity_candles_realism",
-    "0014_free_tier_hardening",
+    "0001_core_schema", "0002_progression", "0003_country_layer",
+    "0004_admin_command_center", "0005_life_world_hardening",
+    "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
+    "0008_world_access_lifecycle", "0009_ads_governance_moderation",
+    "0010_stars_subscriptions_ad_marketplace", "0011_population_channels_migration",
+    "0012_reliability_live_market_engagement", "0013_country_identity_candles_realism",
+    "0014_free_tier_hardening", "0015_purposeful_work_loop",
+    "0016_national_projects_and_missions", "0017_country_economy_release_b",
+    "0018_country_trade_diplomacy_release_c", "0019_life_progression_system",
+    "0020_admin_operations_10",
 })
+STRICT_CHECKSUM_FROM = "0021_multi_admin_hardening"
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -7087,8 +7561,10 @@ async def migrate() -> list[str]:
                 digest = _checksum(sql)
                 if version in done:
                     if done[version] != digest:
-                        if version in LEGACY_CHECKSUM_VERSIONS:
-                            logger.warning(
+                        # Every migration shipped before the strict baseline belongs to
+                        # recovered history, including installations with variant names.
+                        if version in LEGACY_CHECKSUM_VERSIONS or version < STRICT_CHECKSUM_FROM:
+                            logger.info(
                                 "legacy migration checksum differs; preserving the "
                                 "database record and not re-running SQL: %s",
                                 version,
@@ -7343,6 +7819,34 @@ class Group:
         return cls(**dict(row))
 ```
 
+### `packages\core\monitor.py`
+
+```python
+import psutil
+import os
+
+
+def get_system_usage():
+    process = psutil.Process(os.getpid())
+
+    memory = process.memory_info().rss / 1024 / 1024  # MB
+
+    cpu = process.cpu_percent(interval=0.1)
+
+    return {
+        "cpu_percent": round(cpu, 2),
+        "ram_mb": round(memory, 2),
+        "ram_percent": round(
+            psutil.virtual_memory().percent,
+            2
+        ),
+        "total_ram_mb": round(
+            psutil.virtual_memory().total / 1024 / 1024,
+            2
+        )
+    }
+```
+
 ### `packages\core\repositories\__init__.py`
 
 ```python
@@ -7415,9 +7919,10 @@ async def failed(conn: asyncpg.Connection, row_id: int, token: UUID,
 ```python
 """Read models and audited mutation primitives for the admin command center."""
 from __future__ import annotations
-
+import asyncio
 from typing import Any
 import asyncpg
+from datetime import datetime, UTC
 from packages.core import db
 
 async def audit(conn: asyncpg.Connection, actor: str, action: str, request_id: str,
@@ -7610,10 +8115,10 @@ async def economy_integrity() -> dict[str, object]:
 
 
 async def command_center() -> dict[str, object]:
-    """Actionable operational picture assembled from canonical tables."""
-    overview = await dashboard_stats()
-    ops = await operations_status()
-    integrity = await economy_integrity()
+    """Build an actionable picture without reviving stale or expected events."""
+    overview, ops, integrity = await asyncio.gather(
+        dashboard_stats(), operations_status(), economy_integrity()
+    )
     countries_rows = await db.fetch("""
       SELECT c.id,c.name,c.status,c.treasury_toman,
         count(DISTINCT cs.player_id) FILTER (WHERE cs.is_active) citizens,
@@ -7624,7 +8129,10 @@ async def command_center() -> dict[str, object]:
       FROM countries c
       LEFT JOIN citizenships cs ON cs.country_id=c.id
       LEFT JOIN country_economy_state e ON e.country_id=c.id
-      LEFT JOIN LATERAL (SELECT inflation_bp,unemployment_bp FROM country_indicator_daily d WHERE d.country_id=c.id ORDER BY indicator_date DESC LIMIT 1) i ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT inflation_bp,unemployment_bp FROM country_indicator_daily d
+        WHERE d.country_id=c.id ORDER BY indicator_date DESC LIMIT 1
+      ) i ON TRUE
       GROUP BY c.id,i.inflation_bp,i.unemployment_bp,e.production_modifier_bp
       ORDER BY crisis DESC,c.treasury_toman DESC LIMIT 24
     """)
@@ -7635,49 +8143,85 @@ async def command_center() -> dict[str, object]:
         alerts.append({"severity":"critical","domain":"service","title":"خطا در صف انتشار","detail":f"{queues['outbox_failed']} پیام ناموفق نیازمند بررسی است.","action":"operations"})
     if int(queues.get("ads_failed") or 0):
         alerts.append({"severity":"warning","domain":"content","title":"تحویل تبلیغ ناموفق","detail":f"{queues['ads_failed']} تحویل تبلیغ شکست خورده است.","action":"requests"})
-    failed_jobs=[j for j in ops.get("jobs",[]) if j.get("status") not in {"success","completed","healthy"}]
-    for job in failed_jobs[:4]:
-        alerts.append({"severity":"critical","domain":"service","title":f"Job ناموفق: {job['job_name']}","detail":job.get("error_message") or "اجرای اخیر موفق نبوده است.","action":"operations"})
-    if market.get("source_error"):
+
+    now = datetime.now(UTC)
+    healthy_statuses = {"success", "completed", "healthy"}
+    for job in ops.get("jobs", []):
+        status = str(job.get("status") or "").lower()
+        finished = job.get("finished_at") or job.get("started_at")
+        # Old failures are history, not live incidents. They remain visible in Operations.
+        recent = bool(finished and (now - finished).total_seconds() <= 3600)
+        if status and status not in healthy_statuses and recent:
+            alerts.append({"severity":"critical","domain":"service","title":f"Job ناموفق: {job['job_name']}","detail":job.get("error_message") or "اجرای اخیر موفق نبوده است.","action":"operations"})
+
+    source_checked = market.get("source_checked_at")
+    source_error_is_current = bool(
+        market.get("source_error") and source_checked
+        and (now-source_checked).total_seconds() <= 1800
+    )
+    if source_error_is_current:
         alerts.append({"severity":"warning","domain":"economy","title":"منبع نرخ بازار ناپایدار","detail":str(market["source_error"]),"action":"operations"})
-    if bool(ops.get("market_frozen")):
-        alerts.append({"severity":"info","domain":"economy","title":"بازار دلار متوقف است","detail":"فریز مدیریتی بازار فعال است.","action":"controls"})
-    negatives=sum(int(integrity.get(k) or 0) for k in ("negative_players","negative_countries","negative_ledger_rows"))
+    # An intentional freeze is state, not an error; it stays visible in Controls.
+    negatives = sum(int(integrity.get(k) or 0) for k in (
+        "negative_players", "negative_countries", "negative_ledger_rows"
+    ))
     if negatives:
         alerts.append({"severity":"critical","domain":"economy","title":"ناسازگاری دفتر اقتصاد","detail":f"{negatives} رکورد با مانده منفی پیدا شد.","action":"ledger"})
-    crisis_count=sum(1 for x in countries_rows if x["crisis"])
+    crisis_count = sum(1 for row in countries_rows if row["crisis"])
     if crisis_count:
         alerts.append({"severity":"warning","domain":"world","title":"بحران فعال در جهان","detail":f"{crisis_count} کشور درگیر بحران فعال است.","action":"countries"})
-    if not alerts:
-        alerts.append({"severity":"info","domain":"system","title":"وضعیت پایدار","detail":"در این لحظه رخداد قابل‌اقدام بحرانی ثبت نشده است.","action":"operations"})
-    order={"critical":0,"warning":1,"info":2};alerts.sort(key=lambda x:order[str(x["severity"])])
-    await persist_incidents(alerts)
-    durable=[dict(x) for x in await incident_rows(30)]
-    return {"overview":dict(overview) if overview else {},"operations":ops,"integrity":integrity,
-      "alerts":durable,"countries":[dict(x) for x in countries_rows],
-      "summary":{"critical":sum(a["severity"]=="critical" and a["status"]!='resolved' for a in durable),"warning":sum(a["severity"]=="warning" and a["status"]!='resolved' for a in durable),"crises":crisis_count}}
 
-async def persist_incidents(items:list[dict[str,object]])->list[dict[str,object]]:
-    """Upsert observations while preserving acknowledgement and ownership."""
+    alerts.sort(key=lambda item: {"critical":0,"warning":1,"info":2}[str(item["severity"])])
+    active_fingerprints = await persist_incidents(alerts)
+    await resolve_unobserved_incidents(active_fingerprints)
+    durable = [dict(row) for row in await incident_rows(30, include_resolved=False)]
+    return {
+        "overview": dict(overview) if overview else {},
+        "operations": ops,
+        "integrity": integrity,
+        "alerts": durable,
+        "countries": [dict(row) for row in countries_rows],
+        "summary": {
+            "critical": sum(row["severity"] == "critical" for row in durable),
+            "warning": sum(row["severity"] == "warning" for row in durable),
+            "crises": crisis_count,
+        },
+    }
+
+async def persist_incidents(items:list[dict[str,object]])->set[str]:
+    """Upsert current observations without inflating counts on every refresh."""
     import hashlib
-    seen=[]
+    seen: set[str] = set()
     for item in items:
         fingerprint=hashlib.sha256(f"{item['domain']}|{item['title']}".encode()).hexdigest()[:32]
-        row=await db.fetchrow("""INSERT INTO admin_incidents(fingerprint,severity,domain,title,detail,action_view,metadata)
+        seen.add(fingerprint)
+        await db.fetchrow("""INSERT INTO admin_incidents(fingerprint,severity,domain,title,detail,action_view,metadata)
           VALUES($1,$2,$3,$4,$5,$6,$7)
           ON CONFLICT(fingerprint) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,
-          action_view=EXCLUDED.action_view,last_seen_at=now(),occurrences=admin_incidents.occurrences+1,
-          status=CASE WHEN admin_incidents.status='resolved' THEN 'open' ELSE admin_incidents.status END,
-          resolved_at=CASE WHEN admin_incidents.status='resolved' THEN NULL ELSE admin_incidents.resolved_at END
+          action_view=EXCLUDED.action_view,last_seen_at=now(),
+          occurrences=CASE WHEN admin_incidents.last_seen_at<now()-interval '10 minutes'
+                           THEN admin_incidents.occurrences+1 ELSE admin_incidents.occurrences END,
+          status=CASE WHEN admin_incidents.status='resolved' AND admin_incidents.last_seen_at<now()-interval '10 minutes'
+                      THEN 'open' ELSE admin_incidents.status END,
+          resolved_at=CASE WHEN admin_incidents.status='resolved' AND admin_incidents.last_seen_at<now()-interval '10 minutes'
+                           THEN NULL ELSE admin_incidents.resolved_at END
           RETURNING *""",fingerprint,item['severity'],item['domain'],item['title'],item['detail'],item['action'],item)
-        seen.append(dict(row))
     return seen
 
-async def incident_rows(limit:int=100)->list[asyncpg.Record]:
-    return await db.fetch("""SELECT * FROM admin_incidents ORDER BY
-      CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+async def resolve_unobserved_incidents(active:set[str])->None:
+    """Automatically close recovered signals after a short observation grace period."""
+    values=list(active)
+    await db.execute("""UPDATE admin_incidents SET status='resolved',resolved_at=now(),
+      resolution_note=COALESCE(resolution_note,'بازیابی خودکار پس از رفع سیگنال')
+      WHERE status<>'resolved' AND last_seen_at<now()-interval '2 minutes'
+        AND NOT (fingerprint=ANY($1::text[]))""",values)
+
+async def incident_rows(limit:int=100,*,include_resolved:bool=True)->list[asyncpg.Record]:
+    return await db.fetch("""SELECT * FROM admin_incidents
+      WHERE $2::boolean OR status<>'resolved'
+      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
       CASE status WHEN 'open' THEN 0 WHEN 'investigating' THEN 1 WHEN 'acknowledged' THEN 2 ELSE 3 END,
-      last_seen_at DESC LIMIT $1""",limit)
+      last_seen_at DESC LIMIT $1""",limit,include_resolved)
 
 async def update_incident(incident_id:int,status:str,actor:str,note:str|None)->asyncpg.Record|None:
     return await db.fetchrow("""UPDATE admin_incidents SET status=$2,assigned_to=CASE WHEN $2 IN ('acknowledged','investigating') THEN $3 ELSE assigned_to END,
@@ -8943,15 +9487,15 @@ async def ensure_life(player_id:int):
  await db.execute("INSERT INTO player_ui_state(player_id) VALUES($1) ON CONFLICT DO NOTHING",player_id)
  return await life(player_id)
 async def set_life_panel(player_id:int,chat_id:int,message_id:int)->None:
- await db.execute("""INSERT INTO player_ui_state(player_id,life_chat_id,life_message_id) VALUES($1,$2,$3)
- ON CONFLICT(player_id) DO UPDATE SET life_chat_id=$2,life_message_id=$3,updated_at=now()""",player_id,chat_id,message_id)
+ await db.execute("""INSERT INTO player_ui_state(player_id,life_chat_id,life_message_id,life_expires_at) VALUES($1,$2,$3,now()+interval '60 seconds')
+ ON CONFLICT(player_id) DO UPDATE SET life_chat_id=$2,life_message_id=$3,life_expires_at=now()+interval '60 seconds',updated_at=now()""",player_id,chat_id,message_id)
 async def set_step(player_id:int,step:int)->None:
  await db.execute("""UPDATE player_ui_state SET onboarding_step=GREATEST(onboarding_step,$2),
  onboarding_completed_at=CASE WHEN $2>=4 THEN COALESCE(onboarding_completed_at,now()) ELSE onboarding_completed_at END,updated_at=now() WHERE player_id=$1""",player_id,step)
 async def world(chat_id:int):return await db.fetchrow("SELECT * FROM world_ui_state WHERE chat_id=$1",chat_id)
 async def set_world(chat_id:int,message_id:int)->None:
- await db.execute("""INSERT INTO world_ui_state(chat_id,message_id) VALUES($1,$2)
- ON CONFLICT(chat_id) DO UPDATE SET message_id=$2,updated_at=now()""",chat_id,message_id)
+ await db.execute("""INSERT INTO world_ui_state(chat_id,message_id,expires_at) VALUES($1,$2,now()+interval '60 seconds')
+ ON CONFLICT(chat_id) DO UPDATE SET message_id=$2,expires_at=now()+interval '60 seconds',updated_at=now()""",chat_id,message_id)
 ```
 
 ### `packages\core\repositories\world_access_repo.py`
@@ -9283,70 +9827,326 @@ async def queue_ad(actor: str, ad_id: int, request_id: str) -> bool:
         return queued
 ```
 
+### `packages\core\services\admin_accounts.py`
+
+```python
+"""Database-backed admin identities with audited lifecycle operations."""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+import re
+from dataclasses import dataclass
+from uuid import uuid4
+
+from packages.core import db
+from packages.core.settings import get_settings
+
+ROLES = frozenset({"viewer", "support", "content", "economy", "operator", "superadmin"})
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,64}$")
+PBKDF2_ITERATIONS = 210_000
+
+
+@dataclass(frozen=True, slots=True)
+class AdminIdentity:
+    username: str
+    role: str
+    enabled: bool
+    source: str = "database"
+
+
+def normalize_username(username: str) -> str:
+    value = username.strip().lower()
+    if not USERNAME_RE.fullmatch(value):
+        raise ValueError("invalid_admin_username")
+    return value
+
+
+def validate_role(role: str) -> str:
+    value = role.strip().lower()
+    if value not in ROLES:
+        raise ValueError("invalid_admin_role")
+    return value
+
+
+def hash_password(password: str) -> str:
+    if len(password) < 12 or len(password) > 256:
+        raise ValueError("invalid_admin_password")
+    salt = os.urandom(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, encoded: str | None) -> bool:
+    # Run a real derivation even for invalid/missing hashes to reduce username enumeration.
+    try:
+        algorithm, iterations, salt_hex, expected_hex = (encoded or "").split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            raise ValueError
+        salt = bytes.fromhex(salt_hex)
+        expected = bytes.fromhex(expected_hex)
+        rounds = int(iterations)
+        if not 100_000 <= rounds <= 1_000_000:
+            raise ValueError
+    except (TypeError, ValueError):
+        salt = bytes(16)
+        expected = bytes(32)
+        rounds = PBKDF2_ITERATIONS
+    actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, rounds)
+    return hmac.compare_digest(actual, expected)
+
+
+async def authenticate(username: str, password: str) -> AdminIdentity | None:
+    settings = get_settings()
+    normalized = username.strip().lower()
+    env_user = settings.admin_username.strip().lower()
+    env_ok = hmac.compare_digest(normalized, env_user) and hmac.compare_digest(
+        password, settings.admin_password
+    )
+    if env_ok:
+        return AdminIdentity(env_user, settings.admin_role, True, "environment")
+
+    row = await db.fetchrow(
+        "SELECT username,role,enabled,password_hash FROM admin_identities WHERE username=$1",
+        normalized,
+    )
+    encoded = str(row["password_hash"]) if row and row["password_hash"] else None
+    password_ok = verify_password(password, encoded)
+    if not row or not row["enabled"] or not password_ok:
+        return None
+    await db.execute(
+        """UPDATE admin_identities SET last_login_at=now()
+           WHERE username=$1 AND (last_login_at IS NULL OR last_login_at<now()-interval '5 minutes')""",
+        normalized,
+    )
+    return AdminIdentity(normalized, str(row["role"]), True)
+
+
+async def role_for(username: str) -> str | None:
+    settings = get_settings()
+    normalized = username.strip().lower()
+    if hmac.compare_digest(normalized, settings.admin_username.strip().lower()):
+        return settings.admin_role
+    return await db.fetchval(
+        "SELECT role FROM admin_identities WHERE username=$1 AND enabled", normalized
+    )
+
+
+async def list_identities() -> list[dict[str, object]]:
+    settings = get_settings()
+    rows = [dict(row) for row in await db.fetch(
+        """SELECT username,role,enabled,created_by,created_at,updated_at,last_login_at,
+                  'database'::text source
+           FROM admin_identities ORDER BY enabled DESC,role DESC,username"""
+    )]
+    env_user = settings.admin_username.strip().lower()
+    if not any(str(row["username"]).lower() == env_user for row in rows):
+        rows.insert(0, {
+            "username": env_user,
+            "role": settings.admin_role,
+            "enabled": True,
+            "created_by": "environment",
+            "created_at": None,
+            "updated_at": None,
+            "last_login_at": None,
+            "source": "environment",
+        })
+    return rows
+
+
+async def create_identity(
+    actor: str, username: str, password: str, role: str
+) -> dict[str, object]:
+    normalized = normalize_username(username)
+    normalized_role = validate_role(role)
+    if normalized == get_settings().admin_username.strip().lower():
+        raise ValueError("admin_reserved")
+    encoded = hash_password(password)
+    request_id = f"admin-create:{uuid4()}"
+    async with db.transaction() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO admin_identities(username,role,password_hash,enabled,created_by)
+               VALUES($1,$2,$3,TRUE,$4)
+               ON CONFLICT(username) DO NOTHING
+               RETURNING username,role,enabled,created_by,created_at,updated_at,last_login_at,
+                         'database'::text source""",
+            normalized, normalized_role, encoded, actor,
+        )
+        if not row:
+            raise ValueError("admin_exists")
+        await conn.execute(
+            """INSERT INTO admin_audit_log(admin_actor,action,request_id,details)
+               VALUES($1,'admin_identity_created',$2,$3)""",
+            actor, request_id, {"username": normalized, "role": normalized_role},
+        )
+    return dict(row)
+
+
+async def update_identity(
+    actor: str,
+    username: str,
+    *,
+    role: str | None = None,
+    enabled: bool | None = None,
+    password: str | None = None,
+) -> dict[str, object]:
+    normalized = normalize_username(username)
+    if normalized == get_settings().admin_username.strip().lower():
+        raise ValueError("admin_environment_managed")
+    normalized_role = validate_role(role) if role is not None else None
+    encoded = hash_password(password) if password is not None else None
+    request_id = f"admin-update:{uuid4()}"
+    async with db.transaction() as conn:
+        current = await conn.fetchrow(
+            "SELECT username,role,enabled FROM admin_identities WHERE username=$1 FOR UPDATE",
+            normalized,
+        )
+        if not current:
+            raise ValueError("admin_not_found")
+        next_role = normalized_role or str(current["role"])
+        next_enabled = bool(current["enabled"]) if enabled is None else enabled
+        if normalized == actor.lower() and not next_enabled:
+            raise ValueError("admin_cannot_disable_self")
+        if current["role"] == "superadmin" and current["enabled"] and (
+            next_role != "superadmin" or not next_enabled
+        ):
+            others = await conn.fetchval(
+                """SELECT count(*) FROM admin_identities
+                   WHERE enabled AND role='superadmin' AND username<>$1""",
+                normalized,
+            )
+            env_is_super = get_settings().admin_role == "superadmin"
+            if not env_is_super and int(others or 0) == 0:
+                raise ValueError("last_superadmin")
+        row = await conn.fetchrow(
+            """UPDATE admin_identities SET
+                 role=COALESCE($2,role), enabled=COALESCE($3,enabled),
+                 password_hash=COALESCE($4,password_hash),
+                 disabled_at=CASE WHEN COALESCE($3,enabled) THEN NULL ELSE COALESCE(disabled_at,now()) END,
+                 updated_at=now()
+               WHERE username=$1
+               RETURNING username,role,enabled,created_by,created_at,updated_at,last_login_at,
+                         'database'::text source""",
+            normalized, normalized_role, enabled, encoded,
+        )
+        await conn.execute(
+            """INSERT INTO admin_audit_log(admin_actor,action,request_id,details)
+               VALUES($1,'admin_identity_updated',$2,$3)""",
+            actor, request_id,
+            {"username": normalized, "role": normalized_role, "enabled": enabled,
+             "password_changed": password is not None},
+        )
+    return dict(row)
+```
+
 ### `packages\core\services\admin_security.py`
 
 ```python
 """Backend-enforced RBAC and one-use previews for privileged admin mutations."""
 from __future__ import annotations
-import hashlib,json,secrets
-from datetime import UTC,datetime,timedelta
-from fastapi import HTTPException,Request
-from packages.core import db
-from packages.core.settings import get_settings
 
-ROLE_PERMISSIONS={
- "viewer":{"read"},
- "support":{"read","players"},
- "content":{"read","content"},
- "economy":{"read","economy","countries"},
- "operator":{"read","operations","content"},
- "superadmin":{"read","players","content","economy","countries","operations","undo"},
+import hashlib
+import json
+import secrets
+from datetime import UTC, datetime, timedelta
+
+from fastapi import HTTPException, Request
+
+from packages.core import db
+
+ROLE_PERMISSIONS = {
+    "viewer": {"read"},
+    "support": {"read", "players"},
+    "content": {"read", "content"},
+    "economy": {"read", "economy", "countries"},
+    "operator": {"read", "operations", "content"},
+    "superadmin": {
+        "read", "players", "content", "economy", "countries", "operations", "undo", "admins"
+    },
 }
-SENSITIVE=(
- ("/users/","players"),("/market/","economy"),("/countries/","countries"),
- ("/feature-flags/","operations"),("/operations/","operations"),("/ad-requests/","content"),
+SENSITIVE = (
+    ("/admins", "admins"),
+    ("/users/", "players"),
+    ("/market/", "economy"),
+    ("/countries/", "countries"),
+    ("/feature-flags/", "operations"),
+    ("/operations/", "operations"),
+    ("/ad-requests/", "content"),
+    ("/undo/", "undo"),
 )
 
-def permission_for(path:str,method:str)->str:
- if method in {"GET","HEAD","OPTIONS"}:return "read"
- for fragment,permission in SENSITIVE:
-  if fragment in path:return permission
- return "content"
 
-def require_permission(actor:str,path:str,method:str)->str:
- role=get_settings().admin_role
- permission=permission_for(path,method)
- if permission not in ROLE_PERMISSIONS.get(role,set()):
-  raise HTTPException(403,f"نقش {role} اجازه این عملیات را ندارد.")
- return role
+def permission_for(path: str, method: str) -> str:
+    if method in {"GET", "HEAD", "OPTIONS"}:
+        return "read"
+    for fragment, permission in SENSITIVE:
+        if fragment in path:
+            return permission
+    return "content"
 
-def payload_hash(payload:object)->str:
- raw=json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=False)
- return hashlib.sha256(raw.encode()).hexdigest()
 
-async def issue_preview(actor:str,method:str,path:str,payload:object)->dict[str,object]:
- require_permission(actor,path,method)
- if not path.startswith("/api/admin/") or path=="/api/admin/action-preview":raise HTTPException(400,"مسیر پیش‌نمایش معتبر نیست.")
- token=secrets.token_urlsafe(32);digest=hashlib.sha256(token.encode()).hexdigest();expires=datetime.now(UTC)+timedelta(minutes=2)
- await db.execute("""INSERT INTO admin_action_previews(token_hash,admin_actor,method,path,payload_hash,expires_at)
- VALUES($1,$2,$3,$4,$5,$6)""",digest,actor,method.upper(),path,payload_hash(payload),expires)
- return {"token":token,"expires_at":expires,"permission":permission_for(path,method),"summary":f"{method.upper()} {path}"}
+def require_permission(actor: str, role: str, path: str, method: str) -> str:
+    permission = permission_for(path, method)
+    if permission not in ROLE_PERMISSIONS.get(role, set()):
+        raise HTTPException(403, f"نقش {role} اجازه این عملیات را ندارد.")
+    return role
 
-async def verify_request(request:Request,actor:str)->None:
- role=require_permission(actor,request.url.path,request.method)
- if request.method in {"GET","HEAD","OPTIONS"}:return
- # Creating a preview is authenticated and RBAC checked, but naturally needs no preview itself.
- if request.url.path=="/api/admin/action-preview":return
- token=request.headers.get("x-admin-preview","")
- if not token:raise HTTPException(428,"برای این عملیات پیش‌نمایش معتبر لازم است.")
- try:payload=await request.json()
- except Exception:payload={}
- digest=hashlib.sha256(token.encode()).hexdigest()
- used=await db.fetchval("""UPDATE admin_action_previews SET used_at=now()
- WHERE token_hash=$1 AND admin_actor=$2 AND method=$3 AND path=$4 AND payload_hash=$5
- AND used_at IS NULL AND expires_at>now() RETURNING token_hash""",digest,actor,request.method.upper(),request.url.path,payload_hash(payload))
- if not used:raise HTTPException(409,"پیش‌نمایش منقضی، مصرف‌شده یا ناسازگار است.")
- request.state.admin_role=role
+
+def payload_hash(payload: object) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+async def issue_preview(
+    actor: str, role: str, method: str, path: str, payload: object
+) -> dict[str, object]:
+    require_permission(actor, role, path, method)
+    if not path.startswith("/api/admin/") or path == "/api/admin/action-preview":
+        raise HTTPException(400, "مسیر پیش‌نمایش معتبر نیست.")
+    token = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    expires = datetime.now(UTC) + timedelta(minutes=2)
+    await db.execute(
+        """INSERT INTO admin_action_previews
+           (token_hash,admin_actor,method,path,payload_hash,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6)""",
+        digest, actor, method.upper(), path, payload_hash(payload), expires,
+    )
+    return {
+        "token": token,
+        "expires_at": expires,
+        "permission": permission_for(path, method),
+        "summary": f"{method.upper()} {path}",
+    }
+
+
+async def verify_request(request: Request, actor: str, role: str) -> None:
+    assigned_role = require_permission(actor, role, request.url.path, request.method)
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        request.state.admin_role = assigned_role
+        return
+    if request.url.path == "/api/admin/action-preview":
+        request.state.admin_role = assigned_role
+        return
+    token = request.headers.get("x-admin-preview", "")
+    if not token:
+        raise HTTPException(428, "برای این عملیات پیش‌نمایش معتبر لازم است.")
+    try:
+        payload = await request.json()
+    except (ValueError, json.JSONDecodeError):
+        payload = {}
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    used = await db.fetchval(
+        """UPDATE admin_action_previews SET used_at=now()
+           WHERE token_hash=$1 AND admin_actor=$2 AND method=$3 AND path=$4
+             AND payload_hash=$5 AND used_at IS NULL AND expires_at>now()
+           RETURNING token_hash""",
+        digest, actor, request.method.upper(), request.url.path, payload_hash(payload),
+    )
+    if not used:
+        raise HTTPException(409, "پیش‌نمایش منقضی، مصرف‌شده یا ناسازگار است.")
+    request.state.admin_role = assigned_role
 ```
 
 ### `packages\core\services\commerce.py`
@@ -9611,6 +10411,7 @@ def require_clean(text: str, field: str = "content") -> None:
 """Country lifecycle, membership and deterministic initial-resource allocation."""
 from __future__ import annotations
 import hashlib, random
+from datetime import UTC, datetime, timedelta
 import asyncpg
 from packages.core import db
 from packages.core.config import get_config
@@ -9718,6 +10519,38 @@ async def leave_country(*, chat_id: int, player_id: int) -> bool:
             await conn.execute("UPDATE countries SET president_player_id=NULL WHERE id=$1 AND president_player_id=$2",country["id"],player_id)
             await _refresh_status(conn,int(country["id"]))
         return changed is not None
+
+async def cancel_citizenship(player_id: int) -> int:
+    """Cancel active citizenship under the configured anti-abuse rules."""
+    cfg = get_config()
+    async with db.transaction() as conn:
+        current = await conn.fetchrow(
+            """SELECT cs.country_id,cs.joined_at,c.president_player_id
+               FROM citizenships cs JOIN countries c ON c.id=cs.country_id
+               WHERE cs.player_id=$1 AND cs.is_active FOR UPDATE OF cs,c""",
+            player_id,
+        )
+        if not current:
+            raise ValueError("citizenship_not_found")
+        if current["president_player_id"] == player_id:
+            raise ValueError("leader_must_transfer_power")
+        pending = await conn.fetchval(
+            "SELECT 1 FROM migration_requests WHERE player_id=$1 AND status='pending'",
+            player_id,
+        )
+        if pending:
+            raise ValueError("migration_pending")
+        minimum_days = cfg.int_("migration.citizenship_cancellation_min_days")
+        joined_at = current["joined_at"]
+        if joined_at and joined_at > datetime.now(UTC) - timedelta(days=minimum_days):
+            raise ValueError("citizenship_too_new")
+        country_id = int(current["country_id"])
+        await conn.execute(
+            "UPDATE citizenships SET is_active=FALSE,left_at=now() WHERE player_id=$1",
+            player_id,
+        )
+        await _refresh_status(conn,country_id)
+        return country_id
 ```
 
 ### `packages\core\services\country_economy.py`
@@ -9971,7 +10804,9 @@ async def by_chat(chat_id:int):
  return row if row and row["country_id"] else None
 
 def masthead(country_name:str, text:str)->str:
- return f"🏛 <b>خبرگزاری {escape(country_name)}</b>\n\n{text}"
+ """Wrap country news in valid, balanced Telegram HTML."""
+ name=escape(country_name)
+ return f"🏛 <b>خبرگزاری حکومت {name}</b>\n\n📊 <b>خلاصه امروز حکومت {name}</b>\n\n{text}"
 
 async def should_send_setup_notice(chat_id:int)->bool:
  key=f"missing-country-notice:{chat_id}"
@@ -12956,6 +13791,8 @@ async def _expire(context: ContextTypes.DEFAULT_TYPE) -> None:
         await context.bot.edit_message_reply_markup(
             chat_id=chat_id, message_id=message_id, reply_markup=None
         )
+        # Buttons disappear while the informational message remains readable.
+        # Persistent expiry is also checked by callback guards after restarts.
     except BadRequest as exc:
         logger.debug("panel cleanup no-op for chat %s: %s", chat_id, exc)
     except Forbidden:
@@ -13200,6 +14037,39 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - مهاجرت دیتابیس 0009 و تست‌های پالایش و حکمرانی.
 
 > این مدل‌ها شبیه‌سازی بازی‌اند و ادعای بازسازی کامل همه پیچیدگی‌های سیاست واقعی ندارند؛ با این حال تفاوت نهادی آن‌ها اکنون در منطق برنامه اجرا می‌شود، نه فقط در عنوان.
+```
+
+### `RELEASE_8_5_HARDENING_FA.md`
+
+```markdown
+# انتشار بهینه‌سازی و سخت‌سازی ۸.۵
+
+## تغییرات کلیدی
+- احراز هویت چندادمینی مبتنی بر PostgreSQL در کنار حساب بازیابی محیطی.
+- گذرواژه‌های مدیران با PBKDF2-SHA256، salt تصادفی و مقایسه ثابت‌زمان ذخیره و بررسی می‌شوند.
+- نقش‌های viewer، support، content، economy، operator و superadmin به‌صورت واقعی برای هر حساب اعمال می‌شوند.
+- افزودن صفحه مدیران، ایجاد حساب، تغییر نقش، فعال/غیرفعال‌سازی و تغییر گذرواژه.
+- جلوگیری از غیرفعال‌سازی حساب خود، ویرایش حساب محیطی و حذف آخرین superadmin.
+- ثبت ایجاد و تغییر حساب مدیر در admin_audit_log.
+- اصلاح خطاهای کاذب رادار رخداد: شکست قدیمی Job دیگر رخداد زنده نیست؛ فریز عمدی خطا محسوب نمی‌شود؛ خطای قدیمی منبع بازار هشدار زنده تولید نمی‌کند.
+- جلوگیری از افزایش occurrence با هر Refresh و حل خودکار رخدادهایی که سیگنالشان رفع شده است.
+- مقاوم‌شدن نمای اصلی: خرابی health endpoint کل داشبورد را از کار نمی‌اندازد.
+- پیام‌های خطای مجزا برای 401، 403، 409، 422، خطای شبکه و خطای واقعی سرور.
+- شناسه رخداد برای خطاهای کنترل‌نشده سمت سرور و ثبت جزئیات در Log.
+- حفظ تمام قابلیت‌های اقتصاد، کشور، انتخابات، تبلیغات، بازار، مأموریت‌ها، پرداخت و عملیات قبلی.
+
+## استقرار
+1. از دیتابیس نسخه پشتیبان بگیرید.
+2. متغیرهای ADMIN_USERNAME و ADMIN_PASSWORD را به‌عنوان حساب بازیابی نگه دارید.
+3. برنامه را اجرا کنید تا migration شماره 0021 اعمال شود.
+4. با حساب اصلی وارد پنل شوید و از بخش «مدیران» حساب‌های مستقل بسازید.
+5. در محیط پروژه با وابستگی‌های requirements.txt اجرا کنید: `python -m pytest -q`.
+
+## کنترل کیفیت تحویل
+- Parse و compile تمام فایل‌های Python انجام شد.
+- JavaScript پنل با node --check بررسی شد.
+- قراردادهای ایستای قابلیت‌های جدید بررسی شد.
+- اجرای pytest در sandbox تحویل ممکن نبود، چون وابستگی‌های runtime پروژه در آن نصب نیستند؛ در CI یا staging الزامی است.
 ```
 
 ### `RELEASE_AUDIT_FA.md`
@@ -13642,6 +14512,29 @@ Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ار�
 - ثبت دوطرفه عوارض در دفتر کل و انقضای خودکار درخواست‌ها.
 ```
 
+### `RELEASE_UX_COMPLETE_FA.md`
+
+```markdown
+# انتشار نهایی UX و پایداری مهاجرت
+
+- رفع توقف استارت روی checksum مهاجرت‌های بازیابی‌شده 0001 تا 0020؛ از 0021 به بعد checksum سخت‌گیرانه است.
+- صفحه «امروز من» با اولویت هدیه، مأموریت، درآمد شغل و هزینه زندگی.
+- پیشنهاد بعدی وابسته به وضعیت واقعی بازیکن.
+- پیش‌نمایش و تأیید خرید/اجاره خانه، ارتقای شغل، معامله ارز، کمک ملی و مهاجرت.
+- نتیجه‌های عملیات با مسیر بعدی روشن.
+- خطاهای مهم به پیام‌های راه‌حل‌محور تبدیل شدند.
+- انقضای پنل در دیتابیس ثبت می‌شود تا پس از restart و چند replica نیز callback قدیمی رد شود.
+- منوی TeleWorld برای غیرشهروند، شهروند، مقام و رهبر خلوت و نقش‌محور شد.
+- صفحه وضعیت امروز کشور افزوده شد.
+- چندادمینی، RBAC، اصلاح هشدارهای کاذب و پنل مدیریت نسخه قبل حفظ شده‌اند.
+
+## کنترل کیفیت
+- Parse و compile تمام 168 فایل Python موفق بود.
+- JavaScript پنل مدیریت با node --check موفق بود.
+- توالی migration تا 0022 و قراردادهای UX بررسی شد.
+- در staging پس از نصب requirements.txt اجرا شود: `python -m pytest -q`.
+```
+
 ### `RELEASE_V2_FA.md`
 
 ```markdown
@@ -13739,6 +14632,7 @@ jinja2>=3.1.4,<4
 orjson>=3.10.7,<4
 python-multipart>=0.0.12,<1
 Pillow>=10.4,<12
+psutil==6.0.0
 ```
 
 ### `run.py`
@@ -14608,6 +15502,49 @@ def test_lifecycle_migration_present():
     assert "uq_elections_one_open_country" in text
 ```
 
+### `tests\test_hotfix_2026_07_27.py`
+
+```python
+from pathlib import Path
+
+from packages.core.config.loader import GameConfig
+from packages.core.services.country_identity import masthead
+
+
+def test_game_config_has_existing_and_missing_paths():
+    cfg = GameConfig({"jobs": {"levels": {2: 100}}})
+    assert cfg.has("jobs.levels.2")
+    assert not cfg.has("jobs.levels.3")
+
+
+def test_news_masthead_has_balanced_html_and_requested_titles():
+    text = masthead("خاخام", "متن خبر")
+    assert text.startswith("🏛 <b>خبرگزاری حکومت خاخام</b>")
+    assert "📊 <b>خلاصه امروز حکومت خاخام</b>" in text
+    assert text.count("<b>") == text.count("</b>") == 2
+    assert "b><" not in text
+
+
+def test_start_limit_and_panel_timeout_are_wired():
+    life = Path("apps/telelife_bot/handlers/life.py").read_text()
+    world = Path("apps/teleworld_bot/handlers/world.py").read_text()
+    config = Path("packages/core/config/data/core.yaml").read_text()
+    assert "CommandHandler('start',start)" in life
+    assert 'CommandHandler("start", start)' in world
+    assert "allow_start" in life and "allow_start" in world
+    assert "default_timeout_seconds: 60" in config
+    assert "schedule_cleanup" in Path("apps/telelife_bot/handlers/panel.py").read_text()
+    assert "schedule_cleanup" in world
+
+
+def test_existing_citizen_gets_actionable_panel():
+    world = Path("apps/teleworld_bot/handlers/world.py").read_text()
+    keyboard = Path("apps/teleworld_bot/keyboards.py").read_text()
+    assert "kb.citizenship_elsewhere()" in world
+    assert 'action == "citizenship_cancel_confirm"' in world
+    assert "def citizenship_cancel_confirm" in keyboard
+```
+
 ### `tests\test_interval_bindings.py`
 
 ```python
@@ -14787,6 +15724,60 @@ def test_level_gating_limits_the_pool():
     high = select_for(12345, 10, DAY)
     assert len(low) <= len(high)
     assert all(int(m.get("min_level", 1)) <= 1 for m in low)
+```
+
+### `tests\test_multi_admin_hardening.py`
+
+```python
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def text(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_multi_admin_schema_has_password_and_audit_fields():
+    sql = text("migrations/0021_multi_admin_hardening.sql")
+    for field in ("password_hash", "created_by", "last_login_at", "disabled_at"):
+        assert field in sql
+    assert "pbkdf2_sha256" in sql
+
+
+def test_passwords_use_salted_pbkdf2_and_constant_time_compare():
+    source = text("packages/core/services/admin_accounts.py")
+    assert "os.urandom(16)" in source
+    assert "hashlib.pbkdf2_hmac" in source
+    assert "hmac.compare_digest" in source
+    assert "password_hash" in source
+
+
+def test_admin_routes_are_superadmin_permission_guarded():
+    security = text("packages/core/services/admin_security.py")
+    router = text("apps/admin/routers/country_admin.py")
+    assert '("/admins", "admins")' in security
+    assert '"admins"' in security.split('"superadmin"', 1)[1]
+    assert '@router.post("/admins",status_code=201)' in router
+    assert '@router.patch("/admins/{username}")' in router
+
+
+def test_admin_frontend_has_management_view_and_actionable_errors():
+    html = text("apps/admin/templates/dashboard.html")
+    js = text("apps/admin/static/admin.js")
+    assert 'id="view-admins"' in html
+    assert 'id="admins-body"' in html
+    assert "async function admins" in js
+    assert "Promise.allSettled" in js
+    assert "اطلاعات فرم کامل یا معتبر نیست" in js
+
+
+def test_incident_refresh_does_not_create_fake_recurrences():
+    repo = text("packages/core/repositories/admin_repo.py")
+    assert "last_seen_at<now()-interval '10 minutes'" in repo
+    assert "resolve_unobserved_incidents" in repo
+    assert "include_resolved=False" in repo
+    assert "An intentional freeze is state, not an error" in repo
 ```
 
 ### `tests\test_national_projects_missions_release.py`

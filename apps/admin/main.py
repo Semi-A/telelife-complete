@@ -66,7 +66,10 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
     db_ok = await db.healthcheck(); services = snapshot()
-    admin_ok = services.get("admin", {}).get("status") in {"starting", "healthy"}
+    # /healthz describes the HTTP process itself. Bot lifecycle states remain
+    # visible in the payload, but a Telegram reconnect must not turn the admin
+    # website health endpoint into a false 503.
+    admin_ok = services.get("admin", {}).get("status") in {"starting", "healthy", "degraded"}
     code = status.HTTP_200_OK if db_ok and admin_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return JSONResponse({"ok": db_ok and admin_ok, "database": db_ok, "services": services}, code)
 

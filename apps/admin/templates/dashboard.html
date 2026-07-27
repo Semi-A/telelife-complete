@@ -19,7 +19,7 @@
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
 <main class="shell">
-<header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live"><i></i><span>LIVE</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی">↻</button></div></header>
+<header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live" id="connection-state"><i></i><span>همگام</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی" aria-label="تازه‌سازی داده‌ها">↻</button></div></header>
 <div id="toast" role="status" aria-live="polite"></div>
 <section class="view active command-view" id="view-overview">
   <div class="command-mast">
@@ -34,7 +34,7 @@
     </article>
     <aside class="command-side">
       <article class="panel pulse-card"><p class="eyebrow">ECONOMY PULSE</p><div class="pulse-value"><strong data-stat="player_liquidity">۰</strong><small>تومان نقدینگی بازیکنان</small></div><div id="economy-wave" class="economy-wave"><i></i></div><div class="pulse-meta"><span>دفتر ۲۴ ساعت <b id="ledger-24">۰</b></span><span>جریان خالص <b id="net-irt">۰</b></span></div></article>
-      <article class="panel network-card"><div class="panel-head"><div><p class="eyebrow">SERVICE MESH</p><h2>شبکه سرویس‌ها</h2></div></div><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
+      <article class="panel network-card"><div class="panel-head"><div><p class="eyebrow">SERVICE MESH</p><h2>وضعیت سرویس‌ها</h2></div><span class="status-help">شروع و بازیابی، خرابی نیست</span></div><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
     </aside>
   </div>
   <div class="world-strip panel">
@@ -50,8 +50,8 @@
   <div class="split"><article class="panel"><div class="panel-head"><div><p class="eyebrow">قیف امروز</p><h2>از ورود تا عادت روزانه</h2></div></div><div id="retention-funnel" class="funnel"></div></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">راهنمای اقدام</p><h2>چه چیزی را بهتر کنیم؟</h2></div></div><div id="engagement-insights" class="insight-list"></div></article></div>
 </section>
 <section class="view" id="view-market">
-  <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>هر تغییر قیمت ثبت و وارد تاریخچه نمودار می‌شود.</p></div><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div>
-  <article class="panel market-stage"><div id="market-tabs" class="asset-tabs"></div><div id="market-chart" class="chart-wrap large"><div class="empty">در حال دریافت قیمت‌ها…</div></div></article>
+  <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>کندل‌های واقعی از Snapshotهای ثبت‌شده؛ هر کندل دقیقاً ۳۰ دقیقه.</p></div><div class="range-control"><span>تایم‌فریم ۳۰ دقیقه</span><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div></div>
+  <article class="panel market-stage"><div class="market-toolbar"><div id="market-tabs" class="asset-tabs"></div><div id="market-summary" class="market-summary">در حال محاسبه…</div></div><div id="market-chart" class="chart-wrap large candle-chart"><div class="empty">در حال دریافت قیمت‌ها…</div></div><div class="chart-foot"><span>OHLC واقعی</span><span>حرکت خودکار هر ۳۰ ثانیه</span><span>منبع: Snapshotهای پایگاه داده</span></div></article>
   <div id="market-cards" class="market-cards"></div>
 </section>
 

@@ -60,6 +60,7 @@ class ServiceSupervisor:
             local_stop = asyncio.Event()
             item.status = "starting"
             item.last_started_monotonic = time.monotonic()
+            item.consecutive_health_failures = 0
             service_task = asyncio.create_task(spec.runner(local_stop), name=f"service:{spec.name}")
             try:
                 while not self.stop.is_set():
@@ -88,8 +89,17 @@ class ServiceSupervisor:
                     if inspect.isawaitable(healthy):
                         healthy = await healthy
                     if not healthy:
-                        raise RuntimeError("service health check failed")
+                        # A single polling/updater sample can be false during a
+                        # harmless Telegram reconnect. Require three consecutive
+                        # failed probes before restarting the service.
+                        item.consecutive_health_failures += 1
+                        item.status = "degraded"
+                        if item.consecutive_health_failures < 3:
+                            continue
+                        raise RuntimeError("service health check failed repeatedly")
+                    item.consecutive_health_failures = 0
                     item.status = "healthy"
+                    item.last_error = None
                     item.last_healthy_monotonic = time.monotonic()
                     if time.monotonic() - (item.last_started_monotonic or 0) >= 300:
                         failures = 0

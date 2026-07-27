@@ -143,7 +143,7 @@ async def completed_keys(country_id: int) -> set[str]:
     return {str(row["project_key"]) for row in rows}
 
 async def contributors(conn: asyncpg.Connection, project_id: int) -> list[int]:
-    rows=await conn.fetch("SELECT DISTINCT player_id FROM project_contributions WHERE project_id=$1",project_id)
+    rows=await conn.fetch("SELECT DISTINCT player_id FROM project_contributions WHERE project_id=$1 ORDER BY player_id",project_id)
     return [int(row["player_id"]) for row in rows]
 
 async def claim_country_funding(conn: asyncpg.Connection, project_id: int, actor: int,

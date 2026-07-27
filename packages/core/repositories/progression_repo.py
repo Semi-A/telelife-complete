@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from packages.core import db
+from packages.core.utils import clock
 
 
 async def unlocked_keys(player_id: int) -> set[str]:
@@ -16,9 +17,12 @@ async def xp_today(player_id: int) -> int:
     value = await db.fetchval(
         """
         SELECT COALESCE(sum(amount), 0) FROM xp_events
-        WHERE player_id = $1 AND created_at >= date_trunc('day', now())
+        WHERE player_id = $1
+          AND (created_at AT TIME ZONE $2)::date = $3::date
         """,
         player_id,
+        str(clock.game_timezone().key),
+        clock.game_today(),
     )
     return int(value or 0)
 

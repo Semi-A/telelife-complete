@@ -82,6 +82,11 @@ async def insert(
     key: str, reason: str, asset: str, account: str, amount: int,
     balance: int, metadata: dict[str, Any] | None = None,
 ) -> bool:
+    # A ledger leg belongs to exactly one balance owner. Actor/citizen IDs must
+    # live in metadata; setting both owners violates ledger_owner_check and can
+    # roll back an otherwise valid economic transaction.
+    if (player_id is None) == (country_id is None):
+        raise ValueError("ledger_requires_exactly_one_owner")
     row = await conn.fetchval(
         """INSERT INTO ledger(player_id,country_id,idempotency_key,reason,currency,asset_code,account,amount,balance_after,metadata)
         VALUES($1,$2,$3,$4,$5,$5,$6,$7,$8,$9)
