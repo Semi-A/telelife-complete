@@ -19,7 +19,7 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
-    k.row(B("🪪 شخصیت من", "profile", owner), B("🗺 مسیر پیشرفت", "unlocks", owner))
+    k.row(B("🪪 شخصیت من", "profile", owner), B("🧭 مرکز پیشرفت", "progress", owner))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
@@ -86,3 +86,16 @@ def market(owner, unlocked=True):
     return (k.row(B("خرید ۱۰ دلار", "mbuy", owner, "1000", Style.PRIMARY), B("فروش ۱۰ دلار", "msell", owner, "1000"))
             .row(B("خرید ۵۰ دلار", "mbuy", owner, "5000"), B("فروش ۵۰ دلار", "msell", owner, "5000"))
             .row(B("🔄 تازه‌سازی", "market", owner), B("🏠 خانه", "home", owner)).build())
+
+
+def progress(owner):
+    return (Keyboard().row(B("🚗 دارایی‌های کاربردی", "assets", owner, style=Style.PRIMARY), B("🗺 همه قابلیت‌ها", "unlocks", owner))
+            .row(B("💼 کار و رشد مهارت", "jobs", owner), B("🏠 خانه", "home", owner)).build())
+
+def assets(owner, rows):
+    k=Keyboard()
+    for item in rows:
+        if item.available and not item.owned:
+            k.row(B(f"خرید {item.title}", "abuy", owner, item.code, Style.PRIMARY))
+    k.row(B("🧭 مرکز پیشرفت", "progress", owner), B("🏠 خانه", "home", owner))
+    return k.build()

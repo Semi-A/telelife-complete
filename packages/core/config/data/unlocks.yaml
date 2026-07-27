@@ -4,7 +4,8 @@
 levels:
   2:  { key: daily_missions, title: "ماموریت‌های روزانه", icon: "🎯", phase: 2 }
   3:  { key: savings,        title: "حساب پس‌انداز",      icon: "🏦", phase: 3 }
-  5:  { key: jobs_basic,     title: "شغل‌های پایه",        icon: "💼", phase: 3 }
+  1:  { key: jobs_basic,     title: "انتخاب شغل و شروع مهارت", icon: "💼", phase: 3 }
+  5:  { key: career_growth,  title: "رشد حرفه‌ای شغل",       icon: "🧭", phase: 3 }
   7:  { key: rankings,       title: "جدول رتبه‌بندی",      icon: "🏆", phase: 5 }
   10: { key: usd_market,     title: "بازار دلار",          icon: "💲", phase: 4 }
   12: { key: housing,        title: "خرید خونه",           icon: "🏠", phase: 3 }

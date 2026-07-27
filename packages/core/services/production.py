@@ -9,7 +9,7 @@ from math import floor
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import ledger_repo, production_repo
-from packages.core.services import xp
+from packages.core.services import xp, life_progression
 
 UPGRADE_KINDS = frozenset({"storage", "production"})
 
@@ -178,6 +178,10 @@ class WorkReceipt:
     country_asset: str | None
     country_name: str | None
     shift_mode: str
+    skill_code: str | None = None
+    skill_level: int = 1
+    skill_xp: int = 0
+    skill_needed: int = 1
 
 
 def shift_modes() -> dict[str, dict[str, object]]:
@@ -206,6 +210,8 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
         if existing:
             return WorkReceipt(0,0,str(existing['asset_code']),0,0,None,None,str(existing['shift_mode']))
         accrual=accrue(row,now);gross=accrual.stored
+        asset_bonus=await life_progression.asset_bonus_bp(conn,player_id,'work_bonus_bp')
+        gross=floor(gross*(10000+asset_bonus)/10000)
         if gross<cfg.int_("jobs.production.minimum_collection_amount"):
             return WorkReceipt(0,0,str(row['output_asset_code']),0,0,None,None,str(row.get('shift_mode') or 'balanced'))
         mode=str(row.get('shift_mode') or 'balanced');spec=cfg.section(f"jobs.purpose_loop.shift_modes.{mode}")
@@ -242,11 +248,13 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",key,player_id,int(country['id']) if country else None,row['job_code'],mode,asset,gross,player_amount,country_amount,tax,award)
         await conn.execute("""UPDATE player_jobs SET stored_amount=0,production_updated_at=$2,last_claim_at=$2,total_claims=total_claims+1,
           total_tax_toman=total_tax_toman+$3,total_country_output=total_country_output+$4,updated_at=now() WHERE player_id=$1""",player_id,now,tax,country_amount)
+        skill=await life_progression.record_work(conn,player_id,str(row['job_code']),f"{key}:skill",fraction)
     if award:
         result=await xp.grant(player_id,"purposeful_work",idempotency_key=f"{key}:xp",amount=award);award=result.granted
+        await db.execute("UPDATE work_claims SET xp_awarded=$2 WHERE idempotency_key=$1",key,award)
     from packages.core.services import missions
     await missions.report_progress(player_id,"work_shift")
     if country_amount:await missions.report_progress(player_id,"national_output")
     if tax:await missions.report_progress(player_id,"pay_work_tax")
     if award:await missions.report_progress(player_id,"earn_xp_100",award)
-    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode)
+    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode,skill.code,skill.level,skill.xp,skill.needed)

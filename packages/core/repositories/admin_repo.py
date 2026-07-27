@@ -192,3 +192,49 @@ async def economy_integrity() -> dict[str, object]:
           (SELECT COALESCE(sum(amount),0) FROM ledger WHERE asset_code='IRT' AND created_at>=now()-interval '24 hours') net_irt_24h
     """)
     return dict(row) if row else {}
+
+
+async def command_center() -> dict[str, object]:
+    """Actionable operational picture assembled from canonical tables."""
+    overview = await dashboard_stats()
+    ops = await operations_status()
+    integrity = await economy_integrity()
+    countries_rows = await db.fetch("""
+      SELECT c.id,c.name,c.status,c.treasury_toman,
+        count(DISTINCT cs.player_id) FILTER (WHERE cs.is_active) citizens,
+        COALESCE(e.inflation_bp,0) inflation_bp,
+        COALESCE(e.unemployment_bp,0) unemployment_bp,
+        COALESCE(e.production_modifier_bp,10000) production_modifier_bp,
+        EXISTS(SELECT 1 FROM country_crises x WHERE x.country_id=c.id AND x.status='active') crisis
+      FROM countries c
+      LEFT JOIN citizenships cs ON cs.country_id=c.id
+      LEFT JOIN country_economy_state e ON e.country_id=c.id
+      GROUP BY c.id,e.inflation_bp,e.unemployment_bp,e.production_modifier_bp
+      ORDER BY crisis DESC,c.treasury_toman DESC LIMIT 24
+    """)
+    alerts: list[dict[str, object]] = []
+    queues = dict(ops.get("queues") or {})
+    market = dict(ops.get("market") or {}) if ops.get("market") else {}
+    if int(queues.get("outbox_failed") or 0):
+        alerts.append({"severity":"critical","domain":"service","title":"خطا در صف انتشار","detail":f"{queues['outbox_failed']} پیام ناموفق نیازمند بررسی است.","action":"operations"})
+    if int(queues.get("ads_failed") or 0):
+        alerts.append({"severity":"warning","domain":"content","title":"تحویل تبلیغ ناموفق","detail":f"{queues['ads_failed']} تحویل تبلیغ شکست خورده است.","action":"requests"})
+    failed_jobs=[j for j in ops.get("jobs",[]) if j.get("status") not in {"success","completed","healthy"}]
+    for job in failed_jobs[:4]:
+        alerts.append({"severity":"critical","domain":"service","title":f"Job ناموفق: {job['job_name']}","detail":job.get("error_message") or "اجرای اخیر موفق نبوده است.","action":"operations"})
+    if market.get("source_error"):
+        alerts.append({"severity":"warning","domain":"economy","title":"منبع نرخ بازار ناپایدار","detail":str(market["source_error"]),"action":"operations"})
+    if bool(ops.get("market_frozen")):
+        alerts.append({"severity":"info","domain":"economy","title":"بازار دلار متوقف است","detail":"فریز مدیریتی بازار فعال است.","action":"controls"})
+    negatives=sum(int(integrity.get(k) or 0) for k in ("negative_players","negative_countries","negative_ledger_rows"))
+    if negatives:
+        alerts.append({"severity":"critical","domain":"economy","title":"ناسازگاری دفتر اقتصاد","detail":f"{negatives} رکورد با مانده منفی پیدا شد.","action":"ledger"})
+    crisis_count=sum(1 for x in countries_rows if x["crisis"])
+    if crisis_count:
+        alerts.append({"severity":"warning","domain":"world","title":"بحران فعال در جهان","detail":f"{crisis_count} کشور درگیر بحران فعال است.","action":"countries"})
+    if not alerts:
+        alerts.append({"severity":"info","domain":"system","title":"وضعیت پایدار","detail":"در این لحظه رخداد قابل‌اقدام بحرانی ثبت نشده است.","action":"operations"})
+    order={"critical":0,"warning":1,"info":2};alerts.sort(key=lambda x:order[str(x["severity"])])
+    return {"overview":dict(overview) if overview else {},"operations":ops,"integrity":integrity,
+      "alerts":alerts,"countries":[dict(x) for x in countries_rows],
+      "summary":{"critical":sum(a["severity"]=="critical" for a in alerts),"warning":sum(a["severity"]=="warning" for a in alerts),"crises":crisis_count}}

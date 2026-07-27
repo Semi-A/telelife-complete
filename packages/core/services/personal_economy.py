@@ -24,6 +24,9 @@ async def view(player_id:int)->EconomyView:
     days=1 if last is None else max(0,min((today-last).days,get_config().int_("phase3.living.max_catch_up_days")))
     daily=get_config().int_("phase3.living.base_daily_cost_toman")
     if house: daily+=get_config().int_(f"phase3.housing.options.{house['housing_code']}.daily_living_toman")
+    assets=await db.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)
+    specs=get_config().section("life_progression.assets")
+    daily+=sum(int(specs[str(a["asset_code"])].get("maintenance_daily_toman",0)) for a in assets if str(a["asset_code"]) in specs)
     return EconomyView(int(player["wallet_toman"]),int(player["savings_toman"]),dict(house) if house else None,daily*days,days)
 
 async def savings_transfer(player_id:int,amount:int,direction:str,key:str)->tuple[int,int]:
@@ -54,6 +57,9 @@ async def acquire_housing(player_id:int,code:str,tenure:str,key:str)->dict[str,A
         if int(player["level"])<int(spec["min_level"]): raise ValueError("housing_locked")
         if await ledger_repo.idempotency_exists(conn,key):
             row=await conn.fetchrow("SELECT * FROM player_housing WHERE player_id=$1",player_id); return dict(row)
+        previous=await conn.fetchrow("SELECT housing_code FROM player_housing WHERE player_id=$1 FOR UPDATE",player_id)
+        previous_bonus=int(options[str(previous["housing_code"])].get("happiness_bonus",0)) if previous and str(previous["housing_code"]) in options else 0
+        new_bonus=int(spec.get("happiness_bonus",0))
         balance=await ledger_repo.change_player(conn,player_id,"IRT",-cost)
         until=clock.game_today()+timedelta(days=cfg.int_("phase3.housing.rent_period_days")) if tenure=="rent" else None
         row=await conn.fetchrow("""INSERT INTO player_housing(player_id,housing_code,tenure,rent_paid_until,purchased_at)
@@ -61,6 +67,7 @@ async def acquire_housing(player_id:int,code:str,tenure:str,key:str)->dict[str,A
           ON CONFLICT(player_id) DO UPDATE SET housing_code=$2,tenure=$3,rent_paid_until=$4,
           purchased_at=CASE WHEN $3='owned' THEN now() END,updated_at=now() RETURNING *""",player_id,code,tenure,until)
         if not await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=key,reason=f"housing_{tenure}",asset="IRT",account="wallet",amount=-cost,balance=balance,metadata={"housing":code}): raise RuntimeError("housing_ledger_conflict")
+        await conn.execute("UPDATE players SET happiness=GREATEST(0,LEAST(100,happiness+$2)) WHERE id=$1",player_id,new_bonus-previous_bonus)
         return dict(row)
 
 async def pay_living(player_id:int,key:str)->tuple[int,int]:
@@ -78,6 +85,9 @@ async def pay_living(player_id:int,key:str)->tuple[int,int]:
             await conn.execute("DELETE FROM player_housing WHERE player_id=$1", player_id)
             house = None
         daily=cfg.int_("phase3.living.base_daily_cost_toman")+(cfg.int_(f"phase3.housing.options.{house['housing_code']}.daily_living_toman") if house else 0)
+        assets=await conn.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)
+        specs=cfg.section("life_progression.assets")
+        daily+=sum(int(specs[str(a["asset_code"])].get("maintenance_daily_toman",0)) for a in assets if str(a["asset_code"]) in specs)
         amount=daily*days
         if int(player["wallet_toman"])<amount: raise ValueError("insufficient_balance")
         balance=await ledger_repo.change_player(conn,player_id,"IRT",-amount)

@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 248
+تعداد کل فایل‌ها: 249
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -266,6 +266,7 @@ telelife_complete/
 ├── DELIVERY.md
 ├── Dockerfile
 ├── dump.py
+├── HOTFIX_2026-07-27_FA.md
 ├── MANIFEST.sha256
 ├── pyproject.toml
 ├── README.md
@@ -4210,6 +4211,33 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 - Seven job definitions and five national resources
 ```
 
+### `HOTFIX_2026-07-27_FA.md`
+
+```markdown
+# Hotfix آماده انتشار — ۲۷ ژوئیهٔ ۲۰۲۶
+
+## اصلاح‌های انجام‌شده
+
+- ناسازگاری checksum دیتابیس مستقر برای `0014_free_tier_hardening` به‌عنوان بخشی از خط مبنای بازیابی‌شده مدیریت شد؛ رکورد دیتابیس حفظ می‌شود و SQL تاریخی دوباره اجرا نمی‌شود.
+- کنترل تغییرناپذیری برای migrationهای جدید از `0015_purposeful_work_loop` به بعد همچنان سخت‌گیرانه است؛ تغییر فایل اعمال‌شده باعث توقف امن می‌شود.
+- تست‌های رگرسیون migration با خط مبنای واقعی به‌روزرسانی شدند.
+- وابستگی runtime مربوط به `Pillow` بین `requirements.txt` و `pyproject.toml` همگام شد.
+- `.dockerignore` امن اضافه شد تا secret محلی، cache، تاریخچه Git و دامپ‌های بزرگ وارد image نشوند.
+- `MANIFEST.sha256` تازه برای کنترل تمام فایل‌های بسته تولید شد.
+
+## اعتبارسنجی انجام‌شده
+
+- Parse و compile تمام فایل‌های Python: موفق
+- Parse تمام فایل‌های YAML: موفق
+- بررسی syntax فایل JavaScript پنل: موفق
+- تست رفتاری migrator برای mismatch نسخه ۱۴، اعمال نسخه ۱۵ و رد tamper نسخه ۱۵: موفق
+- کنترل زنجیره ۱۸ migration و manifest تمام فایل‌ها: موفق
+
+## محدودیت تأیید
+
+محیط تحویل آفلاین است و dependencyهای اجرایی، PostgreSQL و credentialهای Telegram را ندارد؛ بنابراین اجرای `pytest` کامل و smoke test زنده در این محیط ممکن نبود. پیش از تغییر ترافیک production، image را در CI/staging بسازید، `python -m pytest -q` را اجرا کنید و startup را روی clone یا backup دیتابیس production بررسی کنید.
+```
+
 ### `MANIFEST.sha256`
 
 _[این فایل باینری/غیرمتنی تشخیص داده شد و محتوایش درج نشد]_
@@ -6603,10 +6631,11 @@ from packages.core.db import pool as dbpool
 logger = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-# Migrations through 0013 predate the repository-wide text normalization used
-# by this recovered distribution. Existing databases may therefore contain the
-# same migration history with different raw-text checksums. Never re-run those
-# versions: preserve their records and enforce immutable checksums from 0014 on.
+# Migrations through 0014 were already shipped before this recovered
+# distribution normalized text files. Existing databases can therefore contain
+# the same applied SQL with checksums calculated from the pre-normalized bytes.
+# Never re-run those versions: preserve their records and enforce immutable
+# checksums for every migration introduced after the recovered baseline.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0001_core_schema",
     "0002_progression",
@@ -6621,6 +6650,7 @@ LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0011_population_channels_migration",
     "0012_reliability_live_market_engagement",
     "0013_country_identity_candles_realism",
+    "0014_free_tier_hardening",
 })
 
 _BOOTSTRAP = """
@@ -12329,6 +12359,7 @@ dependencies = [
     "jinja2>=3.1.4,<4",
     "orjson>=3.10.7,<4",
     "python-multipart>=0.0.12,<1",
+    "Pillow>=10.4,<12",
 ]
 
 [project.optional-dependencies]
@@ -13685,11 +13716,12 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def text(path:str)->str:return (ROOT/path).read_text(encoding="utf-8")
 
-def test_recovered_history_ends_at_0013_and_0014_is_strict():
+def test_recovered_history_ends_at_0014_and_0015_is_strict():
     source=text("packages/core/db/migrator.py")
     legacy=source.split("LEGACY_CHECKSUM_VERSIONS = frozenset({",1)[1].split("})",1)[0]
     assert '"0013_country_identity_candles_realism"' in legacy
-    assert '"0014_free_tier_hardening"' not in legacy
+    assert '"0014_free_tier_hardening"' in legacy
+    assert '"0015_purposeful_work_loop"' not in legacy
     assert "Create a new migration instead of editing history" in source
 
 def test_admin_telegram_calls_use_transactional_outbox():
@@ -13890,8 +13922,9 @@ def test_only_pre_normalization_migrations_are_legacy_compatible():
         "0011_population_channels_migration",
         "0012_reliability_live_market_engagement",
         "0013_country_identity_candles_realism",
+        "0014_free_tier_hardening",
     }
-    assert "0014_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0015_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
 
 
 def test_new_migrations_remain_checksum_strict():

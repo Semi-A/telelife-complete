@@ -114,6 +114,10 @@ async def run_job(job_name: str, actor: AdminActor) -> dict[str, bool]:
     if result is None:raise HTTPException(502,"Job اجرا نشد؛ جزئیات خطا در عملیات زنده ثبت شد.")
     return {"completed":True}
 
+@router.get("/command-center")
+async def command_center() -> dict[str, object]:
+    return await admin_repo.command_center()
+
 @router.get("/overview")
 async def overview() -> dict[str, object]:
     row = await admin_repo.dashboard_stats()

@@ -1,0 +1,74 @@
+# Action-based, realistic progression for TeleLife.
+skills:
+  max_level: 20
+  base_xp: 120
+  exponent: 1.35
+  work_xp_at_full_capacity: 40
+  jobs:
+    farmer: agriculture
+    miner: extraction
+    trader: commerce
+    journalist: media
+    doctor: medicine
+    programmer: software
+    engineer: engineering
+  titles:
+    1: "تازه‌کار"
+    3: "کارآموز"
+    6: "ماهر"
+    10: "حرفه‌ای"
+    15: "خبره"
+    20: "استاد"
+assets:
+  bicycle:
+    title: "دوچرخه شهری"
+    min_level: 2
+    cost_toman: 250000
+    maintenance_daily_toman: 1000
+    reputation_bonus: 0
+    happiness_bonus: 1
+    work_bonus_bp: 100
+    skill_xp_bonus_bp: 0
+    opportunity: "رفت‌وآمد اقتصادی و ۱٪ بازده بیشتر کار"
+  laptop:
+    title: "لپ‌تاپ کاری"
+    min_level: 4
+    cost_toman: 1800000
+    maintenance_daily_toman: 2500
+    reputation_bonus: 1
+    happiness_bonus: 1
+    work_bonus_bp: 200
+    skill_xp_bonus_bp: 500
+    opportunity: "۵٪ یادگیری سریع‌تر و ۲٪ بازده بیشتر کار"
+  car:
+    title: "خودروی اقتصادی"
+    min_level: 8
+    cost_toman: 8500000
+    maintenance_daily_toman: 18000
+    reputation_bonus: 3
+    happiness_bonus: 2
+    work_bonus_bp: 350
+    skill_xp_bonus_bp: 0
+    opportunity: "دسترسی شغلی بهتر و ۳٫۵٪ بازده بیشتر"
+  workshop:
+    title: "کارگاه کوچک"
+    min_level: 12
+    min_skill_level: 5
+    cost_toman: 22000000
+    maintenance_daily_toman: 35000
+    reputation_bonus: 5
+    happiness_bonus: 1
+    work_bonus_bp: 700
+    skill_xp_bonus_bp: 500
+    opportunity: "زیرساخت کسب‌وکار؛ ۷٪ بازده و ۵٪ یادگیری بیشتر"
+  investment_fund:
+    title: "سبد سرمایه‌گذاری"
+    min_level: 15
+    min_skill_level: 6
+    cost_toman: 40000000
+    maintenance_daily_toman: 0
+    reputation_bonus: 4
+    happiness_bonus: 0
+    work_bonus_bp: 250
+    skill_xp_bonus_bp: 250
+    opportunity: "آمادگی برای لایه سرمایه‌گذاری و تنوع دارایی"
