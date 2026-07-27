@@ -47,7 +47,7 @@ async def stats() -> asyncpg.Record | None:
     return await db.fetchrow("""SELECT
         (SELECT count(*) FROM players) players,
         (SELECT count(*) FROM countries) countries,
-        (SELECT count(*) FROM citizenships) citizens""")
+        (SELECT count(*) FROM citizenships WHERE is_active) citizens""")
 
 async def users(limit: int = 100, query: str = "") -> list[asyncpg.Record]:
     needle = f"%{query.strip()}%"
@@ -70,7 +70,7 @@ async def countries(limit: int = 100) -> list[asyncpg.Record]:
                c.created_at
         FROM countries c
         LEFT JOIN players p ON p.id=c.president_player_id
-        LEFT JOIN citizenships z ON z.country_id=c.id
+        LEFT JOIN citizenships z ON z.country_id=c.id AND z.is_active
         LEFT JOIN country_resources r ON r.country_id=c.id
         GROUP BY c.id,p.first_name ORDER BY c.treasury_toman DESC LIMIT $1
     """, limit)

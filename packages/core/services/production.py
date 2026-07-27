@@ -67,6 +67,11 @@ def accrue(row, at: datetime) -> Accrual:  # type: ignore[no-untyped-def]
 
 
 async def choose(player_id: int, job: str) -> bool:
+    player = await db.fetchrow("SELECT level FROM players WHERE id=$1", player_id)
+    if player is None:
+        raise ValueError("player_not_found")
+    if int(player["level"]) < 5:
+        raise ValueError("job_locked")
     jobs = get_config().section("jobs.jobs")
     if job not in jobs:
         raise ValueError("invalid_job")
@@ -82,11 +87,12 @@ async def collect(player_id: int, key: str, at: datetime | None = None) -> tuple
         row = await production_repo.lock(conn, player_id)
         if not row:
             raise ValueError("job_not_found")
+        # The player_jobs lock serializes double taps; re-check idempotency only after it.
+        if await ledger_repo.idempotency_exists(conn, key):
+            return 0, 0
         accrual = accrue(row, now)
         amount = accrual.stored
         if amount < cfg.int_("jobs.production.minimum_collection_amount"):
-            return 0, 0
-        if await ledger_repo.idempotency_exists(conn, key):
             return 0, 0
         asset = row["output_asset_code"]
         balance = await ledger_repo.change_player(conn, player_id, asset, amount)

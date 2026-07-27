@@ -112,6 +112,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await query.message.reply_text(fa.HELP)
 
 
-def register(application) -> None:  # type: ignore[no-untyped-def]
-    application.add_handler(CommandHandler("status", status))
-    application.add_handler(CommandHandler("help", help_command))
+def register(application) -> None:
+    """Legacy slash adapter intentionally disabled; use glass panels."""
+    return

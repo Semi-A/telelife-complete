@@ -31,7 +31,7 @@ async def citizenship(player_id: int) -> asyncpg.Record | None:
         SELECT cs.*, c.name
         FROM citizenships cs
         JOIN countries c ON c.id = cs.country_id
-        WHERE cs.player_id = $1
+        WHERE cs.player_id = $1 AND cs.is_active
         """,
         player_id,
     )
@@ -128,7 +128,7 @@ async def resources(country_id: int) -> list[asyncpg.Record]:
 
 async def citizens(country_id: int) -> list[int]:
     rows = await db.fetch(
-        "SELECT player_id FROM citizenships WHERE country_id = $1 ORDER BY player_id",
+        "SELECT player_id FROM citizenships WHERE country_id = $1 AND is_active ORDER BY player_id",
         country_id,
     )
     return [int(row["player_id"]) for row in rows]

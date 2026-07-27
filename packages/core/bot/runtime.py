@@ -52,6 +52,10 @@ class PollingService:
             raise RuntimeError(f"{self.service.value} updater is unavailable")
         try:
             await app.initialize()
+            # The supervisor owns the lifecycle, so invoke the framework hook explicitly.
+            # This clears legacy slash-command menus before polling starts.
+            if app.post_init is not None:
+                await app.post_init(app)
             await app.start()
             await updater.start_polling(
                 drop_pending_updates=True,

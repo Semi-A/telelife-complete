@@ -5,11 +5,11 @@ from uuid import uuid4
 from telegram import Update
 from telegram.constants import ChatMemberStatus,ChatType
 from telegram.error import BadRequest,Forbidden
-from telegram.ext import CallbackQueryHandler,ChatMemberHandler,CommandHandler,ContextTypes,MessageHandler,filters
+from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
-from packages.core.repositories import country_repo,election_repo,group_repo,player_repo,production_repo,project_repo,ui_state_repo
-from packages.core.services import country as countries,economy,elections,national_project,production
+from packages.core.repositories import country_repo,election_repo,group_repo,player_repo,project_repo,ui_state_repo
+from packages.core.services import country as countries,economy,elections,national_project
 from packages.core.utils import fmt
 GROUPS={ChatType.GROUP,ChatType.SUPERGROUP};FLOW='world_creation'
 STATUS={'forming':'در حال ساخت','temporary':'موقت','official':'رسمی'};GOV={'republic':'جمهوری','monarchy':'پادشاهی','dictatorship':'دیکتاتوری','federal':'فدرال','council':'شورایی'}
@@ -49,27 +49,23 @@ async def citizens_page(u,c):
  await show(u,c,fa.CITIZENS.format(count=fmt.number(count),members='\n'.join(names[:25]) or 'هنوز شهروندی ثبت نشده است.'),kb.back('country'))
 async def politics_page(u,c):
  row,_,_=await facts(u.effective_chat.id);e=await election_repo.open_for_country(row['id']);state='انتخابات بازی وجود ندارد.' if not e else ('مرحله نام‌نویسی نامزدها باز است.' if e['status']=='nominations' else 'رأی‌گیری باز است.');await show(u,c,fa.POLITICS.format(state=state),kb.politics(bool(e)))
-async def jobs_page(u,c):
- p=await player(u);row=await production_repo.get(p.id);body='هنوز شغلی نداری؛ از سطح ۵ انتخاب کن.'
- if row:
-  a=production.accrue(row,datetime.now(UTC));body=f"شغل: <b>{row['job_code']}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)}</b>"
- await show(u,c,fa.JOBS.format(body=body),kb.jobs(bool(row)))
-async def start(u,c):await home(u,c)
 async def callback(u,c):
  q=u.callback_query;a=(q.data or '')[3:]
  try:
   if a=='home':await q.answer();c.chat_data.pop(FLOW,None);await home(u,c)
-  elif a=='guide':await q.answer();await show(u,c,fa.GUIDE,kb.back())
+  elif a=='guide':await q.answer();row,_,_=await facts(u.effective_chat.id) if u.effective_chat.type in GROUPS else (None,0,None);await show(u,c,fa.GUIDE if row else fa.GUIDE_EMPTY,kb.back())
   elif a=='country':await q.answer();await country_page(u,c)
   elif a=='economy':await q.answer();await economy_page(u,c)
   elif a=='citizens':await q.answer();await citizens_page(u,c)
   elif a=='politics':await q.answer();await politics_page(u,c)
-  elif a=='jobs':await q.answer();await jobs_page(u,c)
   elif a=='create':
-   await q.answer()
    if not await admin(u,c):await q.answer('فقط مدیر گروه می‌تواند ساخت را شروع کند.',show_alert=True);return
+   await q.answer()
    c.chat_data[FLOW]={'step':'name','owner':q.from_user.id,'panel':q.message.message_id};await show(u,c,fa.WIZARD_NAME,kb.cancel())
-  elif a.startswith('gov:'):await q.answer();c.chat_data[FLOW]['government']=a.split(':')[1];c.chat_data[FLOW]['step']='description';await show(u,c,fa.WIZARD_DESC,kb.cancel())
+  elif a.startswith('gov:'):
+   flow=c.chat_data.get(FLOW)
+   if not flow or flow.get('owner')!=q.from_user.id or flow.get('step')!='government':await q.answer('فرایند ساخت منقضی شده است؛ دوباره از «ساخت کشور» آغاز کن.',show_alert=True);return
+   await q.answer();flow['government']=a.split(':',1)[1];flow['step']='description';await show(u,c,fa.WIZARD_DESC,kb.cancel())
   elif a=='join':p=await player(u);ok=await countries.join_country(chat_id=u.effective_chat.id,player_id=p.id);await q.answer('شهروند شدی.' if ok else 'از قبل شهروندی.',show_alert=True);await home(u,c)
   elif a=='leave':p=await player(u);await countries.leave_country(chat_id=u.effective_chat.id,player_id=p.id);await q.answer('از کشور خارج شدی.',show_alert=True);await home(u,c)
   elif a.startswith('donate:'):p=await player(u);row,_,_=await facts(u.effective_chat.id);await economy.transfer(p.id,row['id'],'IRT',int(a.split(':')[1]),reason='donation',idempotency_key=f"world:{p.id}:{uuid4().hex}");await q.answer('کمک مالی ثبت شد.',show_alert=True);await country_page(u,c)
@@ -81,9 +77,6 @@ async def callback(u,c):
    rows=await __import__('packages.core.db',fromlist=['fetch']).fetch('SELECT ec.player_id,p.first_name FROM election_candidates ec JOIN players p ON p.id=ec.player_id WHERE ec.election_id=$1 ORDER BY ec.created_at',e['id']);await show(u,c,'🗳 <b>انتخاب رهبر</b>\n\nنامزد موردنظر را انتخاب کن. رأی فقط یک‌بار ثبت می‌شود.',kb.candidates(rows))
   elif a.startswith('vote:'):
    p=await player(u);row,_,_=await facts(u.effective_chat.id);e=await election_repo.open_for_country(row['id']);ok=await elections.vote(e['id'],p.id,int(a.split(':')[1]));await q.answer('رأی ثبت شد.' if ok else 'قبلاً رأی داده‌ای.',show_alert=True);await politics_page(u,c)
-  elif a.startswith('job:'):p=await player(u);await production.choose(p.id,a.split(':')[1]);await q.answer('شغل انتخاب شد.',show_alert=True);await jobs_page(u,c)
-  elif a=='jcollect':p=await player(u);x,g=await production.collect(p.id,f"world-collect:{p.id}:{uuid4().hex}");await q.answer(f"{fmt.number(x)} واحد و {fmt.number(g)} تجربه گرفتی.",show_alert=True);await jobs_page(u,c)
-  elif a.startswith('jup:'):p=await player(u);lvl=await production.upgrade(p.id,a.split(':')[1],f"world-up:{p.id}:{uuid4().hex}");await q.answer(f"به سطح {fmt.number(lvl)} رسید.",show_alert=True);await jobs_page(u,c)
   elif a=='project':
    await q.answer()
    row,_,_=await facts(u.effective_chat.id);pr=await project_repo.active(row['id']);body='هنوز پروژه‌ای فعال نیست.'
@@ -95,10 +88,16 @@ async def callback(u,c):
   elif a.startswith('pcon:'):
    p=await player(u);row,_,_=await facts(u.effective_chat.id);pr=await project_repo.active(row['id']);_,asset,amount=a.split(':');accepted,done=await national_project.contribute(pr['id'],p.id,asset,int(amount),f"world-project:{p.id}:{uuid4().hex}");await q.answer(f"{fmt.number(accepted)} واحد ثبت شد."+(" پروژه تکمیل شد!" if done else ''),show_alert=True);await home(u,c)
   elif a=='polls':await q.answer('هنوز نظرسنجی فعالی نیست.',show_alert=True)
- except (ValueError,PermissionError,TypeError):await q.answer('این عملیات فعلاً مجاز نیست یا شرایطش کامل نشده است.',show_alert=True)
+ except (ValueError,PermissionError,TypeError,KeyError,AttributeError) as exc:
+  errors={'country_not_found':'کشوری پیدا نشد.','not_citizen':'ابتدا شهروند این کشور شو.','insufficient_player_balance':'موجودی کیف پولت کافی نیست.','election_exists':'از قبل انتخابات بازی وجود دارد.','project_exists':'از قبل پروژه ملی فعالی وجود دارد.'}
+  await q.answer(errors.get(str(exc),'شرایط این کار کامل نیست؛ راهنمای همین مرحله را بخوان.'),show_alert=True)
 async def text(u,c):
- f=c.chat_data.get(FLOW);m=u.effective_message
- if not f or u.effective_user.id!=f['owner']:return
+ m=u.effective_message;chat=u.effective_chat
+ if not m or not chat:return
+ if chat.type not in GROUPS:await home(u,c);return
+ f=c.chat_data.get(FLOW)
+ if not f or u.effective_user.id!=f.get('owner'):
+  await home(u,c);return
  value=(m.text or '').strip()
  try:await m.delete()
  except Exception:pass
@@ -108,4 +107,4 @@ async def text(u,c):
  if f['step']=='description':
   if not 10<=len(value)<=500:await c.bot.edit_message_text(chat_id=u.effective_chat.id,message_id=f['panel'],text='معرفی باید ۱۰ تا ۵۰۰ نویسه باشد.',reply_markup=kb.cancel());return
   p=await player(u);await countries.create_country(chat_id=u.effective_chat.id,chat_title=u.effective_chat.title or '',player_id=p.id,name=f['name'],government=f['government'],description=value);c.chat_data.pop(FLOW,None);await home(u,c)
-def register(app):app.add_handler(CommandHandler('start',start));app.add_handler(CallbackQueryHandler(callback,pattern=r'^tw:'));app.add_handler(MessageHandler(filters.TEXT&~filters.COMMAND,text))
+def register(app):app.add_handler(CallbackQueryHandler(callback,pattern=r'^tw:'));app.add_handler(MessageHandler(filters.TEXT,text))

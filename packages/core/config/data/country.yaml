@@ -57,3 +57,8 @@ feature_flags:
     universities: false
     global_trade: false
     military: false
+lifecycle:
+  temporary_min_citizens: 1
+  official_min_citizens: 5
+  require_elected_leader_for_official: true
+  remove_citizenship_on_group_leave: true

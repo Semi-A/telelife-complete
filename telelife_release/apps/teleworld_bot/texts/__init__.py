@@ -1,1 +1,0 @@
-"""Package apps.teleworld_bot.texts."""

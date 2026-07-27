@@ -24,10 +24,3 @@
 Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیریت با HTTP Basic محافظت شده‌اند.
 
 ## اجرا و تست
-
-```bash
-docker build -t telelife .
-docker run --rm --env-file .env -p 8000:8000 telelife
-```
-
-برای تست، dependencyهای dev پروژه را نصب کرده و `pytest -q` را اجرا کنید.

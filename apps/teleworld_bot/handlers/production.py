@@ -77,11 +77,6 @@ async def upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await message.reply_text(fa.UPGRADED.format(kind=kind, level=level))
 
 
-def register(application) -> None:  # type: ignore[no-untyped-def]
-    for command, handler in (
-        ("jobs", jobs),
-        ("choosejob", choose),
-        ("collect", collect),
-        ("upgrade", upgrade),
-    ):
-        application.add_handler(CommandHandler(command, handler))
+def register(application) -> None:
+    """Legacy slash adapter intentionally disabled; use glass panels."""
+    return

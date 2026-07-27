@@ -1,18 +1,15 @@
-# XP economy. Anti-farming lives here, not in code.
+# تنظیمات تجربه و کنترل سوءاستفاده
 sources:
-  daily_claim:      40
+  daily_claim: 40
   mission_complete: 50
-  profile_view:     2
-  group_activity:   5
-
+  profile_view: 2
+  group_activity: 5
+  onboarding_step: 35
 anti_farm:
-  # Hard ceiling per player per day across ALL sources.
   daily_cap: 1500
-  # Per-source cooldowns in seconds. 0 = no cooldown.
   cooldowns:
-    profile_view:   300
+    profile_view: 300
     group_activity: 120
-
 level_up:
   happiness_bonus: 5
   reward_toman_per_level: 15000

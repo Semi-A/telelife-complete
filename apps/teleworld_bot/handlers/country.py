@@ -134,14 +134,6 @@ async def tax(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await donate(update, context)
 
 
-def register(application) -> None:  # type: ignore[no-untyped-def]
-    for command, handler in (
-        ("createcountry", create),
-        ("joincountry", join),
-        ("country", show),
-        ("economy", show),
-        ("resources", show),
-        ("donate", donate),
-        ("paytax", tax),
-    ):
-        application.add_handler(CommandHandler(command, handler))
+def register(application) -> None:
+    """Legacy slash adapter intentionally disabled; use glass panels."""
+    return

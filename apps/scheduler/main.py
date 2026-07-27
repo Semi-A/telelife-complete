@@ -11,6 +11,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
+from packages.core.services import usd_market
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ class SchedulerService:
                 await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
                 await country_jobs.resolve_due()
                 await country_jobs.publish_news(bot)
+                await usd_market.stabilize()
                 await admin_repo.capture_market_snapshot()
                 self._heartbeat = asyncio.get_running_loop().time()
             except asyncio.CancelledError:
@@ -58,6 +60,7 @@ class SchedulerService:
                 return
             try:
                 await daily_reset.run()
+                await usd_market.daily_rollover()
                 await country_jobs.daily_events()
             except asyncio.CancelledError:
                 raise

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC,datetime
 from uuid import uuid4
 from telegram import Update
-from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes
+from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers.panel import show
 from apps.telelife_bot.keyboards import main as kb
@@ -13,19 +13,21 @@ from packages.core.repositories import player_repo,progression_repo,production_r
 from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
 
-ERR={"insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۵ باز می‌شوند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن."}
+JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
+ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
+ERR={"insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۵ باز می‌شوند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
 def why(e):return ERR.get(str(e),"این کار انجام نشد؛ شرایط را دوباره بررسی کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def panel(ctx,c,text,mark):return await show(c,ctx.player.id,ctx.message.chat_id,text,mark,message=ctx.message if getattr(ctx.message,'reply_markup',None) is not None else None)
 async def fresh(ctx):return await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
 async def home(ctx,c):
  p=await fresh(ctx);st=await ui_state_repo.ensure_life(p.id);_,_,last=await daily.state(p.id);cur,need=progression.level_progress(p.level,p.xp);left=max(0,need-cur)
- step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "به سطح ۵ برس و مسیر شغلی را باز کن" if p.level<5 else "درآمد شغلی را جمع کن و دارایی بساز")
+ step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "کارهای امروز را انجام بده و به سطح ۵ برس" if p.level<5 else "شغلت را انتخاب کن، کار کن و درآمدت را رشد بده")
  hint="🚀 مسیر شروع آماده ادامه است." if step<4 else "🎯 کارهای امروز بهترین راه رشد هستند."
  text=fa.HOME.format(name=p.first_name,level=fmt.number(p.level),bar=fmt.progress_bar(cur,need,width=10),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
  await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step))
 async def journey(ctx,c):
- st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["اولین هدف تو روشن است: شخصیتت را از سطح ۱ به سطح ۲ برسان.","سرمایه شروع را فعال کن؛ بعدش مأموریت‌های واقعی جلویت باز می‌شوند.","اولین کار امروز را انجام بده تا ببینی هر تعامل چطور شخصیتت را رشد می‌دهد.","حالا وارد شهر شو: بانک، شغل، خانه و بازار در مسیر سطح‌ها باز می‌شوند.","مسیر شروع کامل شده؛ از خانه بازی ادامه بده."]
+ st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ تا سطح ۵ با کارهای روزانه رشد کن، سپس شغل انتخاب کن و درآمد بساز.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
@@ -43,7 +45,8 @@ async def economy(ctx,c):
  v=await personal_economy.view(ctx.player.id);house="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,fa.ECONOMY.format(wallet=fmt.toman(v.wallet),savings=fmt.toman(v.savings),house=house,due=fmt.toman(v.living_due)),kb.economy(ctx.telegram_id))
 async def jobs(ctx,c):
  row=await production_repo.get(ctx.player.id)
- if row:a=production.accrue(row,datetime.now(UTC));body=f"شغل: <b>{row['job_code']}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)}</b>\nسرعت تولید: <b>{a.rate:.1f} در ساعت</b>"
+ if row:
+  a=production.accrue(row,datetime.now(UTC));job=JOB_FA.get(str(row['job_code']),'شغل');asset=ASSET_FA.get(str(row['output_asset_code']),'درآمد');body=f"شغل: <b>{job}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}</b>\nسرعت کار: <b>{fmt.number(round(a.rate,1))} {asset} در ساعت</b>\n\nهر وقت مقداری آماده شد، «کار کن و درآمد بگیر» را بزن. اگر ظرفیت پر شود، تولید بیشتر متوقف می‌شود."
  else:body="هنوز شغلی نداری. از سطح ۵ یکی را انتخاب کن؛ هر شغل خروجی متفاوتی دارد."
  await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row)))
 async def market(ctx,c):
@@ -55,6 +58,10 @@ async def unlock_page(ctx,c):
 async def start(update,c):
  ctx=await resolve(update)
  if ctx:await home(ctx,c)
+async def text_start(update,c):
+ if update.effective_chat and update.effective_chat.type=='private':
+  ctx=await resolve(update)
+  if ctx:await home(ctx,c)
 async def callback(update,c):
  parsed=await guard_callback(update);q=update.callback_query
  if not parsed or not q:return
@@ -65,7 +72,13 @@ async def callback(update,c):
   if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings'}:
    await q.answer();fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':economy,'savings':economy}[a];await fn(ctx,c);return
   if a=='jstep':
-   step=int(parsed.arg);result=await xp.grant(ctx.player.id,'onboarding_step',idempotency_key=f'onboarding:{ctx.player.id}:{step}',amount=35 if step<3 else 80);await ui_state_repo.set_step(ctx.player.id,min(4,step+1));await q.answer(f"+{fmt.number(result.granted)} تجربه؛ قدم بعد باز شد.",show_alert=True);await journey(ctx,c);return
+   step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
+   if step!=expected:await q.answer('این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
+   result=await xp.grant(ctx.player.id,'onboarding_step',idempotency_key=f'onboarding:{ctx.player.id}:{step}',amount=35 if step<3 else 80);await ui_state_repo.set_step(ctx.player.id,min(4,step+1));await q.answer(f"+{fmt.number(result.granted)} تجربه؛ قدم بعد باز شد.",show_alert=True)
+   if step==1:await missions_page(ctx,c)
+   elif step==3:await home(ctx,c)
+   else:await journey(ctx,c)
+   return
   if a=='claim':
    r=await daily.claim(ctx.player.id)
    if r.already_claimed:await q.answer("امروز گرفته‌ای.");await daily_page(ctx,c);return
@@ -84,4 +97,4 @@ async def callback(update,c):
   await q.answer()
  except (ValueError,PermissionError) as e:await q.answer(why(e),show_alert=True)
 def register(app):
- app.add_handler(CommandHandler('start',start));app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'))
+ app.add_handler(CommandHandler('start',start));app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'));app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.Regex(r'^(شروع|خانه|منو|بازی)$'),text_start))

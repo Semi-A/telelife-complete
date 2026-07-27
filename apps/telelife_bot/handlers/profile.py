@@ -53,5 +53,6 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-def register(application) -> None:  # type: ignore[no-untyped-def]
-    application.add_handler(CommandHandler("profile", profile))
+def register(application) -> None:
+    """Legacy slash adapter intentionally disabled; use glass panels."""
+    return

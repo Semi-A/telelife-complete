@@ -17,12 +17,12 @@ async def start_election(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
 async def nominate(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  x=await ctx(update)
  if x and x[3]:
-  e=await election_repo.open_for_country(x[3]['id']);await election_repo.nominate(e['id'],x[2].id,x[0].id,x[1].message_id);await x[1].reply_text(fa.NOMINATED)
+  e=await election_repo.open_for_country(x[3]['id']);await elections.nominate(e['id'],x[2].id,x[0].id,x[1].message_id);await x[1].reply_text(fa.NOMINATED)
 async def vote(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  x=await ctx(update)
  if x and x[3] and x[1].reply_to_message:
   e=await election_repo.open_for_country(x[3]['id']);candidate=await db.fetchval('SELECT player_id FROM election_candidates WHERE election_id=$1 AND message_id=$2',e['id'],x[1].reply_to_message.message_id)
-  ok=await election_repo.vote(e['id'],x[2].id,candidate);await x[1].reply_text(fa.VOTED if ok else fa.DUPLICATE_VOTE)
+  ok=await elections.vote(e['id'],x[2].id,candidate);await x[1].reply_text(fa.VOTED if ok else fa.DUPLICATE_VOTE)
 async def start_project(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  x=await ctx(update)
  if x and x[3]:await national_project.start(x[3]['id'],x[2].id);await x[1].reply_text(fa.PROJECT_STARTED)
@@ -51,5 +51,6 @@ async def announce(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
  if x and x[3] and await country_repo.is_president(x[3]['id'],x[2].id):
   async with db.transaction() as conn:await outbox_repo.enqueue(conn,f'announce:{x[1].message_id}','country_announcement',{'text':' '.join(context.args)},x[0].id)
   await x[1].reply_text(fa.ANNOUNCED)
-def register(app)->None:
- for c,f in [('startelection',start_election),('nominate',nominate),('vote',vote),('startproject',start_project),('contribute',contribute),('poll',poll),('polls',polls),('pollvote',pollvote),('setflag',setflag),('announce',announce)]:app.add_handler(CommandHandler(c,f))
+def register(application) -> None:
+    """Legacy slash adapter intentionally disabled; use glass panels."""
+    return

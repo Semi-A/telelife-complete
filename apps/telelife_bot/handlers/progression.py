@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from telegram import Update
-from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from apps.telelife_bot.handlers.common import Ctx, guard_callback, resolve, send_panel
 from apps.telelife_bot.keyboards import main as kb
@@ -17,11 +17,8 @@ MISSIONS_UNLOCK_LEVEL = 2
 
 
 async def _announce_level_up(ctx: Ctx, result: xp.XPResult) -> None:
-    if not result.leveled_up:
-        return
-    await ctx.message.reply_text(
-        render.level_up(result), reply_markup=kb.level_up_panel(ctx.telegram_id)
-    )
+    # Level state is rendered inside the persistent panel; no extra message.
+    return
 
 
 async def _render_profile(ctx: Ctx, context: ContextTypes.DEFAULT_TYPE, *, edit: bool) -> None:
@@ -201,8 +198,4 @@ async def _do_mission_claim(
 
 
 def register(application) -> None:  # type: ignore[no-untyped-def]
-    application.add_handler(CommandHandler("profile", cmd_profile))
-    application.add_handler(CommandHandler("daily", cmd_daily))
-    application.add_handler(CommandHandler("missions", cmd_missions))
-    application.add_handler(CommandHandler("unlocks", cmd_unlocks))
     application.add_handler(CallbackQueryHandler(on_callback, pattern=r"^tl:"))

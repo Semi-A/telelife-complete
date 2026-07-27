@@ -66,96 +66,64 @@ async def grant(
     *,
     idempotency_key: str,
     amount: int | None = None,
+    conn: asyncpg.Connection | None = None,
 ) -> XPResult:
-    """Grant XP exactly once. Safe under retries, races and double taps."""
+    """Grant XP exactly once; optionally participate in a caller transaction."""
+    if conn is None:
+        async with db.transaction() as owned_conn:
+            return await grant(
+                player_id, source, idempotency_key=idempotency_key,
+                amount=amount, conn=owned_conn,
+            )
+
     cfg = get_config()
     requested = amount if amount is not None else cfg.int_(f"xp.sources.{source}")
     if requested < 0:
         raise ValueError("negative_xp")
     daily_cap = cfg.int_("xp.anti_farm.daily_cap")
 
-    async with db.transaction() as conn:
-        row = await conn.fetchrow(
-            "SELECT level, xp FROM players WHERE id = $1 FOR UPDATE", player_id
-        )
-        if row is None:
-            raise ValueError(f"player {player_id} not found")
+    row = await conn.fetchrow(
+        "SELECT level, xp FROM players WHERE id = $1 FOR UPDATE", player_id
+    )
+    if row is None:
+        raise ValueError(f"player {player_id} not found")
+    level_before, current_xp = int(row["level"]), int(row["xp"])
 
-        level_before = int(row["level"])
-        current_xp = int(row["xp"])
+    inserted = await conn.fetchval(
+        """INSERT INTO xp_events (player_id,idempotency_key,source,amount,level_after)
+        VALUES ($1,$2,$3,0,$4) ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id""",
+        player_id, idempotency_key, source, level_before,
+    )
+    if inserted is None:
+        return XPResult(0, True, False, level_before, level_before)
 
-        # Reserve the idempotency key BEFORE any cap maths, so a duplicate is
-        # reported as duplicate even on a day where the cap is already full.
-        inserted = await conn.fetchval(
-            """
-            INSERT INTO xp_events (player_id, idempotency_key, source, amount, level_after)
-            VALUES ($1, $2, $3, 0, $4)
-            ON CONFLICT (idempotency_key) DO NOTHING
-            RETURNING id
-            """,
-            player_id,
-            idempotency_key,
-            source,
-            level_before,
-        )
-        if inserted is None:
-            return XPResult(0, True, False, level_before, level_before)
+    used = await _today_total(conn, player_id)
+    allowed = max(0, min(requested, daily_cap - used))
+    capped = allowed < requested
+    if allowed == 0:
+        return XPResult(0, False, capped, level_before, level_before)
 
-        used = await _today_total(conn, player_id)
-        allowed = max(0, min(requested, daily_cap - used))
-        capped = allowed < requested
-
-        if allowed == 0:
-            return XPResult(0, False, capped, level_before, level_before)
-
-        level_after, remaining = _apply_levels(level_before, current_xp + allowed)
-        gained = level_after - level_before
-        reward = gained * cfg.int_("xp.level_up.reward_toman_per_level")
-        happiness_bonus = gained * cfg.int_("xp.level_up.happiness_bonus")
-
+    level_after, remaining = _apply_levels(level_before, current_xp + allowed)
+    gained = level_after - level_before
+    reward = gained * cfg.int_("xp.level_up.reward_toman_per_level")
+    happiness_bonus = gained * cfg.int_("xp.level_up.happiness_bonus")
+    await conn.execute("UPDATE xp_events SET amount=$2,level_after=$3 WHERE id=$1", inserted, allowed, level_after)
+    balance = await conn.fetchval(
+        """UPDATE players SET level=$2,xp=$3,wallet_toman=wallet_toman+$4,
+        happiness=LEAST(100,happiness+$5) WHERE id=$1 RETURNING wallet_toman""",
+        player_id, level_after, remaining, reward, happiness_bonus,
+    )
+    if reward:
         await conn.execute(
-            "UPDATE xp_events SET amount = $2, level_after = $3 WHERE id = $1",
-            inserted,
-            allowed,
-            level_after,
+            """INSERT INTO ledger(player_id,idempotency_key,reason,currency,asset_code,account,amount,balance_after)
+            VALUES($1,$2,'level_up','IRT','IRT','wallet',$3,$4)
+            ON CONFLICT(idempotency_key) DO NOTHING""",
+            player_id, f"levelup:{player_id}:{level_after}", reward, int(balance or 0),
         )
-
-        balance = await conn.fetchval(
-            """
-            UPDATE players SET
-                level         = $2,
-                xp            = $3,
-                wallet_toman  = wallet_toman + $4,
-                happiness     = LEAST(100, happiness + $5)
-            WHERE id = $1
-            RETURNING wallet_toman
-            """,
-            player_id,
-            level_after,
-            remaining,
-            reward,
-            happiness_bonus,
-        )
-
-        if reward:
-            await conn.execute(
-                """
-                INSERT INTO ledger
-                    (player_id, idempotency_key, reason, currency, asset_code, account,
-                     amount, balance_after)
-                VALUES ($1, $2, 'level_up', 'IRT', 'IRT', 'wallet', $3, $4)
-                ON CONFLICT (idempotency_key) DO NOTHING
-                """,
-                player_id,
-                f"levelup:{player_id}:{level_after}",
-                reward,
-                int(balance or 0),
-            )
-
-        if gained:
-            await _record_unlocks(conn, player_id, level_before, level_after)
-
-        return XPResult(allowed, False, capped, level_before, level_after, reward)
+    if gained:
+        await _record_unlocks(conn, player_id, level_before, level_after)
+    return XPResult(allowed, False, capped, level_before, level_after, reward)
 
 
 async def _record_unlocks(
