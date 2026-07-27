@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, commerce
+from packages.core.services import admin, commerce, live_market, scheduler_ops, engagement
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[str, Depends(require_admin)]
@@ -58,6 +58,34 @@ def fail(exc: ValueError) -> HTTPException:
         "president_must_be_citizen": "رئیس‌جمهور باید شهروند همین کشور باشد.",
     }
     return HTTPException(400, messages.get(str(exc), "عملیات انجام نشد."))
+
+
+class FreezeBody(BaseModel):
+    enabled: bool
+
+@router.get("/operations")
+async def operations() -> dict[str, object]:
+    return await admin_repo.operations_status()
+
+@router.post("/operations/market/sync")
+async def sync_market(actor: AdminActor) -> dict[str, object]:
+    try:
+        result=await live_market.sync()
+    except Exception as exc:
+        raise HTTPException(502,"منبع Zipodo پاسخ معتبر نداد؛ آخرین نرخ معتبر حفظ شد.") from exc
+    return result
+
+@router.post("/operations/market/freeze")
+async def freeze_market(body: FreezeBody, actor: AdminActor) -> dict[str, bool]:
+    return {"applied":await admin.feature(actor,"usd_market_frozen",body.enabled,str(uuid4()))}
+
+@router.post("/operations/jobs/{job_name}/run")
+async def run_job(job_name: str, actor: AdminActor) -> dict[str, bool]:
+    allowed={"zipodo_rate":live_market.sync,"engagement":engagement.minute_tick,"market_snapshot":admin_repo.capture_market_snapshot}
+    if job_name not in allowed:raise HTTPException(400,"این Job برای اجرای دستی مجاز نیست.")
+    result=await scheduler_ops.run(f"manual:{job_name}",allowed[job_name])
+    if result is None:raise HTTPException(502,"Job اجرا نشد؛ جزئیات خطا در عملیات زنده ثبت شد.")
+    return {"completed":True}
 
 @router.get("/overview")
 async def overview() -> dict[str, object]:

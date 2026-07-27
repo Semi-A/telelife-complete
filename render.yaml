@@ -5,7 +5,6 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
-    region: frankfurt
     healthCheckPath: /healthz
     autoDeployTrigger: commit
     envVars:

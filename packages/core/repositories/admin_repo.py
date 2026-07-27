@@ -87,14 +87,14 @@ async def news_rows(limit: int = 100) -> list[asyncpg.Record]:
 
 async def market_history(hours: int = 24) -> list[asyncpg.Record]:
     return await db.fetch("""
-        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,
+        SELECT p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error,
                COALESCE(jsonb_agg(jsonb_build_object(
                  'time',s.captured_at,'price',s.price_toman) ORDER BY s.captured_at)
                  FILTER (WHERE s.captured_at IS NOT NULL),'[]'::jsonb) AS points
         FROM market_prices p
         LEFT JOIN market_price_snapshots s ON s.asset_code=p.asset_code
           AND s.captured_at >= now()-($1::int * interval '1 hour')
-        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at
+        GROUP BY p.asset_code,p.title_fa,p.current_price_toman,p.updated_at,p.source,p.source_checked_at,p.source_error
         ORDER BY CASE p.asset_code WHEN 'USD' THEN 0 ELSE 1 END,p.asset_code
     """, hours)
 
@@ -111,3 +111,21 @@ async def ads(limit: int = 100) -> list[asyncpg.Record]:
 
 async def ad_owner(ad_id:int):
  return await db.fetchrow("SELECT p.telegram_id,p.first_name FROM ad_requests a JOIN players p ON p.id=a.requester_player_id WHERE a.id=$1",ad_id)
+
+
+async def operations_status() -> dict[str, object]:
+    market=await db.fetchrow("""SELECT asset_code,current_price_toman,source,source_checked_at,
+      source_error,updated_at,now()-source_checked_at AS source_age
+      FROM market_prices WHERE asset_code='USD'""")
+    jobs=await db.fetch("""SELECT DISTINCT ON(job_name) job_name,status,started_at,finished_at,
+      duration_ms,result,error_type,error_message FROM scheduler_job_runs
+      ORDER BY job_name,started_at DESC""")
+    queues=await db.fetchrow("""SELECT
+      (SELECT count(*) FROM news_outbox WHERE published_at IS NULL) outbox_pending,
+      (SELECT count(*) FROM news_outbox WHERE published_at IS NULL AND last_error_code IS NOT NULL) outbox_failed,
+      (SELECT count(*) FROM ad_deliveries WHERE status='scheduled') ads_scheduled,
+      (SELECT count(*) FROM ad_deliveries WHERE status='failed') ads_failed,
+      (SELECT count(*) FROM group_live_events WHERE status='open') live_events""")
+    frozen=bool(await db.fetchval("SELECT COALESCE((SELECT enabled FROM feature_flags WHERE key='usd_market_frozen'),FALSE)"))
+    return {"market":dict(market) if market else None,"jobs":[dict(x) for x in jobs],
+            "queues":dict(queues) if queues else {},"market_frozen":frozen}

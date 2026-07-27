@@ -4,6 +4,7 @@
   <nav>
     <button class="nav active" data-view="overview"><span>◈</span><em>نمای کلی</em></button>
     <button class="nav" data-view="market"><span>⌁</span><em>بازار</em></button>
+    <button class="nav" data-view="operations"><span>≋</span><em>عملیات زنده</em></button>
     <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
@@ -36,6 +37,14 @@
   <article class="panel market-stage"><div id="market-tabs" class="asset-tabs"></div><div id="market-chart" class="chart-wrap large"><div class="empty">در حال دریافت قیمت‌ها…</div></div></article>
   <div id="market-cards" class="market-cards"></div>
 </section>
+
+<section class="view" id="view-operations">
+  <div class="section-lead"><div><p class="eyebrow">اتاق کنترل زیرساخت</p><h2>عملیات زنده</h2><p>منبع نرخ، صف‌ها و آخرین اجرای هر Job؛ بدون حدس و بدون عدد ساختگی.</p></div><button id="ops-refresh" class="secondary">تازه‌سازی وضعیت</button></div>
+  <article class="rate-ticker panel"><div><span class="source-seal">USDT / IRT</span><strong id="live-rate">—</strong><small id="rate-source">در حال بررسی منبع…</small></div><div class="ticker-actions"><button id="sync-rate" class="primary">دریافت نرخ Zipodo</button><button id="freeze-market" class="secondary">توقف بازار</button></div><div id="sparkline" class="sparkline" aria-label="روند نرخ تتر"></div></article>
+  <div id="queue-metrics" class="metric-grid"></div>
+  <article class="panel table-panel"><div class="panel-head ops-head"><div><p class="eyebrow">اجرای زمان‌بند</p><h2>آخرین وضعیت Jobها</h2></div><span class="legend"><i class="ok"></i> سالم <i class="bad"></i> خطا</span></div><div class="table-scroll"><table><thead><tr><th>Job</th><th>وضعیت</th><th>آخرین اجرا</th><th>زمان اجرا</th><th>جزئیات</th><th>عملیات</th></tr></thead><tbody id="jobs-body"></tbody></table></div></article>
+</section>
+
 <section class="view" id="view-players">
   <div class="section-lead"><div><p class="eyebrow">مدیریت هویت</p><h2>بازیکنان</h2><p>جست‌وجو، اعطای XP و کنترل دسترسی.</p></div><label class="search"><span>⌕</span><input id="player-search" placeholder="نام، نام کاربری یا شناسه…"></label></div>
   <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>بازیکن</th><th>سطح / XP</th><th>دارایی</th><th>آخرین حضور</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="players-body"></tbody></table></div></article>

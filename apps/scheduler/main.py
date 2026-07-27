@@ -11,7 +11,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +42,24 @@ class SchedulerService:
     async def minute_loop(self, stop: asyncio.Event, bot: Bot, life_bot: Bot) -> None:
         while not stop.is_set():
             try:
-                await db.execute("DELETE FROM cooldowns WHERE expires_at < now()")
-                await country_jobs.resolve_due()
-                await country_jobs.queue_due_ads()
-                await country_jobs.run_commerce()
-                await country_jobs.publish_news(bot, life_bot)
-                await usd_market.stabilize()
-                await admin_repo.capture_market_snapshot()
+                jobs = (
+                    ("cooldown_cleanup", lambda: db.execute("DELETE FROM cooldowns WHERE expires_at < now()")),
+                    ("elections", country_jobs.resolve_due),
+                    ("legacy_ads", country_jobs.queue_due_ads),
+                    ("commerce", country_jobs.run_commerce),
+                    ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
+                    ("zipodo_rate", live_market.sync),
+                    ("engagement", engagement.minute_tick),
+                    ("market_snapshot", admin_repo.capture_market_snapshot),
+                )
+                for name, job in jobs:
+                    if stop.is_set(): break
+                    await scheduler_ops.run(name, job)
                 self._heartbeat = asyncio.get_running_loop().time()
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception("minute jobs failed; next cycle remains scheduled")
+                logger.exception("minute loop infrastructure failed; next cycle remains scheduled")
             await _sleep_or_stop(stop, 60)
 
     async def daily_loop(self, stop: asyncio.Event) -> None:
