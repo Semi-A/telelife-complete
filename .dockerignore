@@ -1,11 +1,13 @@
 __pycache__/
 *.py[cod]
-.env
-.venv/
-venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv/
+venv/
+.env
 .git/
+.gitignore
 *.log
-telelife_complete_dump.md
+telelife_complete_dump*.md
+*_dump*.md

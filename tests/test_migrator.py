@@ -24,8 +24,9 @@ def test_only_pre_normalization_migrations_are_legacy_compatible():
         "0011_population_channels_migration",
         "0012_reliability_live_market_engagement",
         "0013_country_identity_candles_realism",
+        "0014_free_tier_hardening",
     }
-    assert "0014_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0015_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
 
 
 def test_new_migrations_remain_checksum_strict():

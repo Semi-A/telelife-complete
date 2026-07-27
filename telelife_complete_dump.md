@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 231
+تعداد کل فایل‌ها: 248
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -97,7 +97,9 @@ telelife_complete/
 │   ├── 0013_country_identity_candles_realism.sql
 │   ├── 0014_free_tier_hardening.sql
 │   ├── 0015_purposeful_work_loop.sql
-│   └── 0016_national_projects_and_missions.sql
+│   ├── 0016_national_projects_and_missions.sql
+│   ├── 0017_country_economy_release_b.sql
+│   └── 0018_country_trade_diplomacy_release_c.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -109,7 +111,9 @@ telelife_complete/
 │   │   │   │   ├── commerce.yaml
 │   │   │   │   ├── core.yaml
 │   │   │   │   ├── country.yaml
+│   │   │   │   ├── country_economy_b.yaml
 │   │   │   │   ├── country_missions.yaml
+│   │   │   │   ├── country_trade.yaml
 │   │   │   │   ├── daily.yaml
 │   │   │   │   ├── daily_events.yaml
 │   │   │   │   ├── economy.yaml
@@ -157,10 +161,14 @@ telelife_complete/
 │   │   │   ├── content_filter.py
 │   │   │   ├── country.py
 │   │   │   ├── country_economy.py
+│   │   │   ├── country_economy_b.py
+│   │   │   ├── country_economy_rules.py
 │   │   │   ├── country_identity.py
 │   │   │   ├── country_missions.py
 │   │   │   ├── country_objectives.py
 │   │   │   ├── country_realism.py
+│   │   │   ├── country_trade.py
+│   │   │   ├── country_trade_rules.py
 │   │   │   ├── daily.py
 │   │   │   ├── economy.py
 │   │   │   ├── elections.py
@@ -207,7 +215,9 @@ telelife_complete/
 │   ├── test_commerce_regressions.py
 │   ├── test_config.py
 │   ├── test_content_filter.py
+│   ├── test_country_economy_b.py
 │   ├── test_country_realism_contracts.py
+│   ├── test_country_trade_release_c.py
 │   ├── test_daily.py
 │   ├── test_fmt.py
 │   ├── test_free_tier_hardening.py
@@ -230,7 +240,9 @@ telelife_complete/
 │   ├── test_progression.py
 │   ├── test_project_integrity.py
 │   ├── test_purposeful_work_release.py
+│   ├── test_release_rebuild_regressions.py
 │   ├── test_scaling_migration.py
+│   ├── test_subscription_release_d.py
 │   ├── test_supervisor.py
 │   ├── test_teleworld_onboarding.py
 │   ├── test_teleworld_start.py
@@ -238,6 +250,8 @@ telelife_complete/
 │   ├── test_unlocks.py
 │   ├── test_world_access_contracts.py
 │   └── test_xp.py
+├── tools/
+│   └── simulate_country_economy_b.py
 ├── .dockerignore
 ├── .env.example
 ├── .gitattributes
@@ -245,6 +259,7 @@ telelife_complete/
 ├── AUDIT_AND_DEPLOY_FA_2026-07-27.md
 ├── AUDIT_FINAL_FA_2026-07-27.md
 ├── AUDIT_STATUS.md
+├── BALANCE_RELEASE_B_30D.csv
 ├── CHANGELOG_FA.md
 ├── CHANGELOG_FA_2026-07-27.md
 ├── CHANGELOG_FA_2026-07-27_V2.md
@@ -258,11 +273,14 @@ telelife_complete/
 ├── RELEASE_2026_07_27_FA.md
 ├── RELEASE_AUDIT_FA.md
 ├── RELEASE_AUDIT_FA_2026-07-27.md
+├── RELEASE_B_REPORT_FA.md
+├── RELEASE_C_REPORT_FA.md
 ├── RELEASE_COMMERCE_FA.md
 ├── RELEASE_HARDENING_FA.md
 ├── RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md
 ├── RELEASE_NOTES_FA.md
 ├── RELEASE_PURPOSEFUL_WORK_FA.md
+├── RELEASE_REBUILD_2026-07-27_FA.md
 ├── RELEASE_SCALING_MIGRATION_FA.md
 ├── RELEASE_V2_FA.md
 ├── render.yaml
@@ -1095,7 +1113,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, action_outbox, maintenance
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance
 
 logger = logging.getLogger(__name__)
 
@@ -1131,6 +1149,8 @@ class SchedulerService:
                     ("elections", country_jobs.resolve_due),
                     ("legacy_ads", country_jobs.queue_due_ads),
                     ("commerce", country_jobs.run_commerce),
+                    ("country_trade_expiry", country_trade.expire_due),
+                    ("country_relation_expiry", country_trade.expire_relations),
                     ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
                     ("telegram_actions", lambda: action_outbox.deliver_batch(life_bot, bot)),
                     ("maintenance", maintenance.minute_tick),
@@ -1156,6 +1176,7 @@ class SchedulerService:
                 await daily_reset.run()
                 await usd_market.daily_rollover()
                 await country_jobs.daily_events()
+                await scheduler_ops.run("country_economy_b", country_economy_b.catch_up)
                 await scheduler_ops.run("country_realism", country_realism.daily_tick)
             except asyncio.CancelledError:
                 raise
@@ -1420,7 +1441,7 @@ async def jobs(ctx,context):
  row=await production_repo.get(ctx.player.id)
  if row:
   a=production.accrue(row,__import__('datetime').datetime.now(__import__('datetime').UTC)); body=f"شغل: <b>{row['job_code']}</b>\nتولید ذخیره‌شده: <b>{fmt.number(a.stored)} / {fmt.number(a.capacity)}</b>\nنرخ: <b>{a.rate:.1f}</b> در ساعت\nسطح تولید: <b>{fmt.number(row['production_level'])}</b> · انبار: <b>{fmt.number(row['storage_level'])}</b>"
- else: body="هنوز شغلی نداری. شغل را با توجه به هدف اقتصادی‌ات انتخاب کن؛ انتخاب اولیه دائمی است."
+ else: body="هنوز شغلی نداری. از بین گزینه‌ها خودت شغلی را انتخاب کن که به سبک بازیت می‌خورد."
  await send_panel(context,ctx.message,fa.JOBS_PANEL.format(body=body),kb.jobs_panel(ctx.telegram_id,bool(row)),"profile",edit=True)
 async def market(ctx,context):
  v=await usd_market.view();p=await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
@@ -1449,7 +1470,7 @@ async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE)->None:
    await personal_economy.acquire_housing(ctx.player.id,parsed.arg,"rent" if a=="hrent" else "owned",key(a,ctx.player.id));await q.answer(fa.ACTION_DONE,show_alert=True);await economy_panel(ctx,context)
   elif a=="jchoose":
    if not await production.choose(ctx.player.id,parsed.arg):raise ValueError("job_already_selected")
-   await q.answer("شغلت ثبت شد!",show_alert=True);await jobs(ctx,context)
+   await q.answer("عالیه؛ شغلت ثبت شد و درآمدش از همین حالا جمع می‌شود.",show_alert=True);await jobs(ctx,context)
   elif a=="jshift":
    await production.choose_shift(ctx.player.id,parsed.arg);await q.answer("نوع شیفت تغییر کرد.",show_alert=True);await jobs(ctx,context)
   elif a=="jcollect":
@@ -1471,7 +1492,7 @@ from __future__ import annotations
 from datetime import UTC,datetime
 from uuid import uuid4
 from html import escape
-from telegram import Update, InputFile
+from telegram import Update
 from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers.panel import show
@@ -1479,14 +1500,15 @@ from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp,market_chart
+from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
 SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
 ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
-def why(e):return ERR.get(str(e),"این کار انجام نشد؛ شرایط را دوباره بررسی کن.")
+def why(e):
+ return ERR.get(str(e),"فعلاً نشد انجامش بدیم. یک‌بار صفحه را تازه کن و دوباره امتحان کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def answer(q,text=None,show_alert=False):
  try:await q.answer(text,show_alert=show_alert)
@@ -1533,16 +1555,18 @@ async def jobs(ctx,c):
  await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),True))
 
 async def market(ctx,c):
- v=await usd_market.view();p=await fresh(ctx);status="متوقف" if v.frozen else "سالم" if v.health>=75 else "پرنوسان"
- extra="\n\nبازار از سطح ۱۰ باز می‌شود؛ با کارهای امروز سطح بگیر." if p.level<10 else ""
- rows=await market_chart.candles(24)
- previous=c.user_data.get("market_chart_message_id")
- if previous:
-  try:await c.bot.delete_message(chat_id=ctx.message.chat_id,message_id=previous)
-  except Exception:pass
- chart_message=await c.bot.send_photo(chat_id=ctx.message.chat_id,photo=InputFile(market_chart.render(rows),filename="usdt_30m.png"),caption="نمودار واقعی USDT/IRT · کندل ۳۰ دقیقه‌ای · ۲۴ ساعت اخیر\nمنبع نرخ: Zipodo · فاصله‌های بدون داده پر نمی‌شوند.")
- c.user_data["market_chart_message_id"]=chart_message.message_id
- await panel(ctx,c,fa.MARKET.format(buy=fmt.toman(v.buy_price),sell=fmt.toman(v.sell_price),health=fmt.number(v.health),status=status,usd=fmt.usd(p.usd_cents))+extra,kb.market(ctx.telegram_id,p.level>=10))
+ v=await usd_market.view();p=await fresh(ctx)
+ status="⛔ متوقف" if v.frozen else "✅ عادی" if v.health>=75 else "⚠️ پرنوسان"
+ access="\n\n🔒 خریدوفروش از سطح ۱۰ باز می‌شود؛ تا آن موقع می‌توانی قیمت‌ها را دنبال کنی." if p.level<10 else "\n\nقیمت را دیدی؟ پایین همین صفحه می‌توانی خرید یا فروش انجام بدهی."
+ text=("💱 <b>بازار دلار</b>\n\n"
+       f"🟢 قیمت خرید: <b>{fmt.toman(v.buy_price)}</b>\n"
+       f"🔴 قیمت فروش: <b>{fmt.toman(v.sell_price)}</b>\n"
+       f"💵 موجودی شما: <b>{fmt.usd(p.usd_cents)}</b>\n\n"
+       f"وضعیت بازار: <b>{status}</b>\n"
+       f"شاخص سلامت: <b>{fmt.number(v.health)} از ۱۰۰</b>"
+       +access)
+ await panel(ctx,c,text,kb.market(ctx.telegram_id,p.level>=10))
+
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
@@ -1586,11 +1610,11 @@ async def callback(update,c):
   if a in {'deposit','withdraw'}:await personal_economy.savings_transfer(ctx.player.id,int(parsed.arg),a,ik(a,ctx.player.id));await answer(q,"انتقال انجام شد.",show_alert=True);await savings_page(ctx,c);return
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
   if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
-  if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"شغل انتخاب شد.",show_alert=True);await jobs(ctx,c);return
+  if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"عالیه؛ شغلت ثبت شد و از همین حالا درآمدش جمع می‌شود.",show_alert=True);await jobs(ctx,c);return
   if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
   if a=='jcollect':
    r=await production.collect_purposeful(ctx.player.id,ik(a,ctx.player.id))
-   if not r.amount:msg="هنوز نتیجه قابل دریافت آماده نشده است؛ کمی بعد دوباره تلاش کن."
+   if not r.amount:msg="هنوز چیزی برای دریافت آماده نیست؛ کمی زمان بده و دوباره سر بزن."
    else:
     personal=f"💵 سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"📦 سهم شما: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}"
     national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
@@ -2132,7 +2156,7 @@ DAILY_DONE="✅ <b>هدیه امروز دریافت شد</b>\n\n💰 +{amount}\n
 DAILY_WAIT="⏳ هدیه امروز را گرفته‌ای.\n\n🔥 حضور پیوسته: {streak} روز\nهدیه فردا: <b>{amount}</b>\n\nتا فردا می‌توانی کارهای روزانه، شغل، بانک و خانه را ادامه بدهی."
 MISSIONS="🎯 <b>کارهای امروز</b>\n\n{rows}\n\n▫️ یعنی در حال انجام، 🎁 یعنی آماده دریافت و ✅ یعنی کامل‌شده. کارها هر روز تازه می‌شوند."
 ECONOMY="💳 <b>دارایی و بانک</b>\n\n👛 کیف پول: <b>{wallet}</b>\n🏦 پس‌انداز: <b>{savings}</b>\n🏠 خانه: <b>{house}</b>\n🧾 هزینه زندگی: <b>{due}</b>\n\nپس‌انداز پولت را جدا نگه می‌دارد؛ هزینه زندگی و خانه نیز بر وضعیت شخصیت اثر می‌گذارند."
-JOBS="💼 <b>کار و دریافت درآمد</b>\n\n{body}\n\nشغل شخصی فقط در همین بات مدیریت می‌شود. از سطح ۵ شغل انتخاب کن، با گذر زمان کار انجام می‌شود و درآمد آماده را دریافت کن."
+JOBS="💼 <b>کار و دریافت درآمد</b>\n\n{body}\n\nشغل شخصی فقط در همین بات مدیریت می‌شود. از همان سطح ۱ شغلت را خودت انتخاب کن. درآمد با گذشت زمان جمع می‌شود و هر وقت آماده بود، نتیجهٔ شیفت را بگیر."
 MARKET="💵 <b>بازار ارز</b>\n\nقیمت خرید: <b>{buy}</b>\nقیمت فروش: <b>{sell}</b>\nسلامت بازار: <b>{health}٪</b> · {status}\nدارایی دلاری تو: <b>{usd}</b>\n\nاختلاف خرید و فروش و کارمزد را پیش از معامله در نظر بگیر."
 UNLOCKS="🗺 <b>مسیر پیشرفت</b>\n\n{rows}\n\nبخش‌های قفل‌شده با رشد سطح باز می‌شوند؛ کارهای امروز مطمئن‌ترین مسیر پیشرفت‌اند."
 ```
@@ -2941,7 +2965,7 @@ from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -2999,10 +3023,10 @@ async def facts(chat_id):
     leader = await db.fetchval("SELECT first_name FROM players WHERE id=$1", row["president_player_id"]) if row["president_player_id"] else None
     return row, count, leader
 
-MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve"}
+MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve", "offices", "tradenew", "aid"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -3061,8 +3085,40 @@ async def economy_page(update, context):
     resources = await country_repo.resources(row["id"])
     lines = "\n".join(f"• {ASSET.get(str(x['asset_code']), 'دارایی')}: {fmt.number(x['quantity'])}" for x in resources) or "هنوز منبعی ثبت نشده است."
     from telegram import InlineKeyboardMarkup
-    markup=InlineKeyboardMarkup([[kb.b("🏦 بانک مرکزی و شاخص‌ها","centralbank","primary")],[kb.b("🏠 خانه جهان","home")]])
+    markup=InlineKeyboardMarkup([[kb.b("📊 بودجه، رفاه و بحران","economyb","primary")],[kb.b("🏦 بانک مرکزی و شاخص‌ها","centralbank")],[kb.b("🏠 خانه جهان","home")]])
     await show(update, context, fa.ECONOMY.format(treasury=fmt.toman(row["treasury_toman"]), income=fmt.toman(row["daily_income_toman"]), expense=fmt.toman(row["daily_expense_toman"]), resources=lines), markup)
+
+
+async def economy_b_page(update,context):
+    row,_,_=await facts(update.effective_chat.id)
+    if not row:raise ValueError("country_not_found")
+    p=await player(update);v=await country_economy_b.view(int(row["id"]))
+    if not v:
+        await show(update,context,"📊 <b>اقتصاد روزانه کشور</b>\n\nپس از اجرای نخستین چرخه روزانه، گزارش اینجا نمایش داده می‌شود.",kb.country_economy_b(False,False));return
+    roles=await db.fetch("SELECT o.role_code,p.first_name FROM country_offices o JOIN players p ON p.id=o.player_id WHERE o.country_id=$1 ORDER BY o.role_code",row["id"])
+    role_names={"economy_minister":"وزیر اقتصاد","industry_minister":"وزیر صنعت","foreign_minister":"وزیر خارجه","army_commander":"فرمانده ارتش","intelligence_chief":"رئیس اطلاعات"}
+    cabinet="، ".join(f"{role_names.get(str(x['role_code']),'مقام')}: {escape(str(x['first_name']))}" for x in roles) or "هنوز کسی منصوب نشده"
+    crisis="بحران فعالی نیست ✅" if int(v["active_crises"] or 0)==0 else f"{fmt.number(v['active_crises'])} بحران فعال ⚠️"
+    sat=int(v["satisfaction"] or 70);modifier=int(v["production_modifier_bp"] or 10000)
+    text=(f"📊 <b>بودجه و وضعیت {escape(str(row['name']))}</b>\n\n"
+          f"🙂 رضایت عمومی: <b>{fmt.number(sat)} از ۱۰۰</b>\n"
+          f"🍞 کمبود غذا: <b>{int(v['food_shortage_bp'] or 0)/100:.1f}٪</b>\n"
+          f"⚡ کمبود انرژی: <b>{int(v['energy_shortage_bp'] or 0)/100:.1f}٪</b>\n"
+          f"🏭 ضریب تولید: <b>{modifier/100:.1f}٪</b>\n"
+          f"🫶 رفاه: <b>{fmt.number(v['welfare_level'] or 0)}</b> · 🛡 آمادگی: <b>{fmt.number(v['defense_readiness'] or 0)}</b>\n"
+          f"🚨 {crisis}\n\n"
+          f"<b>تقسیم بودجه</b>\nرفاه {int(v['welfare_bp'])/100:.0f}٪ · تولید {int(v['production_bp'])/100:.0f}٪ · فناوری {int(v['technology_bp'])/100:.0f}٪\n"
+          f"دفاع {int(v['defense_bp'])/100:.0f}٪ · اطلاعات {int(v['intelligence_bp'])/100:.0f}٪ · دیپلماسی {int(v['diplomacy_bp'])/100:.0f}٪ · اضطراری {int(v['emergency_bp'])/100:.0f}٪\n\n"
+          f"👔 کابینه: {cabinet}\n\nبودجه از چرخه بعدی روی مصرف، رضایت و تولید واقعی اثر می‌گذارد.")
+    can_manage=int(row["president_player_id"] or 0)==p.id or bool(await db.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code='economy_minister'",row["id"],p.id))
+    await show(update,context,text,kb.country_economy_b(can_manage,int(row["president_player_id"] or 0)==p.id))
+
+async def offices_page(update,context):
+    row,_,_=await facts(update.effective_chat.id);p=await player(update)
+    if not row or int(row["president_player_id"] or 0)!=p.id:raise PermissionError("president_required")
+    people=await db.fetch("SELECT p.id player_id,p.first_name FROM citizenships c JOIN players p ON p.id=c.player_id WHERE c.country_id=$1 AND c.is_active AND p.id<>$2 ORDER BY c.joined_at LIMIT 5",row["id"],p.id)
+    if not people:await answer(update.callback_query,"برای تشکیل کابینه، دست‌کم یک شهروند دیگر لازم است.",show_alert=True);return
+    await show(update,context,"👔 <b>کابینه اولیه</b>\n\nروی نام و سمت موردنظر بزن. هر شهروند فقط یک سمت می‌گیرد و تغییرها در گزارش حسابرسی ثبت می‌شوند.",kb.offices(people))
 
 async def central_bank_page(update,context):
     row,_,_=await facts(update.effective_chat.id)
@@ -3105,6 +3161,23 @@ async def project_page(update, context):
     markup=kb.project(True) if project else kb.project(False,available)
     await show(update, context, "🏗 <b>پروژه‌ها و هدف ملی</b>\n\n" + body + daily + "\n\nپروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.", markup)
 
+async def trade_page(update,context):
+ row,_,_=await facts(update.effective_chat.id)
+ if not row:raise ValueError("country_not_found")
+ p=await player(update);v=await country_trade.overview(int(row["id"]))
+ if not v:
+  from packages.core import db
+  await db.execute("INSERT INTO country_international_reputation(country_id) VALUES($1) ON CONFLICT DO NOTHING",row["id"]);v=await country_trade.overview(int(row["id"]))
+ can_manage=int(row["president_player_id"] or 0)==p.id or bool(await db.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code=ANY($3::text[])",row["id"],p.id,["economy_minister","foreign_minister"]))
+ text=(f"🌐 <b>تجارت و دیپلماسی {escape(str(row['name']))}</b>\n\n"
+       f"⭐ اعتبار بین‌المللی: <b>{fmt.number(v['score'])} از ۱۰۰</b>\n"
+       f"📦 قراردادهای باز: <b>{fmt.number(v['open_contracts'])}</b>\n"
+       f"✅ قراردادهای موفق: <b>{fmt.number(v['fulfilled_contracts'])}</b>\n"
+       f"🤝 روابط رسمی: <b>{fmt.number(v['active_relations'])}</b>\n"
+       f"⛔ تحریم‌های مرتبط: <b>{fmt.number(v['sanctions'])}</b>\n\n"
+       "منابع پیشنهاددهنده هنگام ساخت قرارداد وارد Escrow می‌شوند. پذیرش، هر دو دارایی را در یک تراکنش جابه‌جا می‌کند؛ انقضا هم دارایی را خودکار پس می‌دهد.")
+ await show(update,context,text,kb.trade_home(can_manage))
+
 async def callback(update, context):
     query = update.callback_query
     if not query: return
@@ -3136,7 +3209,18 @@ async def callback(update, context):
             await answer(query, ); row, _, _ = await facts(update.effective_chat.id) if update.effective_chat.type in GROUPS else (None, 0, None); await show(update, context, fa.GUIDE if row else fa.GUIDE_EMPTY, kb.back())
         elif action == "country": await answer(query, ); await country_page(update, context)
         elif action == "economy": await answer(query, ); await economy_page(update, context)
+        elif action == "economyb": await answer(query); await economy_b_page(update,context)
         elif action == "centralbank": await answer(query); await central_bank_page(update,context)
+        elif action.startswith("budget:"):
+            row,_,_=await facts(update.effective_chat.id);p=await player(update);preset=action.split(":",1)[1]
+            await country_economy_b.set_budget_preset(int(row["id"]),p.id,preset,f"budget:{row['id']}:{p.id}:{preset}:{uuid4().hex[:12]}")
+            await answer(query,"بودجه ثبت شد؛ اثرش از چرخه روزانه بعدی دیده می‌شود.",show_alert=True);await economy_b_page(update,context)
+        elif action == "offices":
+            await answer(query);await offices_page(update,context)
+        elif action.startswith("appoint:"):
+            _,role,target=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_economy_b.appoint(int(row["id"]),p.id,role,int(target),f"appoint:{row['id']}:{role}:{uuid4().hex[:12]}")
+            await answer(query,"انتصاب ثبت شد.",show_alert=True);await economy_b_page(update,context)
         elif action.startswith("rate:"):
             row,_,_=await facts(update.effective_chat.id);p=await player(update);delta=100 if action.endswith("up") else -100
             value=await country_realism.set_interest(row["id"],p.id,delta)
@@ -3150,6 +3234,69 @@ async def callback(update, context):
         elif action == "citizens": await answer(query, ); await citizens_page(update, context)
         elif action == "politics": await answer(query, ); await politics_page(update, context)
         elif action == "project": await answer(query, ); await project_page(update, context)
+        elif action == "trade": await answer(query); await trade_page(update,context)
+        elif action == "tradenew":
+            row,_,_=await facts(update.effective_chat.id);rows=await country_trade.countries_except(int(row["id"]));await answer(query)
+            await show(update,context,"➕ <b>قرارداد تجاری تازه</b>\n\nکشور مقصد را انتخاب کن. در قدم بعد یکی از پیشنهادهای متعادل و محدود را می‌بینی.",kb.trade_countries(rows))
+        elif action.startswith("tradeto:"):
+            target=int(action.split(":")[1]);presets=get_config().section("country_trade.contracts.presets");await answer(query)
+            await show(update,context,"📦 <b>نوع قرارداد</b>\n\nمنبع پیشنهادی همان لحظه از کشور شما کم و تا پذیرش یا انقضا در Escrow نگه داشته می‌شود.",kb.trade_presets(target,presets))
+        elif action.startswith("tradepreset:"):
+            _,target,preset=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            contract=await country_trade.create_contract(int(row["id"]),int(target),p.id,preset,f"trade-create:{row['id']}:{uuid4().hex}")
+            await answer(query,f"قرارداد #{int(contract['id'])} ثبت شد و منبع در Escrow قرار گرفت.",show_alert=True);await trade_page(update,context)
+        elif action == "tradein":
+            row,_,_=await facts(update.effective_chat.id);rows=await country_trade.incoming(int(row["id"]));await answer(query)
+            body="پیشنهادی در انتظار نیست." if not rows else "هر پذیرش، منابع دو کشور را اتمیک جابه‌جا می‌کند."
+            await show(update,context,"📥 <b>پیشنهادهای دریافتی</b>\n\n"+body,kb.incoming_trade(rows))
+        elif action == "tradeout":
+            row,_,_=await facts(update.effective_chat.id);rows=await country_trade.outgoing(int(row["id"]));await answer(query)
+            body="قرارداد بازی نداری." if not rows else "لغو، دارایی نگه‌داری‌شده را از Escrow پس می‌دهد و کمی از اعتبار کم می‌کند."
+            await show(update,context,"📤 <b>پیشنهادهای من</b>\n\n"+body,kb.outgoing_trade(rows))
+        elif action.startswith("tradecancel:"):
+            cid=int(action.split(":")[1]);p=await player(update);ok=await country_trade.cancel_contract(cid,p.id,f"trade-cancel:{cid}:{uuid4().hex}")
+            await answer(query,"قرارداد لغو و دارایی Escrow پس داده شد." if ok else "این قرارداد دیگر قابل لغو نیست.",show_alert=True);await trade_page(update,context)
+        elif action == "traderef":
+            rows=await country_trade.recent_reference();await answer(query)
+            labels={"IRT":"تومان","food":"غذا","energy":"انرژی","oil":"نفت","minerals":"معدن","technology":"فناوری"}
+            lines=[f"• {labels.get(str(r['offered_asset']),r['offered_asset'])} ← {labels.get(str(r['requested_asset']),r['requested_asset'])}: نسبت میانگین {r['average_ratio']} · {r['trades']} معامله" for r in rows]
+            await show(update,context,"📈 <b>نرخ‌های مرجع بازار کشورها</b>\n\n"+("هنوز معامله تکمیل‌شده‌ای برای نرخ مرجع نداریم." if not lines else "\n".join(lines))+"\n\nاین اعداد فقط تاریخچه واقعی بازی‌اند و قیمت تضمینی نیستند.",kb.back("trade"))
+        elif action.startswith("tradeaccept:"):
+            cid=int(action.split(":")[1]);p=await player(update);result=await country_trade.accept_contract(cid,p.id,f"trade-accept:{cid}:{uuid4().hex}")
+            await answer(query,f"قرارداد انجام شد؛ تعرفه {result['tariff_bp']/100:.1f}٪ بود.",show_alert=True);await trade_page(update,context)
+        elif action == "relations":
+            row,_,_=await facts(update.effective_chat.id);pending=await country_trade.pending_relations(int(row["id"]));rows=await country_trade.countries_except(int(row["id"]));await answer(query)
+            if pending:
+                await show(update,context,"🤝 <b>پیشنهادهای دیپلماتیک دریافتی</b>\n\nپیشنهادها ۲۴ ساعت اعتبار دارند. پذیرش، تعرفه تجارت بعدی را تغییر می‌دهد.",kb.pending_relations(pending))
+            else:
+                await show(update,context,"🤝 <b>روابط خارجی</b>\n\nدوستی، شراکت تجاری و اتحاد به پذیرش کشور مقابل نیاز دارند و تعرفه تجارت را کاهش می‌دهند.",kb.relations_countries(rows))
+        elif action.startswith("relmenu:"):
+            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🤝 <b>اقدام دیپلماتیک</b>\n\nهمکاری با پذیرش دوطرفه فعال می‌شود. تحریم، تجارت مستقیم را می‌بندد و از اعتبار کشور تحریم‌کننده هم کم می‌کند.",kb.relation_actions(target))
+        elif action.startswith("relprop:"):
+            _,target,status=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_trade.propose_relation(int(row["id"]),int(target),p.id,status,f"relation-propose:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"پیشنهاد رسمی ثبت شد و ۲۴ ساعت اعتبار دارد.",show_alert=True);await trade_page(update,context)
+        elif action.startswith("relaccept:"):
+            target=int(action.split(":")[1]);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_trade.accept_relation(int(row["id"]),target,p.id,f"relation-accept:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"رابطه رسمی شد و تعرفه‌های بعدی بر همین اساس محاسبه می‌شوند.",show_alert=True);await trade_page(update,context)
+        elif action.startswith("sanction:"):
+            target=int(action.split(":")[1]);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            await country_trade.impose_sanction(int(row["id"]),target,p.id,f"sanction:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"تحریم فعال شد؛ تجارت مستقیم بسته و از اعتبار کشور شما هم کم شد.",show_alert=True);await trade_page(update,context)
+        elif action.startswith("sanctionlift:"):
+            target=int(action.split(":")[1]);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            ok=await country_trade.lift_sanction(int(row["id"]),target,p.id,f"sanction-lift:{row['id']}:{target}:{uuid4().hex}")
+            await answer(query,"تحریم برداشته شد." if ok else "تحریم فعالی از طرف کشور شما وجود نداشت.",show_alert=True);await trade_page(update,context)
+        elif action == "aid":
+            row,_,_=await facts(update.effective_chat.id);rows=await db.fetch("""SELECT DISTINCT c.id,c.name FROM countries c JOIN country_crises x ON x.country_id=c.id AND x.status='active' WHERE c.id<>$1 ORDER BY c.name LIMIT 50""",row["id"]);await answer(query)
+            await show(update,context,"🆘 <b>کمک اضطراری</b>\n\nفقط کشورهایی که بحران فعال دارند نمایش داده می‌شوند. کمک مستقیماً و اتمیک منتقل می‌شود و اعتبار بین‌المللی می‌سازد.",kb.aid_countries(rows))
+        elif action.startswith("aidto:"):
+            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🆘 <b>نوع کمک</b>\n\nیکی از بسته‌های محدود را انتخاب کن.",kb.aid_assets(target))
+        elif action.startswith("aidsend:"):
+            _,target,asset=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            amount=await country_trade.send_aid(int(row["id"]),int(target),p.id,asset,f"aid:{row['id']}:{target}:{asset}:{uuid4().hex}")
+            await answer(query,f"کمک به مقدار {fmt.number(amount)} ثبت و منتقل شد.",show_alert=True);await trade_page(update,context)
         elif action == "create":
             if update.effective_chat.type not in GROUPS or not await is_admin(update, context):
                 await answer(query, "فقط مدیر گروه می‌تواند ساخت را شروع کند.", show_alert=True); return
@@ -3194,13 +3341,13 @@ async def callback(update, context):
             await answer(query); view=await commerce.subscription_view(update.effective_chat.id)
             if not view: raise ValueError("group_not_found")
             if view["ad_free_until"] and view["ad_free_until"]>datetime.now(UTC):
-                await show(update,context,f"🛡 <b>اشتراک بدون تبلیغ فعال است</b>\n\nاعتبار تا: <b>{view['ad_free_until'].strftime('%Y-%m-%d %H:%M UTC')}</b>\n\nدر این مدت تبلیغ عمومی وارد گروه نمی‌شود.",kb.back());return
+                await show(update,context,f"🛡 <b>اشتراک رفاهی کشور فعال است</b>\n\nاعتبار تا: <b>{view['ad_free_until'].strftime('%Y-%m-%d %H:%M UTC')}</b>\n\n✅ تبلیغات عمومی گروه و بات حذف شده است.\n✅ گزارش‌های اقتصادی و سیاسی کامل در دسترس‌اند.\n✅ یادآوری‌های شیفت، پروژه و بحران فعال‌اند.\n\nاین اشتراک هیچ قدرت اقتصادی یا سیاسی اضافه نمی‌کند.",kb.back());return
             rnd=await commerce.ensure_round(update.effective_chat.id);target=int(rnd["target_stars"]);remaining=target-int(rnd["collected_stars"])
             treasury=int(view["treasury_toman"] or 0);citizens=int(view["citizens"] or 0);price=commerce.treasury_price(treasury,citizens)
-            await show(update,context,f"🛡 <b>اشتراک ۳۰روزه بدون تبلیغ</b>\n\nجمعیت: <b>{citizens}</b> شهروند · قیمت: <b>{target} ⭐</b>\nپیشرفت مشارکت: <b>{rnd['collected_stars']} از {target} ⭐</b>\nهر عضو می‌تواند ۱، ۲، ۵، ۱۰، ۲۵ یا ۵۰ استار سهم بگذارد. با تکمیل قیمت جمعیت‌محور، اشتراک خودکار فعال می‌شود.\n\nخرید از خزانه: <b>{fmt.toman(price)}</b> (۲۰٪ خزانه + یک میلیون برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد).",kb.subscription(int(rnd["id"]),remaining))
+            await show(update,context,f"🛡 <b>اشتراک رفاهی کشور — ۳۰ روز</b>\n\n<b>امکانات اشتراک</b>\n• حذف تبلیغات عمومی از گروه کشور و پیام‌های مرتبط بات\n• گزارش اقتصادی و سیاسی کامل‌تر با جزئیات بودجه، کمبود، رضایت و بحران\n• یادآوری هوشمند برای شیفت‌ها، پروژه ملی و بحران‌های فعال\n• بدون افزایش درآمد، منابع، قدرت سیاسی یا شانس برد؛ بازی برای همه منصفانه می‌ماند\n\nجمعیت: <b>{citizens}</b> شهروند · قیمت: <b>{target} ⭐</b>\nپیشرفت مشارکت: <b>{rnd['collected_stars']} از {target} ⭐</b>\nهر عضو می‌تواند بخشی از هزینه را بپردازد؛ پس از تکمیل هدف، اشتراک برای کل کشور فعال می‌شود.\n\nخرید از خزانه: <b>{fmt.toman(price)}</b> (۲۰٪ خزانه + یک میلیون برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد).",kb.subscription(int(rnd["id"]),remaining))
         elif action.startswith("substar:"):
             _,rid,amount=action.split(":");payload,stars=await commerce.subscription_invoice(int(rid),query.from_user.id,int(amount));await answer(query)
-            await context.bot.send_invoice(chat_id=update.effective_chat.id,title="مشارکت اشتراک بدون تبلیغ",description=f"{stars} استار برای اشتراک ۳۰روزه گروه",payload=payload,currency="XTR",prices=[LabeledPrice("سهم اشتراک",stars)],provider_token="")
+            await context.bot.send_invoice(chat_id=update.effective_chat.id,title="مشارکت اشتراک بدون تبلیغ",description=f"{stars} استار برای اشتراک ۳۰روزه کل کشور: حذف تبلیغات، گزارش کامل و یادآوری هوشمند؛ بدون قدرت اقتصادی",payload=payload,currency="XTR",prices=[LabeledPrice("سهم اشتراک",stars)],provider_token="")
         elif action == "subtreasury":
             p=await player(update);price=await commerce.buy_with_treasury(update.effective_chat.id,p.id);await answer(query,f"اشتراک با {fmt.toman(price)} از خزانه فعال شد.",show_alert=True);await home(update,context)
         elif action == "join":
@@ -3343,7 +3490,7 @@ def private(username):
 def home(country, admin, citizen=False):
     if country:
         rows = [[b("🏛 شناسنامه کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
-                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project")]]
+                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")], [b("🏗 پروژه ملی", "project"),b("🌐 تجارت و دیپلماسی","trade")]]
         rows.append([b("🚪 خروج از شهروندی", "leave", "danger")] if citizen else [b("🤝 شهروند این کشور می‌شوم", "join", "success")])
         rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription", "primary"),b("✈️ مهاجرت", "migration")])
         if admin:rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
@@ -3407,6 +3554,23 @@ def migration_review(rows):
  for r in rows:buttons.extend([[b(f"✅ پذیرش {r['first_name']}",f"migaccept:{r['id']}","success"),b("رد",f"migreject:{r['id']}","danger")]])
  buttons.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(buttons)
 
+def country_economy_b(can_manage=False, president=False):
+    rows=[]
+    if can_manage:
+        rows += [[b("⚖️ بودجه متعادل","budget:balanced","primary"),b("🫶 تمرکز رفاه","budget:welfare")],
+                 [b("🏭 تمرکز رشد","budget:growth"),b("🛡 تمرکز امنیت","budget:security")]]
+    if president:
+        rows.append([b("👔 کابینه اولیه","offices")])
+    rows.append([b("↩️ اقتصاد کشور","economy"),b("🏠 خانه جهان","home")])
+    return InlineKeyboardMarkup(rows)
+
+def offices(rows):
+    buttons=[]
+    labels={"economy_minister":"وزیر اقتصاد","industry_minister":"وزیر صنعت","foreign_minister":"وزیر خارجه","army_commander":"فرمانده ارتش","intelligence_chief":"رئیس اطلاعات"}
+    for row in rows:
+        for role,label in labels.items():buttons.append([b(f"{label}: {row['first_name']}",f"appoint:{role}:{row['player_id']}")])
+    buttons.append([b("↩️ اقتصاد و بودجه","economyb")]);return InlineKeyboardMarkup(buttons)
+
 def central_bank(president=False):
     rows=[]
     if president:
@@ -3414,6 +3578,53 @@ def central_bank(president=False):
         rows.append([b("💵 خرید ذخیره ارزی ۱۰M","reserve:buy","success")])
     rows.append([b("↩️ اقتصاد کشور","economy"),b("🏠 خانه جهان","home")])
     return InlineKeyboardMarkup(rows)
+
+def trade_home(can_manage=False):
+ rows=[[b("📥 پیشنهادهای دریافتی","tradein","primary"),b("📤 پیشنهادهای من","tradeout")],
+       [b("🤝 روابط خارجی","relations"),b("🆘 کمک اضطراری","aid")],
+       [b("📈 نرخ‌های مرجع","traderef"),b("🏠 خانه جهان","home")]]
+ if can_manage:rows.insert(1,[b("➕ قرارداد تازه","tradenew","success")])
+ return InlineKeyboardMarkup(rows)
+
+def trade_countries(rows,action="tradeto"):
+ buttons=[[b(f"🌍 {r['name']}",f"{action}:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def trade_presets(target_id,presets):
+ buttons=[[b(str(spec['title']),f"tradepreset:{target_id}:{key}","primary" if i==0 else None)] for i,(key,spec) in enumerate(presets.items())]
+ buttons.append([b("↩️ انتخاب کشور","tradenew")]);return InlineKeyboardMarkup(buttons)
+
+def incoming_trade(rows):
+ buttons=[[b(f"✅ پذیرش #{r['id']} از {r['proposer_name']}",f"tradeaccept:{r['id']}","success")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def relations_countries(rows):
+ buttons=[]
+ for r in rows:
+  buttons.append([b(f"🤝 پیشنهاد همکاری با {r['name']}",f"relmenu:{r['id']}")])
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def relation_actions(target_id):
+ return InlineKeyboardMarkup([[b("🙂 دوستی",f"relprop:{target_id}:friend"),b("📦 شریک تجاری",f"relprop:{target_id}:trade_partner","primary")],
+  [b("🛡 متحد دفاعی",f"relprop:{target_id}:defensive_ally"),b("✅ پذیرش پیشنهاد",f"relaccept:{target_id}","success")],
+  [b("⛔ تحریم مستقیم",f"sanction:{target_id}","danger"),b("♻️ رفع تحریم",f"sanctionlift:{target_id}")],[b("↩️ روابط خارجی","relations")]])
+
+def aid_countries(rows):
+ buttons=[[b(f"🆘 {r['name']}",f"aidto:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def aid_assets(target_id):
+ return InlineKeyboardMarkup([[b("🌾 ارسال ۵۰ غذا",f"aidsend:{target_id}:food","success"),b("⚡ ارسال ۵۰ انرژی",f"aidsend:{target_id}:energy")],
+  [b("💰 ارسال ۵۰۰ هزار تومان",f"aidsend:{target_id}:IRT")],[b("↩️ انتخاب کشور","aid")]])
+
+
+def outgoing_trade(rows):
+ buttons=[[b(f"لغو #{r['id']} برای {r['recipient_name']}",f"tradecancel:{r['id']}","danger")] for r in rows]
+ buttons.append([b("↩️ تجارت و دیپلماسی","trade")]);return InlineKeyboardMarkup(buttons)
+
+def pending_relations(rows):
+ buttons=[[b(f"✅ پذیرش {r['counterparty_name']}",f"relaccept:{r['counterparty_id']}","success")] for r in rows]
+ buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)
 ```
 
 ### `apps\teleworld_bot\main.py`
@@ -3608,6 +3819,15 @@ GOV_CONFIRM='<b>{title}</b>\n\n{description}\n\nاین مدل فقط برچسب 
 ## محدودیت اعتبارسنجی محیط ممیزی
 
 اجرای کامل pytest و integration test زنده با Supabase/Telegram در sandbox آفلاین ممکن نبود، زیرا runtime dependencyهای پروژه و credentialهای واقعی موجود نبودند. Dockerfile نصب dependencyها و compile check را در build انجام می‌دهد. پیش از production، تست‌های integration باید در CI با database آزمایشی و tokenهای اختصاصی اجرا شوند.
+```
+
+### `BALANCE_RELEASE_B_30D.csv`
+
+```csv
+name,citizens,treasury_growth,satisfaction,shortage_days,avg_modifier_bp,project_days_estimate
+کشور کوچک,8,4888437,100,23,9513,15.3
+کشور متوسط,40,17760255,100,24,9670,4.2
+کشور بزرگ,180,57272437,39,27,9437,1.3
 ```
 
 ### `CHANGELOG_FA.md`
@@ -5113,6 +5333,205 @@ CREATE TABLE IF NOT EXISTS national_project_effects (
 CREATE INDEX IF NOT EXISTS idx_national_project_effects_country ON national_project_effects(country_id,effect_code,asset_code);
 ```
 
+### `migrations\0017_country_economy_release_b.sql`
+
+```sql
+-- Release B: bounded country consumption, budgets, satisfaction, crises and offices.
+-- Additive/forward-only; no existing data is removed.
+
+CREATE TABLE IF NOT EXISTS country_budget_allocations (
+ country_id BIGINT PRIMARY KEY REFERENCES countries(id) ON DELETE CASCADE,
+ welfare_bp INTEGER NOT NULL DEFAULT 2000 CHECK(welfare_bp BETWEEN 0 AND 10000),
+ production_bp INTEGER NOT NULL DEFAULT 2500 CHECK(production_bp BETWEEN 0 AND 10000),
+ technology_bp INTEGER NOT NULL DEFAULT 1500 CHECK(technology_bp BETWEEN 0 AND 10000),
+ defense_bp INTEGER NOT NULL DEFAULT 1000 CHECK(defense_bp BETWEEN 0 AND 10000),
+ intelligence_bp INTEGER NOT NULL DEFAULT 500 CHECK(intelligence_bp BETWEEN 0 AND 10000),
+ diplomacy_bp INTEGER NOT NULL DEFAULT 500 CHECK(diplomacy_bp BETWEEN 0 AND 10000),
+ emergency_bp INTEGER NOT NULL DEFAULT 2000 CHECK(emergency_bp BETWEEN 0 AND 10000),
+ version BIGINT NOT NULL DEFAULT 1,
+ updated_by_player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK(welfare_bp+production_bp+technology_bp+defense_bp+intelligence_bp+diplomacy_bp+emergency_bp=10000)
+);
+INSERT INTO country_budget_allocations(country_id)
+SELECT id FROM countries ON CONFLICT(country_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS country_economy_state (
+ country_id BIGINT PRIMARY KEY REFERENCES countries(id) ON DELETE CASCADE,
+ satisfaction INTEGER NOT NULL DEFAULT 70 CHECK(satisfaction BETWEEN 0 AND 100),
+ food_shortage_bp INTEGER NOT NULL DEFAULT 0 CHECK(food_shortage_bp BETWEEN 0 AND 10000),
+ energy_shortage_bp INTEGER NOT NULL DEFAULT 0 CHECK(energy_shortage_bp BETWEEN 0 AND 10000),
+ production_modifier_bp INTEGER NOT NULL DEFAULT 10000 CHECK(production_modifier_bp BETWEEN 5000 AND 15000),
+ welfare_level INTEGER NOT NULL DEFAULT 50 CHECK(welfare_level BETWEEN 0 AND 100),
+ defense_readiness INTEGER NOT NULL DEFAULT 20 CHECK(defense_readiness BETWEEN 0 AND 100),
+ last_settled_date DATE,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO country_economy_state(country_id)
+SELECT id FROM countries ON CONFLICT(country_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS country_resource_daily (
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ economy_date DATE NOT NULL,
+ citizens INTEGER NOT NULL CHECK(citizens>=0),
+ food_needed BIGINT NOT NULL CHECK(food_needed>=0),
+ food_consumed BIGINT NOT NULL CHECK(food_consumed>=0),
+ energy_needed BIGINT NOT NULL CHECK(energy_needed>=0),
+ energy_consumed BIGINT NOT NULL CHECK(energy_consumed>=0),
+ budget_spent_toman BIGINT NOT NULL CHECK(budget_spent_toman>=0),
+ satisfaction_before INTEGER NOT NULL CHECK(satisfaction_before BETWEEN 0 AND 100),
+ satisfaction_after INTEGER NOT NULL CHECK(satisfaction_after BETWEEN 0 AND 100),
+ production_modifier_bp INTEGER NOT NULL,
+ ledger_key TEXT NOT NULL UNIQUE,
+ details JSONB NOT NULL DEFAULT '{}'::jsonb,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(country_id,economy_date)
+);
+CREATE INDEX IF NOT EXISTS idx_country_resource_daily_date ON country_resource_daily(economy_date DESC,country_id);
+
+CREATE TABLE IF NOT EXISTS country_crises (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ crisis_code TEXT NOT NULL CHECK(crisis_code IN ('food_shortage','energy_shortage','treasury_stress')),
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved')),
+ severity INTEGER NOT NULL CHECK(severity BETWEEN 1 AND 100),
+ started_on DATE NOT NULL,
+ resolved_on DATE,
+ details JSONB NOT NULL DEFAULT '{}'::jsonb,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_country_crisis_active ON country_crises(country_id,crisis_code) WHERE status='active';
+CREATE INDEX IF NOT EXISTS idx_country_crises_status ON country_crises(status,country_id,started_on DESC);
+
+CREATE TABLE IF NOT EXISTS country_offices (
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ role_code TEXT NOT NULL CHECK(role_code IN ('economy_minister','industry_minister','foreign_minister','army_commander','intelligence_chief')),
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ appointed_by_player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ appointed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(country_id,role_code),
+ UNIQUE(country_id,player_id)
+);
+
+CREATE TABLE IF NOT EXISTS country_governance_audit (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ actor_player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
+ action_code TEXT NOT NULL,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_country_governance_audit_country ON country_governance_audit(country_id,created_at DESC);
+```
+
+### `migrations\0018_country_trade_diplomacy_release_c.sql`
+
+```sql
+-- Release C: country trade escrow, diplomacy, reputation, sanctions and emergency aid.
+-- Additive and forward-only. Existing commerce/Stars tables are intentionally untouched.
+
+CREATE TABLE IF NOT EXISTS country_international_reputation (
+ country_id BIGINT PRIMARY KEY REFERENCES countries(id) ON DELETE CASCADE,
+ score INTEGER NOT NULL DEFAULT 50 CHECK(score BETWEEN 0 AND 100),
+ fulfilled_contracts INTEGER NOT NULL DEFAULT 0 CHECK(fulfilled_contracts>=0),
+ cancelled_contracts INTEGER NOT NULL DEFAULT 0 CHECK(cancelled_contracts>=0),
+ aid_sent BIGINT NOT NULL DEFAULT 0 CHECK(aid_sent>=0),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO country_international_reputation(country_id)
+SELECT id FROM countries ON CONFLICT(country_id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS country_relations (
+ country_low_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ country_high_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ status TEXT NOT NULL DEFAULT 'neutral' CHECK(status IN ('neutral','friend','trade_partner','defensive_ally','rival','hostile')),
+ proposed_status TEXT CHECK(proposed_status IN ('friend','trade_partner','defensive_ally')),
+ proposed_by_country_id BIGINT REFERENCES countries(id) ON DELETE SET NULL,
+ proposal_expires_at TIMESTAMPTZ,
+ changed_by_player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(country_low_id,country_high_id),
+ CHECK(country_low_id<country_high_id)
+);
+CREATE INDEX IF NOT EXISTS idx_country_relations_proposal ON country_relations(proposed_by_country_id,proposal_expires_at) WHERE proposed_status IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS country_sanctions (
+ imposing_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ target_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','lifted')),
+ imposed_by_player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ imposed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ lifted_at TIMESTAMPTZ,
+ reason TEXT NOT NULL DEFAULT 'محدودیت تجاری',
+ PRIMARY KEY(imposing_country_id,target_country_id),
+ CHECK(imposing_country_id<>target_country_id)
+);
+CREATE INDEX IF NOT EXISTS idx_country_sanctions_active ON country_sanctions(target_country_id) WHERE status='active';
+
+CREATE TABLE IF NOT EXISTS country_trade_contracts (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ proposer_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE RESTRICT,
+ recipient_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE RESTRICT,
+ offered_asset TEXT NOT NULL,
+ offered_amount BIGINT NOT NULL CHECK(offered_amount>0),
+ requested_asset TEXT NOT NULL,
+ requested_amount BIGINT NOT NULL CHECK(requested_amount>0),
+ tariff_bp INTEGER NOT NULL DEFAULT 500 CHECK(tariff_bp BETWEEN 0 AND 5000),
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','accepted','cancelled','expired')),
+ created_by_player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ accepted_by_player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ expires_at TIMESTAMPTZ NOT NULL,
+ accepted_at TIMESTAMPTZ,
+ cancelled_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK(proposer_country_id<>recipient_country_id),
+ CHECK(length(offered_asset) BETWEEN 1 AND 32),
+ CHECK(length(requested_asset) BETWEEN 1 AND 32)
+);
+CREATE INDEX IF NOT EXISTS idx_country_trade_open_recipient ON country_trade_contracts(recipient_country_id,expires_at,id) WHERE status='open';
+CREATE INDEX IF NOT EXISTS idx_country_trade_open_proposer ON country_trade_contracts(proposer_country_id,expires_at,id) WHERE status='open';
+
+CREATE TABLE IF NOT EXISTS country_trade_escrow (
+ contract_id BIGINT PRIMARY KEY REFERENCES country_trade_contracts(id) ON DELETE RESTRICT,
+ asset_code TEXT NOT NULL,
+ amount BIGINT NOT NULL CHECK(amount>0),
+ status TEXT NOT NULL DEFAULT 'held' CHECK(status IN ('held','released','refunded')),
+ released_at TIMESTAMPTZ,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS country_humanitarian_aid (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ donor_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE RESTRICT,
+ recipient_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE RESTRICT,
+ asset_code TEXT NOT NULL CHECK(asset_code IN ('food','energy','IRT')),
+ amount BIGINT NOT NULL CHECK(amount>0),
+ crisis_id BIGINT REFERENCES country_crises(id) ON DELETE SET NULL,
+ sent_by_player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK(donor_country_id<>recipient_country_id)
+);
+CREATE INDEX IF NOT EXISTS idx_country_aid_daily ON country_humanitarian_aid(donor_country_id,sent_at DESC);
+
+CREATE TABLE IF NOT EXISTS country_diplomacy_audit (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ counterparty_country_id BIGINT REFERENCES countries(id) ON DELETE SET NULL,
+ actor_player_id BIGINT REFERENCES players(id) ON DELETE SET NULL,
+ action_code TEXT NOT NULL,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_country_diplomacy_audit_country ON country_diplomacy_audit(country_id,created_at DESC);
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -5398,6 +5817,55 @@ lifecycle:
   remove_citizenship_on_group_leave: true
 ```
 
+### `packages\core\config\data\country_economy_b.yaml`
+
+```yaml
+consumption:
+  food_per_citizen_daily: 2
+  energy_per_citizen_daily: 1
+  base_food_daily: 10
+  base_energy_daily: 8
+  maximum_citizens_counted: 10000
+  shortage_floor_modifier_bp: 6000
+budget:
+  daily_spend_cap_toman: 2000000
+  treasury_spend_bp: 100
+  minimum_operating_spend_toman: 25000
+  presets:
+    balanced: {welfare: 2000, production: 2500, technology: 1500, defense: 1000, intelligence: 500, diplomacy: 500, emergency: 2000}
+    welfare: {welfare: 3500, production: 1800, technology: 1000, defense: 700, intelligence: 300, diplomacy: 400, emergency: 2300}
+    growth: {welfare: 1200, production: 3500, technology: 2500, defense: 700, intelligence: 300, diplomacy: 300, emergency: 1500}
+    security: {welfare: 1200, production: 1800, technology: 1000, defense: 2500, intelligence: 1300, diplomacy: 500, emergency: 1700}
+satisfaction:
+  baseline: 70
+  daily_max_change: 8
+  full_food_bonus: 2
+  full_energy_bonus: 1
+  welfare_bonus_max: 3
+  completed_project_bonus_max: 2
+  high_tax_penalty_threshold_percent: 15
+  high_tax_penalty: 2
+  crisis_penalty_max: 5
+production:
+  minimum_modifier_bp: 6000
+  maximum_modifier_bp: 12000
+  technology_budget_bonus_bp_max: 600
+  production_budget_bonus_bp_max: 800
+  low_satisfaction_penalty_bp_max: 1500
+crisis:
+  shortage_trigger_bp: 2500
+  shortage_resolve_bp: 500
+  treasury_stress_days: 2
+  emergency_mitigation_bp_max: 3000
+  recovery_satisfaction_bonus: 2
+offices:
+  economy_minister_can_set_budget: true
+  minimum_reputation: 0
+retention:
+  daily_rows_days: 120
+  resolved_crises_days: 180
+```
+
 ### `packages\core\config\data\country_missions.yaml`
 
 ```yaml
@@ -5432,6 +5900,54 @@ progress:
       minerals: minerals_donated
   clamp_to_target: true
   completion_is_idempotent: true
+```
+
+### `packages\core\config\data\country_trade.yaml`
+
+```yaml
+assets:
+  allowed: [IRT, oil, food, minerals, energy, technology]
+contracts:
+  expiry_hours: 12
+  max_open_base: 3
+  max_open_reputation_bonus: 3
+  min_amount: 1
+  max_amount: 1000000
+  presets:
+    food_for_energy: {title: "۱۰۰ غذا در برابر ۸۰ انرژی", offered_asset: food, offered_amount: 100, requested_asset: energy, requested_amount: 80}
+    energy_for_minerals: {title: "۱۰۰ انرژی در برابر ۹۰ معدن", offered_asset: energy, offered_amount: 100, requested_asset: minerals, requested_amount: 90}
+    oil_for_technology: {title: "۸۰ نفت در برابر ۶۰ فناوری", offered_asset: oil, offered_amount: 80, requested_asset: technology, requested_amount: 60}
+    minerals_for_food: {title: "۱۰۰ معدن در برابر ۱۲۰ غذا", offered_asset: minerals, offered_amount: 100, requested_asset: food, requested_amount: 120}
+tariffs:
+  neutral_bp: 500
+  friend_bp: 300
+  trade_partner_bp: 100
+  defensive_ally_bp: 50
+  rival_bp: 1000
+  hostile_bp: 1500
+reputation:
+  initial: 50
+  contract_fulfilled_gain: 1
+  cancellation_penalty: 1
+  aid_gain: 2
+  sanction_imposer_cost: 3
+  minimum: 0
+  maximum: 100
+diplomacy:
+  proposal_hours: 24
+  statuses_requiring_acceptance: [friend, trade_partner, defensive_ally]
+  sanctions_block_direct_trade: true
+aid:
+  daily_limit_per_country: 1000
+  presets:
+    food: 50
+    energy: 50
+    IRT: 500000
+scheduler:
+  expiry_batch_size: 50
+retention:
+  closed_contract_days: 180
+  audit_days: 365
 ```
 
 ### `packages\core\config\data\daily.yaml`
@@ -7144,20 +7660,20 @@ async def player_resource(conn: asyncpg.Connection, player_id: int, asset: str) 
 async def change_player(conn: asyncpg.Connection, player_id: int, asset: str, delta: int) -> int:
     if asset == "IRT":
         value = await conn.fetchval(
-            "UPDATE players SET wallet_toman=wallet_toman+$2 WHERE id=$1 AND wallet_toman+$2>=0 RETURNING wallet_toman",
+            "UPDATE players SET wallet_toman=wallet_toman+$2::bigint WHERE id=$1::bigint AND wallet_toman+$2::bigint>=0 RETURNING wallet_toman",
             player_id, delta,
         )
     elif asset == "USD":
         value = await conn.fetchval(
-            "UPDATE players SET usd_cents=usd_cents+$2 WHERE id=$1 AND usd_cents+$2>=0 RETURNING usd_cents",
+            "UPDATE players SET usd_cents=usd_cents+$2::bigint WHERE id=$1::bigint AND usd_cents+$2::bigint>=0 RETURNING usd_cents",
             player_id, delta,
         )
     else:
         value = await conn.fetchval(
             """INSERT INTO player_resources(player_id,asset_code,quantity)
-            SELECT $1,$2,$3 WHERE $3>=0
-            ON CONFLICT(player_id,asset_code) DO UPDATE SET quantity=player_resources.quantity+$3,updated_at=now()
-            WHERE player_resources.quantity+$3>=0 RETURNING quantity""",
+            SELECT $1::bigint,$2::text,$3::bigint WHERE $3::bigint>=0
+            ON CONFLICT(player_id,asset_code) DO UPDATE SET quantity=player_resources.quantity+$3::bigint,updated_at=now()
+            WHERE player_resources.quantity+$3::bigint>=0 RETURNING quantity""",
             player_id, asset, delta,
         )
     if value is None:
@@ -7168,15 +7684,15 @@ async def change_player(conn: asyncpg.Connection, player_id: int, asset: str, de
 async def change_country(conn: asyncpg.Connection, country_id: int, asset: str, delta: int) -> int:
     if asset == "IRT":
         value = await conn.fetchval(
-            "UPDATE countries SET treasury_toman=treasury_toman+$2 WHERE id=$1 AND treasury_toman+$2>=0 RETURNING treasury_toman",
+            "UPDATE countries SET treasury_toman=treasury_toman+$2::bigint WHERE id=$1::bigint AND treasury_toman+$2::bigint>=0 RETURNING treasury_toman",
             country_id, delta,
         )
     else:
         value = await conn.fetchval(
             """INSERT INTO country_resources(country_id,asset_code,quantity)
-            SELECT $1,$2,$3 WHERE $3>=0
-            ON CONFLICT(country_id,asset_code) DO UPDATE SET quantity=country_resources.quantity+$3,updated_at=now()
-            WHERE country_resources.quantity+$3>=0 RETURNING quantity""",
+            SELECT $1::bigint,$2::text,$3::bigint WHERE $3::bigint>=0
+            ON CONFLICT(country_id,asset_code) DO UPDATE SET quantity=country_resources.quantity+$3::bigint,updated_at=now()
+            WHERE country_resources.quantity+$3::bigint>=0 RETURNING quantity""",
             country_id, asset, delta,
         )
     if value is None:
@@ -8655,6 +9171,149 @@ async def catch_up(today: date | None = None) -> int:
     return settled
 ```
 
+### `packages\core\services\country_economy_b.py`
+
+```python
+"""Release B country economy rules: deterministic, bounded and retry-safe."""
+from __future__ import annotations
+from datetime import date, timedelta
+from packages.core import db
+from packages.core.config import get_config
+from packages.core.repositories import ledger_repo
+from packages.core.utils import clock
+
+SECTORS=("welfare","production","technology","defense","intelligence","diplomacy","emergency")
+ROLES={"economy_minister","industry_minister","foreign_minister","army_commander","intelligence_chief"}
+
+from packages.core.services.country_economy_rules import DailyPlan, calculate_daily, shortage_bp
+
+async def _budget(conn,country_id:int):
+ row=await conn.fetchrow("SELECT * FROM country_budget_allocations WHERE country_id=$1",country_id)
+ if row:return {s:int(row[f"{s}_bp"]) for s in SECTORS}
+ spec=get_config().section("country_economy_b.budget.presets.balanced")
+ await conn.execute("INSERT INTO country_budget_allocations(country_id) VALUES($1) ON CONFLICT DO NOTHING",country_id)
+ return {s:int(spec[s]) for s in SECTORS}
+
+async def _resource(conn,country_id:int,asset:str)->int:
+ return int(await conn.fetchval("SELECT quantity FROM country_resources WHERE country_id=$1 AND asset_code=$2 FOR UPDATE",country_id,asset) or 0)
+
+async def settle_day(country_id:int,day:date)->bool:
+ key=f"country-release-b:{country_id}:{day}"
+ async with db.transaction() as conn:
+  country=await ledger_repo.lock_country(conn,country_id)
+  if not country:return False
+  if await conn.fetchval("SELECT 1 FROM country_resource_daily WHERE country_id=$1 AND economy_date=$2",country_id,day):return False
+  state=await conn.fetchrow("SELECT * FROM country_economy_state WHERE country_id=$1 FOR UPDATE",country_id)
+  if not state:
+   await conn.execute("INSERT INTO country_economy_state(country_id) VALUES($1) ON CONFLICT DO NOTHING",country_id)
+   state=await conn.fetchrow("SELECT * FROM country_economy_state WHERE country_id=$1 FOR UPDATE",country_id)
+  budget=await _budget(conn,country_id)
+  citizens=int(await conn.fetchval("SELECT count(*) FROM citizenships WHERE country_id=$1 AND is_active",country_id) or 0)
+  food=await _resource(conn,country_id,"food");energy=await _resource(conn,country_id,"energy")
+  projects=int(await conn.fetchval("SELECT count(*) FROM national_projects WHERE country_id=$1 AND status='completed'",country_id) or 0)
+  plan=calculate_daily(citizens=citizens,food=food,energy=energy,treasury=int(country["treasury_toman"]),satisfaction=int(state["satisfaction"]),budget=budget,completed_projects=projects)
+  # The daily row is the idempotency claim. Insert it first so a retry can never
+  # spend resources twice; a concurrent loser rolls back without side effects.
+  claimed=await conn.fetchval("""INSERT INTO country_resource_daily(country_id,economy_date,citizens,food_needed,food_consumed,energy_needed,energy_consumed,budget_spent_toman,satisfaction_before,satisfaction_after,production_modifier_bp,ledger_key,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(country_id,economy_date) DO NOTHING RETURNING country_id""",country_id,day,citizens,plan.food_needed,plan.food_used,plan.energy_needed,plan.energy_used,plan.budget_spend,int(state["satisfaction"]),plan.satisfaction,plan.production_modifier_bp,key,{"budget":budget})
+  if not claimed:return False
+  for asset,amount in (("food",plan.food_used),("energy",plan.energy_used)):
+   if amount:
+    balance=await ledger_repo.change_country(conn,country_id,asset,-amount)
+    await ledger_repo.insert(conn,player_id=None,country_id=country_id,key=f"{key}:{asset}",reason="country_daily_consumption",asset=asset,account=ledger_repo.country_account(asset),amount=-amount,balance=balance,metadata={"date":str(day)})
+  if plan.budget_spend:
+   balance=await ledger_repo.change_country(conn,country_id,"IRT",-plan.budget_spend)
+   await ledger_repo.insert(conn,player_id=None,country_id=country_id,key=f"{key}:budget",reason="country_daily_budget",asset="IRT",account="treasury",amount=-plan.budget_spend,balance=balance,metadata={"date":str(day),"allocations":budget})
+  await conn.execute("""UPDATE country_economy_state SET satisfaction=$2,food_shortage_bp=$3,energy_shortage_bp=$4,production_modifier_bp=$5,welfare_level=$6,defense_readiness=$7,last_settled_date=$8,updated_at=now() WHERE country_id=$1""",country_id,plan.satisfaction,plan.food_shortage_bp,plan.energy_shortage_bp,plan.production_modifier_bp,plan.welfare,plan.defense,day)
+  trigger=get_config().int_("country_economy_b.crisis.shortage_trigger_bp");resolve=get_config().int_("country_economy_b.crisis.shortage_resolve_bp")
+  for code,severity in (("food_shortage",plan.food_shortage_bp),("energy_shortage",plan.energy_shortage_bp)):
+   if severity>=trigger:
+    await conn.execute("""INSERT INTO country_crises(country_id,crisis_code,severity,started_on,details) VALUES($1,$2,$3,$4,$5) ON CONFLICT(country_id,crisis_code) WHERE status='active' DO UPDATE SET severity=EXCLUDED.severity,details=EXCLUDED.details,updated_at=now()""",country_id,code,max(1,severity//100),day,{"shortage_bp":severity})
+   elif severity<=resolve:
+    await conn.execute("UPDATE country_crises SET status='resolved',resolved_on=$3,updated_at=now() WHERE country_id=$1 AND crisis_code=$2 AND status='active'",country_id,code,day)
+  return True
+
+async def catch_up(today:date|None=None)->int:
+ end=today or clock.game_today();days=get_config().int_("economy.country.catch_up_days");rows=await db.fetch("SELECT id FROM countries ORDER BY id");done=0
+ for row in rows:
+  for offset in range(days-1,-1,-1):done+=bool(await settle_day(int(row["id"]),end-timedelta(days=offset)))
+ return done
+
+async def view(country_id:int):
+ return await db.fetchrow("""SELECT c.treasury_toman,s.*,b.*,
+ (SELECT count(*) FROM country_crises x WHERE x.country_id=c.id AND x.status='active') active_crises
+ FROM countries c LEFT JOIN country_economy_state s ON s.country_id=c.id LEFT JOIN country_budget_allocations b ON b.country_id=c.id WHERE c.id=$1""",country_id)
+
+async def set_budget_preset(country_id:int,actor_id:int,preset:str,key:str)->bool:
+ presets=get_config().section("country_economy_b.budget.presets")
+ if preset not in presets:raise ValueError("invalid_budget_preset")
+ spec=presets[preset]
+ async with db.transaction() as conn:
+  country=await ledger_repo.lock_country(conn,country_id)
+  allowed=country and (int(country["president_player_id"] or 0)==actor_id or await conn.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code='economy_minister'",country_id,actor_id))
+  if not allowed:raise PermissionError("budget_permission_required")
+  inserted=await conn.fetchval("INSERT INTO country_governance_audit(country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,'budget_preset',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,actor_id,key,{"preset":preset})
+  if not inserted:return False
+  await conn.execute("""INSERT INTO country_budget_allocations(country_id,welfare_bp,production_bp,technology_bp,defense_bp,intelligence_bp,diplomacy_bp,emergency_bp,updated_by_player_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(country_id) DO UPDATE SET welfare_bp=EXCLUDED.welfare_bp,production_bp=EXCLUDED.production_bp,technology_bp=EXCLUDED.technology_bp,defense_bp=EXCLUDED.defense_bp,intelligence_bp=EXCLUDED.intelligence_bp,diplomacy_bp=EXCLUDED.diplomacy_bp,emergency_bp=EXCLUDED.emergency_bp,version=country_budget_allocations.version+1,updated_by_player_id=EXCLUDED.updated_by_player_id,updated_at=now()""",country_id,*[int(spec[s]) for s in SECTORS],actor_id)
+  return True
+
+async def appoint(country_id:int,president_id:int,role:str,player_id:int,key:str)->bool:
+ if role not in ROLES:raise ValueError("invalid_role")
+ async with db.transaction() as conn:
+  country=await ledger_repo.lock_country(conn,country_id)
+  if not country or int(country["president_player_id"] or 0)!=president_id:raise PermissionError("president_required")
+  if not await conn.fetchval("SELECT 1 FROM citizenships WHERE country_id=$1 AND player_id=$2 AND is_active",country_id,player_id):raise ValueError("citizen_required")
+  inserted=await conn.fetchval("INSERT INTO country_governance_audit(country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,'appoint_office',$3,$4) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,president_id,key,{"role":role,"player_id":player_id})
+  if not inserted:return False
+  await conn.execute("DELETE FROM country_offices WHERE country_id=$1 AND player_id=$2",country_id,player_id)
+  await conn.execute("""INSERT INTO country_offices(country_id,role_code,player_id,appointed_by_player_id) VALUES($1,$2,$3,$4) ON CONFLICT(country_id,role_code) DO UPDATE SET player_id=EXCLUDED.player_id,appointed_by_player_id=EXCLUDED.appointed_by_player_id,updated_at=now()""",country_id,role,player_id,president_id)
+  return True
+```
+
+### `packages\core\services\country_economy_rules.py`
+
+```python
+"""Pure Release-B formulas; importable by tests and the offline simulator."""
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Mapping
+from packages.core.config import get_config
+
+@dataclass(frozen=True,slots=True)
+class DailyPlan:
+ food_needed:int; energy_needed:int; food_used:int; energy_used:int
+ food_shortage_bp:int; energy_shortage_bp:int; budget_spend:int
+ satisfaction:int; production_modifier_bp:int; welfare:int; defense:int
+
+def shortage_bp(needed:int,available:int)->int:
+ if needed<=0:return 0
+ return max(0,min(10000,10000-(min(needed,max(0,available))*10000//needed)))
+
+def calculate_daily(*,citizens:int,food:int,energy:int,treasury:int,satisfaction:int,budget:Mapping[str,int],completed_projects:int=0)->DailyPlan:
+ cfg=get_config();count=min(max(0,citizens),cfg.int_("country_economy_b.consumption.maximum_citizens_counted"))
+ food_needed=cfg.int_("country_economy_b.consumption.base_food_daily")+count*cfg.int_("country_economy_b.consumption.food_per_citizen_daily")
+ energy_needed=cfg.int_("country_economy_b.consumption.base_energy_daily")+count*cfg.int_("country_economy_b.consumption.energy_per_citizen_daily")
+ food_used=min(max(0,food),food_needed);energy_used=min(max(0,energy),energy_needed)
+ fs=shortage_bp(food_needed,food_used);es=shortage_bp(energy_needed,energy_used)
+ spend=max(0,min(cfg.int_("country_economy_b.budget.daily_spend_cap_toman"),treasury*cfg.int_("country_economy_b.budget.treasury_spend_bp")//10000))
+ if treasury and spend<cfg.int_("country_economy_b.budget.minimum_operating_spend_toman"):spend=min(treasury,cfg.int_("country_economy_b.budget.minimum_operating_spend_toman"))
+ welfare_share=int(budget["welfare"]);emergency=int(budget["emergency"])
+ mitigation=min(cfg.int_("country_economy_b.crisis.emergency_mitigation_bp_max"),emergency*3//2)
+ effective_shortage=max(0,fs-mitigation)+max(0,es-mitigation)
+ delta=(cfg.int_("country_economy_b.satisfaction.full_food_bonus") if fs==0 else 0)+(cfg.int_("country_economy_b.satisfaction.full_energy_bonus") if es==0 else 0)
+ delta+=min(cfg.int_("country_economy_b.satisfaction.welfare_bonus_max"),welfare_share//1000)
+ delta+=min(cfg.int_("country_economy_b.satisfaction.completed_project_bonus_max"),completed_projects)
+ delta-=min(cfg.int_("country_economy_b.satisfaction.crisis_penalty_max"),effective_shortage//1500)
+ max_change=cfg.int_("country_economy_b.satisfaction.daily_max_change");delta=max(-max_change,min(max_change,delta))
+ sat=max(0,min(100,satisfaction+delta))
+ modifier=10000-(fs+es)//5-min(cfg.int_("country_economy_b.production.low_satisfaction_penalty_bp_max"),max(0,50-sat)*30)
+ modifier+=min(cfg.int_("country_economy_b.production.production_budget_bonus_bp_max"),int(budget["production"])//4)
+ modifier+=min(cfg.int_("country_economy_b.production.technology_budget_bonus_bp_max"),int(budget["technology"])//4)
+ modifier=max(cfg.int_("country_economy_b.production.minimum_modifier_bp"),min(cfg.int_("country_economy_b.production.maximum_modifier_bp"),modifier))
+ welfare=max(0,min(100,40+welfare_share//100-fs//500))
+ defense=max(0,min(100,10+int(budget["defense"])//100+int(budget["intelligence"])//200))
+ return DailyPlan(food_needed,energy_needed,food_used,energy_used,fs,es,spend,sat,modifier,welfare,defense)
+```
+
 ### `packages\core\services\country_identity.py`
 
 ```python
@@ -8830,7 +9489,10 @@ async def daily_tick()->dict[str,int]:
    interest_drag=max(0,policy_gap)//25
    organic_growth=250+resources//max(1000,citizens*100)-unemployment//20-interest_drag
    growth=max(-10000,min(10000,organic_growth+shock_growth))
-   satisfaction=max(0,min(100,70-inflation//150-unemployment//200+min(15,treasury//max(1,50_000_000))))
+   release_b=await conn.fetchrow("SELECT satisfaction,food_shortage_bp,energy_shortage_bp FROM country_economy_state WHERE country_id=$1",c['id'])
+   base_satisfaction=int(release_b['satisfaction']) if release_b else 70
+   shortage_penalty=((int(release_b['food_shortage_bp'])+int(release_b['energy_shortage_bp']))//2500) if release_b else 0
+   satisfaction=max(0,min(100,base_satisfaction-inflation//500-unemployment//500-shortage_penalty+min(5,treasury//max(1,100_000_000))))
    gdp=max(0,citizens*5_000_000+resources*1000+treasury//10)
    result=await conn.execute("""INSERT INTO country_indicator_daily(country_id,indicator_date,inflation_bp,unemployment_bp,satisfaction,growth_bp,gdp_toman)
     VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING""",c['id'],day,inflation,unemployment,satisfaction,growth,gdp)
@@ -8873,6 +9535,240 @@ async def buy_reserve(country_id:int,player_id:int,toman:int=10_000_000):
    WHERE id=$1 AND president_player_id=$2 AND treasury_toman>=$3 RETURNING fx_reserve_cents""",country_id,player_id,toman,cents)
   if not row:raise ValueError('president_or_balance_required')
   return cents
+```
+
+### `packages\core\services\country_trade.py`
+
+```python
+"""Atomic inter-country trade, escrow, diplomacy, sanctions and emergency aid."""
+from __future__ import annotations
+from datetime import UTC,datetime
+from packages.core import db
+from packages.core.config import get_config
+from packages.core.repositories import ledger_repo,outbox_repo
+from packages.core.services.country_trade_rules import pair,tariff_bp,net_after_tariff,open_limit,RELATIONS
+
+DIPLOMAT_ROLES=("foreign_minister",)
+
+def _account(asset:str)->str:return ledger_repo.country_account(asset)
+
+async def _authorized(conn,country_id:int,player_id:int,*,diplomacy:bool=False)->bool:
+ country=await conn.fetchrow("SELECT president_player_id FROM countries WHERE id=$1",country_id)
+ if not country:return False
+ if int(country["president_player_id"] or 0)==player_id:return True
+ roles=("foreign_minister",) if diplomacy else ("economy_minister","foreign_minister")
+ return bool(await conn.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code=ANY($3::text[])",country_id,player_id,list(roles)))
+
+async def _relation(conn,a:int,b:int)->str:
+ lo,hi=pair(a,b)
+ return str(await conn.fetchval("SELECT status FROM country_relations WHERE country_low_id=$1 AND country_high_id=$2",lo,hi) or "neutral")
+
+async def _reputation(conn,country_id:int)->int:
+ await conn.execute("INSERT INTO country_international_reputation(country_id) VALUES($1) ON CONFLICT DO NOTHING",country_id)
+ return int(await conn.fetchval("SELECT score FROM country_international_reputation WHERE country_id=$1 FOR UPDATE",country_id) or 50)
+
+async def _adjust_rep(conn,country_id:int,delta:int,field:str|None=None)->None:
+ await _reputation(conn,country_id)
+ cfg=get_config();minimum=cfg.int_("country_trade.reputation.minimum");maximum=cfg.int_("country_trade.reputation.maximum")
+ field_sql={"fulfilled":"fulfilled_contracts=fulfilled_contracts+1,","cancelled":"cancelled_contracts=cancelled_contracts+1,"}.get(field,"")
+ await conn.execute(f"UPDATE country_international_reputation SET {field_sql} score=GREATEST($3::int,LEAST($4::int,score+$2::int)),updated_at=now() WHERE country_id=$1",country_id,delta,minimum,maximum)
+
+async def create_contract(proposer_id:int,recipient_id:int,actor_id:int,preset:str,key:str):
+ cfg=get_config();presets=cfg.section("country_trade.contracts.presets")
+ if preset not in presets:raise ValueError("invalid_trade_preset")
+ spec=presets[preset];offered_asset=str(spec["offered_asset"]);requested_asset=str(spec["requested_asset"]);offered=int(spec["offered_amount"]);requested=int(spec["requested_amount"])
+ if offered_asset not in cfg.get("country_trade.assets.allowed") or requested_asset not in cfg.get("country_trade.assets.allowed"):raise ValueError("invalid_asset")
+ async with db.transaction() as conn:
+  # Deterministic lock order prevents reciprocal contracts from deadlocking.
+  for cid in sorted((proposer_id,recipient_id)):
+   if not await ledger_repo.lock_country(conn,cid):raise ValueError("country_not_found")
+  if not await _authorized(conn,proposer_id,actor_id):raise PermissionError("trade_permission_required")
+  blocked=await conn.fetchval("SELECT 1 FROM country_sanctions WHERE status='active' AND ((imposing_country_id=$1 AND target_country_id=$2) OR (imposing_country_id=$2 AND target_country_id=$1))",proposer_id,recipient_id)
+  if blocked:raise ValueError("trade_sanctioned")
+  rep=await _reputation(conn,proposer_id);opened=int(await conn.fetchval("SELECT count(*) FROM country_trade_contracts WHERE proposer_country_id=$1 AND status='open'",proposer_id) or 0)
+  if opened>=open_limit(rep):raise ValueError("open_contract_limit")
+  relation=await _relation(conn,proposer_id,recipient_id);tariff=tariff_bp(relation)
+  row=await conn.fetchrow("""INSERT INTO country_trade_contracts(proposer_country_id,recipient_country_id,offered_asset,offered_amount,requested_asset,requested_amount,tariff_bp,created_by_player_id,idempotency_key,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+($10::double precision*interval '1 hour')) ON CONFLICT(idempotency_key) DO NOTHING RETURNING *""",proposer_id,recipient_id,offered_asset,offered,requested_asset,requested,tariff,actor_id,key,cfg.int_("country_trade.contracts.expiry_hours"))
+  if not row:return None
+  balance=await ledger_repo.change_country(conn,proposer_id,offered_asset,-offered)
+  await ledger_repo.insert(conn,player_id=None,country_id=proposer_id,key=f"{key}:escrow",reason="trade_escrow_hold",asset=offered_asset,account=_account(offered_asset),amount=-offered,balance=balance,metadata={"contract_id":int(row["id"])})
+  await conn.execute("INSERT INTO country_trade_escrow(contract_id,asset_code,amount) VALUES($1,$2,$3)",row["id"],offered_asset,offered)
+  await conn.execute("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'trade_created',$4,$5)",proposer_id,recipient_id,actor_id,f"{key}:audit",{"contract_id":int(row["id"]),"preset":preset})
+  chat=await conn.fetchval("SELECT g.telegram_id FROM countries c JOIN groups g ON g.id=c.group_id WHERE c.id=$1",recipient_id)
+  await outbox_repo.enqueue(conn,f"{key}:notify","country_trade_offer",{"text":f"📦 قرارداد تجاری تازه‌ای برای کشور ثبت شد. پیشنهاد #{int(row['id'])} را در بخش تجارت بررسی کنید."},chat)
+  return row
+
+async def accept_contract(contract_id:int,actor_id:int,key:str):
+ async with db.transaction() as conn:
+  contract=await conn.fetchrow("SELECT * FROM country_trade_contracts WHERE id=$1 FOR UPDATE",contract_id)
+  if not contract:raise ValueError("contract_not_found")
+  if contract["status"]!="open" or contract["expires_at"]<=datetime.now(UTC):raise ValueError("contract_not_open")
+  a=int(contract["proposer_country_id"]);b=int(contract["recipient_country_id"])
+  for cid in sorted((a,b)):
+   if not await ledger_repo.lock_country(conn,cid):raise ValueError("country_not_found")
+  if not await _authorized(conn,b,actor_id):raise PermissionError("trade_permission_required")
+  if await conn.fetchval("SELECT 1 FROM country_sanctions WHERE status='active' AND ((imposing_country_id=$1 AND target_country_id=$2) OR (imposing_country_id=$2 AND target_country_id=$1))",a,b):raise ValueError("trade_sanctioned")
+  escrow=await conn.fetchrow("SELECT * FROM country_trade_escrow WHERE contract_id=$1 FOR UPDATE",contract_id)
+  if not escrow or escrow["status"]!="held":raise ValueError("escrow_not_held")
+  requested=str(contract["requested_asset"]);requested_amount=int(contract["requested_amount"]);offered=str(contract["offered_asset"]);offered_amount=int(contract["offered_amount"])
+  paid_balance=await ledger_repo.change_country(conn,b,requested,-requested_amount)
+  await ledger_repo.insert(conn,player_id=None,country_id=b,key=f"{key}:recipient-debit",reason="trade_settlement_debit",asset=requested,account=_account(requested),amount=-requested_amount,balance=paid_balance,metadata={"contract_id":contract_id})
+  offered_net,offered_fee=net_after_tariff(offered_amount,int(contract["tariff_bp"]));requested_net,requested_fee=net_after_tariff(requested_amount,int(contract["tariff_bp"]))
+  b_balance=await ledger_repo.change_country(conn,b,offered,offered_net)
+  await ledger_repo.insert(conn,player_id=None,country_id=b,key=f"{key}:recipient-credit",reason="trade_settlement_credit",asset=offered,account=_account(offered),amount=offered_net,balance=b_balance,metadata={"contract_id":contract_id,"tariff":offered_fee})
+  a_balance=await ledger_repo.change_country(conn,a,requested,requested_net)
+  await ledger_repo.insert(conn,player_id=None,country_id=a,key=f"{key}:proposer-credit",reason="trade_settlement_credit",asset=requested,account=_account(requested),amount=requested_net,balance=a_balance,metadata={"contract_id":contract_id,"tariff":requested_fee})
+  await conn.execute("UPDATE country_trade_escrow SET status='released',released_at=now(),updated_at=now() WHERE contract_id=$1",contract_id)
+  updated=await conn.fetchval("UPDATE country_trade_contracts SET status='accepted',accepted_by_player_id=$2,accepted_at=now(),updated_at=now() WHERE id=$1 AND status='open' RETURNING id",contract_id,actor_id)
+  if not updated:raise RuntimeError("trade_state_conflict")
+  gain=get_config().int_("country_trade.reputation.contract_fulfilled_gain")
+  await _adjust_rep(conn,a,gain,"fulfilled");await _adjust_rep(conn,b,gain,"fulfilled")
+  await conn.execute("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'trade_accepted',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING",b,a,actor_id,key,{"contract_id":contract_id})
+  return {"offered_net":offered_net,"requested_net":requested_net,"tariff_bp":int(contract["tariff_bp"])}
+
+async def _refund(conn,contract,reason:str,key:str)->bool:
+ escrow=await conn.fetchrow("SELECT * FROM country_trade_escrow WHERE contract_id=$1 FOR UPDATE",contract["id"])
+ if not escrow or escrow["status"]!="held":return False
+ cid=int(contract["proposer_country_id"]);asset=str(escrow["asset_code"]);amount=int(escrow["amount"])
+ await ledger_repo.lock_country(conn,cid);balance=await ledger_repo.change_country(conn,cid,asset,amount)
+ await ledger_repo.insert(conn,player_id=None,country_id=cid,key=f"{key}:refund",reason="trade_escrow_refund",asset=asset,account=_account(asset),amount=amount,balance=balance,metadata={"contract_id":int(contract["id"]),"reason":reason})
+ await conn.execute("UPDATE country_trade_escrow SET status='refunded',released_at=now(),updated_at=now() WHERE contract_id=$1",contract["id"])
+ return True
+
+async def cancel_contract(contract_id:int,actor_id:int,key:str)->bool:
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM country_trade_contracts WHERE id=$1 FOR UPDATE",contract_id)
+  if not row or row["status"]!="open":return False
+  if not await _authorized(conn,int(row["proposer_country_id"]),actor_id):raise PermissionError("trade_permission_required")
+  if not await _refund(conn,row,"cancelled",key):return False
+  await conn.execute("UPDATE country_trade_contracts SET status='cancelled',cancelled_at=now(),updated_at=now() WHERE id=$1",contract_id)
+  await _adjust_rep(conn,int(row["proposer_country_id"]),-get_config().int_("country_trade.reputation.cancellation_penalty"),"cancelled")
+  return True
+
+async def expire_due()->int:
+ limit=get_config().int_("country_trade.scheduler.expiry_batch_size");done=0
+ async with db.transaction() as conn:
+  rows=await conn.fetch("SELECT * FROM country_trade_contracts WHERE status='open' AND expires_at<=now() ORDER BY expires_at,id FOR UPDATE SKIP LOCKED LIMIT $1",limit)
+  for row in rows:
+   if await _refund(conn,row,"expired",f"trade-expire:{row['id']}"):
+    await conn.execute("UPDATE country_trade_contracts SET status='expired',updated_at=now() WHERE id=$1",row["id"]);done+=1
+ return done
+
+async def propose_relation(country_id:int,target_id:int,actor_id:int,status:str,key:str)->bool:
+ if status not in {"friend","trade_partner","defensive_ally"}:raise ValueError("invalid_relation")
+ lo,hi=pair(country_id,target_id)
+ async with db.transaction() as conn:
+  if not await _authorized(conn,country_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
+  inserted=await conn.fetchval("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'relation_proposed',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,target_id,actor_id,key,{"status":status})
+  if not inserted:return False
+  hours=get_config().int_("country_trade.diplomacy.proposal_hours")
+  await conn.execute("""INSERT INTO country_relations(country_low_id,country_high_id,proposed_status,proposed_by_country_id,proposal_expires_at,changed_by_player_id) VALUES($1,$2,$3,$4,now()+($5::double precision*interval '1 hour'),$6) ON CONFLICT(country_low_id,country_high_id) DO UPDATE SET proposed_status=EXCLUDED.proposed_status,proposed_by_country_id=EXCLUDED.proposed_by_country_id,proposal_expires_at=EXCLUDED.proposal_expires_at,changed_by_player_id=EXCLUDED.changed_by_player_id,updated_at=now()""",lo,hi,status,country_id,hours,actor_id)
+  chat=await conn.fetchval("SELECT g.telegram_id FROM countries c JOIN groups g ON g.id=c.group_id WHERE c.id=$1",target_id)
+  await outbox_repo.enqueue(conn,f"{key}:notify","country_relation_offer",{"text":"🤝 یک پیشنهاد رسمی دیپلماتیک برای کشور ثبت شد. از بخش روابط خارجی بررسی‌اش کنید."},chat)
+  return True
+
+async def accept_relation(country_id:int,target_id:int,actor_id:int,key:str)->bool:
+ lo,hi=pair(country_id,target_id)
+ async with db.transaction() as conn:
+  if not await _authorized(conn,country_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
+  row=await conn.fetchrow("SELECT * FROM country_relations WHERE country_low_id=$1 AND country_high_id=$2 FOR UPDATE",lo,hi)
+  if not row or not row["proposed_status"] or int(row["proposed_by_country_id"] or 0)==country_id or row["proposal_expires_at"]<=datetime.now(UTC):raise ValueError("relation_proposal_missing")
+  await conn.execute("UPDATE country_relations SET status=proposed_status,proposed_status=NULL,proposed_by_country_id=NULL,proposal_expires_at=NULL,changed_by_player_id=$3,updated_at=now() WHERE country_low_id=$1 AND country_high_id=$2",lo,hi,actor_id)
+  await conn.execute("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key,payload) VALUES($1,$2,$3,'relation_accepted',$4,$5) ON CONFLICT(idempotency_key) DO NOTHING",country_id,target_id,actor_id,key,{"status":str(row["proposed_status"])})
+  return True
+
+async def impose_sanction(country_id:int,target_id:int,actor_id:int,key:str)->bool:
+ pair(country_id,target_id)
+ async with db.transaction() as conn:
+  if not await _authorized(conn,country_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
+  inserted=await conn.fetchval("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key) VALUES($1,$2,$3,'sanction_imposed',$4) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,target_id,actor_id,key)
+  if not inserted:return False
+  await conn.execute("""INSERT INTO country_sanctions(imposing_country_id,target_country_id,imposed_by_player_id) VALUES($1,$2,$3) ON CONFLICT(imposing_country_id,target_country_id) DO UPDATE SET status='active',imposed_by_player_id=EXCLUDED.imposed_by_player_id,imposed_at=now(),lifted_at=NULL""",country_id,target_id,actor_id)
+  await _adjust_rep(conn,country_id,-get_config().int_("country_trade.reputation.sanction_imposer_cost"))
+  return True
+
+async def send_aid(donor_id:int,recipient_id:int,actor_id:int,asset:str,key:str)->int:
+ cfg=get_config();presets=cfg.section("country_trade.aid.presets")
+ if asset not in presets:raise ValueError("invalid_aid_asset")
+ amount=int(presets[asset])
+ async with db.transaction() as conn:
+  for cid in sorted((donor_id,recipient_id)):await ledger_repo.lock_country(conn,cid)
+  if not await _authorized(conn,donor_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
+  crisis=await conn.fetchrow("SELECT id FROM country_crises WHERE country_id=$1 AND status='active' ORDER BY severity DESC,id LIMIT 1 FOR UPDATE",recipient_id)
+  if not crisis:raise ValueError("recipient_has_no_crisis")
+  used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM country_humanitarian_aid WHERE donor_country_id=$1 AND sent_at>=date_trunc('day',now())",donor_id) or 0)
+  if asset!="IRT" and used+amount>cfg.int_("country_trade.aid.daily_limit_per_country"):raise ValueError("aid_daily_limit")
+  inserted=await conn.fetchval("INSERT INTO country_humanitarian_aid(donor_country_id,recipient_country_id,asset_code,amount,crisis_id,sent_by_player_id,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",donor_id,recipient_id,asset,amount,crisis["id"],actor_id,key)
+  if not inserted:return 0
+  dbal=await ledger_repo.change_country(conn,donor_id,asset,-amount);rbal=await ledger_repo.change_country(conn,recipient_id,asset,amount)
+  await ledger_repo.insert(conn,player_id=None,country_id=donor_id,key=f"{key}:debit",reason="humanitarian_aid",asset=asset,account=_account(asset),amount=-amount,balance=dbal,metadata={"recipient":recipient_id})
+  await ledger_repo.insert(conn,player_id=None,country_id=recipient_id,key=f"{key}:credit",reason="humanitarian_aid",asset=asset,account=_account(asset),amount=amount,balance=rbal,metadata={"donor":donor_id})
+  await _reputation(conn,donor_id)
+  await conn.execute("UPDATE country_international_reputation SET aid_sent=aid_sent+$2::bigint WHERE country_id=$1",donor_id,amount)
+  await _adjust_rep(conn,donor_id,cfg.int_("country_trade.reputation.aid_gain"))
+  return amount
+
+async def overview(country_id:int):
+ return await db.fetchrow("""SELECT r.score,r.fulfilled_contracts,r.aid_sent,
+ (SELECT count(*) FROM country_trade_contracts t WHERE (t.proposer_country_id=$1 OR t.recipient_country_id=$1) AND t.status='open') open_contracts,
+ (SELECT count(*) FROM country_relations x WHERE (x.country_low_id=$1 OR x.country_high_id=$1) AND x.status<>'neutral') active_relations,
+ (SELECT count(*) FROM country_sanctions s WHERE s.status='active' AND (s.imposing_country_id=$1 OR s.target_country_id=$1)) sanctions
+ FROM country_international_reputation r WHERE r.country_id=$1""",country_id)
+
+async def incoming(country_id:int):
+ return await db.fetch("""SELECT t.*,c.name proposer_name FROM country_trade_contracts t JOIN countries c ON c.id=t.proposer_country_id WHERE t.recipient_country_id=$1 AND t.status='open' AND t.expires_at>now() ORDER BY t.expires_at,t.id LIMIT 20""",country_id)
+
+async def countries_except(country_id:int):return await db.fetch("SELECT id,name FROM countries WHERE id<>$1 ORDER BY name LIMIT 50",country_id)
+
+
+async def outgoing(country_id:int):
+ return await db.fetch("""SELECT t.*,c.name recipient_name FROM country_trade_contracts t JOIN countries c ON c.id=t.recipient_country_id WHERE t.proposer_country_id=$1 AND t.status='open' AND t.expires_at>now() ORDER BY t.expires_at,t.id LIMIT 20""",country_id)
+
+async def pending_relations(country_id:int):
+ return await db.fetch("""SELECT r.*,c.id counterparty_id,c.name counterparty_name FROM country_relations r JOIN countries c ON c.id=CASE WHEN r.country_low_id=$1 THEN r.country_high_id ELSE r.country_low_id END WHERE (r.country_low_id=$1 OR r.country_high_id=$1) AND r.proposed_status IS NOT NULL AND r.proposed_by_country_id<>$1 AND r.proposal_expires_at>now() ORDER BY r.proposal_expires_at""",country_id)
+
+async def lift_sanction(country_id:int,target_id:int,actor_id:int,key:str)->bool:
+ pair(country_id,target_id)
+ async with db.transaction() as conn:
+  if not await _authorized(conn,country_id,actor_id,diplomacy=True):raise PermissionError("diplomacy_permission_required")
+  inserted=await conn.fetchval("INSERT INTO country_diplomacy_audit(country_id,counterparty_country_id,actor_player_id,action_code,idempotency_key) VALUES($1,$2,$3,'sanction_lifted',$4) ON CONFLICT(idempotency_key) DO NOTHING RETURNING id",country_id,target_id,actor_id,key)
+  if not inserted:return False
+  result=await conn.execute("UPDATE country_sanctions SET status='lifted',lifted_at=now() WHERE imposing_country_id=$1 AND target_country_id=$2 AND status='active'",country_id,target_id)
+  return result.endswith(' 1')
+
+async def expire_relations()->int:
+ result=await db.execute("UPDATE country_relations SET proposed_status=NULL,proposed_by_country_id=NULL,proposal_expires_at=NULL,updated_at=now() WHERE proposed_status IS NOT NULL AND proposal_expires_at<=now()")
+ return int(result.rsplit(' ',1)[-1] or 0)
+
+async def recent_reference(limit:int=10):
+ return await db.fetch("""SELECT offered_asset,requested_asset,count(*) trades,round(avg(requested_amount::numeric/offered_amount),4) average_ratio FROM country_trade_contracts WHERE status='accepted' GROUP BY offered_asset,requested_asset ORDER BY count(*) DESC,offered_asset,requested_asset LIMIT $1""",limit)
+```
+
+### `packages\core\services\country_trade_rules.py`
+
+```python
+"""Pure Release-C trade and diplomacy rules."""
+from __future__ import annotations
+from packages.core.config import get_config
+
+RELATIONS={"neutral","friend","trade_partner","defensive_ally","rival","hostile"}
+
+def pair(a:int,b:int)->tuple[int,int]:
+ if a==b:raise ValueError("same_country")
+ return (a,b) if a<b else (b,a)
+
+def tariff_bp(status:str)->int:
+ if status not in RELATIONS:status="neutral"
+ return get_config().int_(f"country_trade.tariffs.{status}_bp")
+
+def net_after_tariff(amount:int,bp:int)->tuple[int,int]:
+ if amount<=0:raise ValueError("amount_must_be_positive")
+ fee=min(amount-1,max(0,amount*max(0,bp)//10000)) if amount>1 else 0
+ return amount-fee,fee
+
+def open_limit(reputation:int)->int:
+ cfg=get_config();bonus=max(0,min(cfg.int_("country_trade.contracts.max_open_reputation_bonus"),reputation//25))
+ return cfg.int_("country_trade.contracts.max_open_base")+bonus
 ```
 
 ### `packages\core\services\daily.py`
@@ -10350,7 +11246,13 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
         if country:
             bonus=int(await conn.fetchval("""SELECT COALESCE(sum(magnitude_basis_points),0) FROM national_project_effects
               WHERE country_id=$1 AND effect_code='work_output_bonus' AND (asset_code=$2 OR asset_code='all')""",int(country['id']),asset) or 0)
+            economy_modifier=int(await conn.fetchval(
+              "SELECT production_modifier_bp FROM country_economy_state WHERE country_id=$1",
+              int(country['id']),
+            ) or 10000)
+            # National projects and Release-B shortages/budgets both affect real work output.
             gross=floor(gross*(10000+min(bonus,5000))/10000)
+            gross=max(1,floor(gross*max(5000,min(15000,economy_modifier))/10000))
         player_amount=max(1,floor(gross*player_pct/100));country_amount=max(0,floor(gross*country_pct/100))
         tax=0;country_asset=asset if country else None
         if asset=='IRT':
@@ -10539,8 +11441,8 @@ async def trade(player_id:int,side:str,cents:int,key:str)->TradeResult:
         fee=(gross*cfg.int_("market.usd.fee_basis_points")+9999)//10000
         wallet_delta=-(gross+fee) if side=="buy" else gross-fee
         usd_delta=cents if side=="buy" else -cents
-        changed=await conn.fetchrow("""UPDATE players SET wallet_toman=wallet_toman+$2,usd_cents=usd_cents+$3
-          WHERE id=$1 AND wallet_toman+$2>=0 AND usd_cents+$3>=0 RETURNING wallet_toman,usd_cents""",player_id,wallet_delta,usd_delta)
+        changed=await conn.fetchrow("""UPDATE players SET wallet_toman=wallet_toman+$2::bigint,usd_cents=usd_cents+$3::bigint
+          WHERE id=$1::bigint AND wallet_toman+$2::bigint>=0 AND usd_cents+$3::bigint>=0 RETURNING wallet_toman,usd_cents""",player_id,wallet_delta,usd_delta)
         if changed is None: raise ValueError("insufficient_balance")
         steps=max(1,cents//cfg.int_("market.usd.impact_cents_per_step")); move=min(cfg.int_("market.usd.max_trade_move_basis_points"),steps*cfg.int_("market.usd.impact_basis_points_per_step"))
         candidate=(reference*(10000+(move if side=="buy" else -move)))//10000
@@ -11587,6 +12489,182 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 در محیط ساخت حاضر Python 3.10 نصب است، درحالی‌که پروژه Python 3.13 و وابستگی‌های Telegram/asyncpg/pytest می‌خواهد. اینترنت نیز برای نصب وابستگی‌ها در دسترس نیست. بنابراین آزمون‌های اجرایی و یکپارچه PostgreSQL در این محیط اجرا نشدند و موفق اعلام نمی‌شوند. اعتبارسنجی نحوی Python، YAML، ساختار بسته، اسکن اسرار و آزمون‌های ایستای داخلی انجام می‌شوند.
 ```
 
+### `RELEASE_B_REPORT_FA.md`
+
+```markdown
+# گزارش تحویل Release B — اقتصاد کشور
+
+تاریخ: ۲۰۲۶-۰۷-۲۷
+
+## ممیزی پیش از پیاده‌سازی
+
+- **قابلیت‌های حفظ‌شده:** Supervisor تک‌پردازه، دو بات TeleLife و TeleWorld، پنل Admin، Scheduler، Ledger، Outbox، انتخابات، پروژه‌های ملی، تبلیغات و Stars، بازار، Feature Flagها و Callbackهای قبلی.
+- **تداخل‌های شناسایی‌شده:** رضایت قبلاً فقط در گزارش اقتصاد کلان محاسبه می‌شد و روی تولید اثر نداشت؛ منابع غذا و انرژی مصرف روزانه نداشتند؛ بودجه و سمت‌های دولتی مدل عملیاتی نداشتند.
+- **جداول قابل استفاده مجدد:** `countries`، `country_resources`، `ledger`، `citizenships`، `national_projects`، `country_indicator_daily`، `country_shocks`، `outbox` و `scheduler_job_runs`.
+- **Schema افزوده:** بودجه، وضعیت اقتصاد، مصرف روزانه، بحران‌ها، سمت‌ها و Audit حاکمیتی در migration شماره `0017`.
+- **ریسک‌های اصلی:** دوباره‌خرج‌کردن Scheduler، مصرف منفی منابع، تداخل رضایت قدیمی و جدید، شکستن Callbackها و فشار Catch-up روی دیتابیس رایگان.
+- **روش کاهش ریسک:** transaction و row lock، کلید روزانه یکتا، Ledger چندشاخه، Catch-up محدود موجود، config-driven formula، migration افزایشی و تست رگرسیون.
+
+## قابلیت‌های پیاده‌شده
+
+1. مصرف روزانه غذا و انرژی متناسب با جمعیت، با سقف محاسباتی.
+2. کمبود تدریجی؛ تولید هیچ‌گاه به صفر نمی‌رسد و حساب بازیکن نابود نمی‌شود.
+3. چهار الگوی بودجه متعادل، رفاه، رشد و امنیت با جمع دقیق ۱۰۰٪.
+4. اثر واقعی بودجه تولید و فناوری، کمبود منابع و رضایت بر خروجی شغل.
+5. رضایت پایدار و محدود با تغییر روزانه سقف‌دار.
+6. ثبت و حل خودکار بحران کمبود غذا و انرژی.
+7. شاخص رفاه و آمادگی دفاعی.
+8. کابینه اولیه: وزیر اقتصاد، وزیر صنعت، وزیر خارجه، فرمانده ارتش و رئیس اطلاعات.
+9. Permission و Audit برای تغییر بودجه و انتصاب.
+10. رابط فارسی بودجه، کمبود، بحران و کابینه در TeleWorld.
+11. Scheduler روزانه retry-safe و idempotent برای Release B.
+12. شبیه‌ساز آفلاین ۳۰ روزه برای کشورهای کوچک، متوسط و بزرگ.
+
+## فایل‌های جدید
+
+- `migrations/0017_country_economy_release_b.sql`
+- `packages/core/config/data/country_economy_b.yaml`
+- `packages/core/services/country_economy_rules.py`
+- `packages/core/services/country_economy_b.py`
+- `tests/test_country_economy_b.py`
+- `tools/simulate_country_economy_b.py`
+- `BALANCE_RELEASE_B_30D.csv`
+- `RELEASE_B_REPORT_FA.md`
+
+## فایل‌های تغییرکرده
+
+- `packages/core/services/production.py`
+- `packages/core/services/country_realism.py`
+- `apps/scheduler/main.py`
+- `apps/teleworld_bot/handlers/world.py`
+- `apps/teleworld_bot/keyboards.py`
+
+## نتیجه تست‌ها
+
+- Compile کل پروژه: موفق.
+- تست‌های مستقیم Release B و رگرسیون بازسازی: **۱۰ Passed / ۰ Failed / ۰ Skipped**.
+- سلامت زنجیره migration: موفق.
+- مقایسه باینری migrationهای `0001` تا `0014` با ZIP مبنا: بدون تغییر.
+- تست واقعی PostgreSQL/asyncpg، Telegram API، Render و Supabase در این محیط قابل اجرا نبود؛ این موارد باید روی staging اجرا شوند.
+
+## خلاصه Balance سی‌روزه
+
+- کشور کوچک: رشد خزانه ۴٬۸۸۸٬۴۳۷ تومان؛ رضایت نهایی ۱۰۰؛ میانگین ضریب تولید ۹۵٫۱۳٪.
+- کشور متوسط: رشد خزانه ۱۷٬۷۶۰٬۲۵۵ تومان؛ رضایت نهایی ۱۰۰؛ میانگین ضریب تولید ۹۶٫۷۰٪.
+- کشور بزرگ با بودجه رشد: رشد خزانه ۵۷٬۲۷۲٬۴۳۷ تومان؛ رضایت نهایی ۳۹؛ میانگین ضریب تولید ۹۴٫۳۷٪.
+- برداشت: Scaling جمعیت هزینه واقعی می‌سازد؛ کشور بزرگ بدون مشارکت بیشتر کمبود و افت رضایت می‌گیرد، اما تولید قفل یا نابود نمی‌شود.
+
+## Faucet / Sink
+
+| دارایی | ورود | خروج |
+|---|---|---|
+| تومان شخصی | شغل، مأموریت، تجارت | مالیات، خرید، مشارکت |
+| خزانه | مالیات، کمک، درآمد روزانه | بودجه، پروژه، ذخیره ارزی |
+| غذا | شغل کشاورزی | مصرف جمعیت، پروژه |
+| انرژی | شغل نیروگاه | مصرف جمعیت/خدمات، پروژه |
+| معدن | معدن‌کاری | پروژه‌های ملی |
+| فناوری | پژوهش | پروژه و بهره‌وری |
+| نفت | تولید و ذخیره اولیه | پروژه و زیرساخت انرژی |
+
+## Deploy
+
+1. از دیتابیس production بکاپ منطقی بگیرید.
+2. artifact را ابتدا روی staging با کپی داده اجرا کنید.
+3. برنامه هنگام شروع، migration افزایشی `0017` را اجرا می‌کند؛ هیچ migration قدیمی را ویرایش نکنید.
+4. Smoke test: نمایش اقتصاد کشور، انتخاب بودجه، اجرای دستی job روزانه، بررسی Ledger، مصرف منابع، رضایت و ضریب تولید.
+5. همان ZIP را بدون تغییر روی Render مستقر کنید.
+6. متغیر محیطی جدیدی لازم نیست.
+
+## Rollback عملیاتی بدون حذف داده
+
+- کد را به artifact قبلی برگردانید؛ جدول‌های `0017` را نگه دارید.
+- Scheduler قبلی دیگر job جدید را صدا نمی‌زند و جدول‌ها بدون اثر باقی می‌مانند.
+- از Drop کردن جدول‌ها یا پاک‌کردن Ledger خودداری کنید.
+- برای توقف فوری اقتصاد می‌توان از Feature Flag موجود `economy_frozen` در عملیات اقتصادی مرتبط استفاده کرد؛ حذف داده لازم نیست.
+
+## محدودیت صادقانه
+
+این خروجی از نظر syntax، قراردادهای استاتیک و فرمول‌های خالص تست شده است، اما «بدون باگ» ادعا نمی‌شود. تست concurrency واقعی، اجرای migration روی PostgreSQL دارای داده و Smoke test تلگرام پیش از انتشار عمومی الزامی است.
+```
+
+### `RELEASE_C_REPORT_FA.md`
+
+```markdown
+# گزارش تحویل Release C — تجارت و تعامل کشورها
+
+تاریخ: ۲۰۲۶-۰۷-۲۷
+
+## ممیزی پیش از پیاده‌سازی
+
+- Commerce موجود فقط تبلیغات و Telegram Stars را مدیریت می‌کرد و بدون تغییر حفظ شد.
+- کشور، خزانه، منابع، Ledger، Outbox، سمت‌های Release B و بحران‌ها قابل استفاده مجدد بودند.
+- تداخل اصلی نام «تجارت» بود؛ تجارت کشورها در سرویس و جداول مستقل ساخته شد.
+- ریسک‌های اصلی: Double-spend، پذیرش هم‌زمان، انقضای هم‌زمان با پذیرش، deadlock قراردادهای معکوس، ازبین‌رفتن Escrow، دورزدن تحریم و Callback بدون Permission.
+- کنترل ریسک: قفل کشورها با ترتیب ثابت، قفل قرارداد و Escrow، تراکنش واحد، کلیدهای idempotency، Ledger چندشاخه، Outbox و Scheduler محدود.
+
+## امکانات Release C
+
+1. قرارداد تجاری مستقیم بین دو کشور با پیشنهادهای محدود و Config-driven.
+2. انتقال فوری دارایی پیشنهاددهنده به Escrow.
+3. پذیرش اتمیک قرارداد و جلوگیری از Double-spend.
+4. بازپرداخت Escrow در لغو یا انقضای ۱۲ساعته.
+5. سقف قرارداد باز بر اساس اعتبار بین‌المللی.
+6. نرخ مرجع بر اساس تاریخچه معاملات واقعی تکمیل‌شده.
+7. روابط رسمی دوطرفه: دوست، شریک تجاری و متحد دفاعی.
+8. تعرفه واقعی بر اساس رابطه؛ روابط بهتر هزینه تجارت را کم می‌کنند.
+9. تحریم مستقیم با هزینه اعتباری برای کشور تحریم‌کننده.
+10. اعتبار بین‌المللی با اثر قرارداد موفق، لغو، کمک و تحریم.
+11. کمک اضطراری غذا، انرژی و خزانه فقط به کشور دارای بحران فعال.
+12. Permission برای رئیس‌جمهور، وزیر اقتصاد و وزیر خارجه.
+13. Audit دیپلماسی و اعلان پیشنهاد با Outbox.
+14. رابط فارسی تجارت، قراردادهای ورودی/خروجی، روابط، کمک و نرخ مرجع.
+15. Scheduler محدود برای انقضای قرارداد و پیشنهاد دیپلماتیک.
+
+## فایل‌های جدید
+
+- `migrations/0018_country_trade_diplomacy_release_c.sql`
+- `packages/core/config/data/country_trade.yaml`
+- `packages/core/services/country_trade_rules.py`
+- `packages/core/services/country_trade.py`
+- `tests/test_country_trade_release_c.py`
+- `RELEASE_C_REPORT_FA.md`
+
+## فایل‌های تغییرکرده
+
+- `apps/teleworld_bot/handlers/world.py`
+- `apps/teleworld_bot/keyboards.py`
+- `apps/scheduler/main.py`
+
+## تست
+
+- Compile کل پروژه: موفق.
+- تست مستقیم Release C به همراه رگرسیون A/B: **۱۸ Passed / ۰ Failed / ۰ Skipped**.
+- migrationهای `0001` تا `0017` با artifact مبنای Release B مقایسه شدند و بدون تغییرند.
+- اجرای مجموعه کامل pytest ممکن نبود، چون executable/package مربوط به pytest در محیط ساخت موجود نبود.
+- تست واقعی PostgreSQL/asyncpg، Telegram API و Render/Supabase در این محیط انجام نشد؛ پیش از انتشار عمومی باید روی staging اجرا شود.
+
+## Deploy
+
+1. از دیتابیس production بکاپ منطقی بگیرید.
+2. ZIP را روی staging با کپی داده production اجرا کنید.
+3. migration افزایشی `0018` را اجرا کنید؛ هیچ migration قبلی را تغییر ندهید.
+4. Smoke test: ساخت قرارداد، مشاهده Escrow، پذیرش، لغو، انقضا، رابطه دوطرفه، تحریم و کمک به بحران.
+5. Ledger هر دو کشور و عدم منفی‌شدن منابع را بررسی کنید.
+6. همان artifact تأییدشده را روی Render منتشر کنید.
+7. متغیر محیطی جدیدی لازم نیست.
+
+## Rollback بدون حذف داده
+
+- کد را به Release B برگردانید و جدول‌های `0018` را نگه دارید.
+- Scheduler قدیمی jobهای Release C را اجرا نمی‌کند و داده‌ها بی‌اثر می‌مانند.
+- پیش از rollback، قراردادهای باز را از رابط لغو کنید تا Escrow بازپرداخت شود.
+- جدول، Ledger یا Audit را Drop نکنید.
+
+## محدودیت صادقانه
+
+این artifact یک Production Candidate است و «بدون باگ» نامیده نمی‌شود. تست concurrency واقعی شامل پذیرش هم‌زمان، پذیرش هم‌زمان با انقضا و قراردادهای معکوس روی PostgreSQL staging الزامی است.
+```
+
 ### `RELEASE_COMMERCE_FA.md`
 
 ```markdown
@@ -11734,6 +12812,37 @@ Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ار�
 ## بخش بعدی پیشنهادی
 
 پروژه‌های ملی و مأموریت‌های روزانه معنادار که از رویدادهای واقعی کار، مالیات و تولید کشور تغذیه شوند.
+```
+
+### `RELEASE_REBUILD_2026-07-27_FA.md`
+
+```markdown
+# گزارش بازسازی تمیز TeleLife
+
+تاریخ: ۲۰۲۶-۰۷-۲۷
+
+## اصلاحات
+
+- پروژه مستقیماً از دامپ اصلی بازسازی شد و از ZIP خروجی قبلی استفاده نشد.
+- خطای PostgreSQL با پیام `inconsistent types deduced for parameter $3 (integer versus bigint)` در عملیات منابع بازیکن و کشور با تعیین صریح نوع‌های `bigint` و `text` رفع شد.
+- همان محافظت نوعی روی تغییر هم‌زمان کیف پول و دلار در بازار اعمال شد.
+- نمودار و ارسال عکس از صفحه بازار بات TeleLife حذف شد؛ اطلاعات خرید، فروش، موجودی، وضعیت و سلامت بازار به‌صورت متنی و تمیز نمایش داده می‌شود.
+- انتخاب شغل کاملاً دست بازیکن است و از سطح ۱ فعال است؛ گزینه‌های شغلی موجود حفظ شدند.
+- متن‌های مربوط به شغل، بازار، خطا و دریافت شیفت طبیعی‌تر و کوتاه‌تر شدند.
+- خط تکراری callback در handler اصلی حذف شد.
+- تست رگرسیون مستقل برای اصلاح نوع SQL، بازار بدون نمودار و انتخاب دستی شغل اضافه شد.
+
+## وضعیت اعتبارسنجی
+
+- `compileall`: موفق برای کل پروژه.
+- تست‌های رگرسیون جدید: ۴ موفق، ۰ ناموفق.
+- زنجیره migrationهای `0001` تا `0016`: موجود.
+- checksum محتوایی migrationهای `0001` تا `0014`: نسبت به دامپ اصلی بدون تغییر.
+- اجرای کل مجموعه pytest در محیط ساخت ممکن نبود، چون executable/package مربوط به pytest در محیط نصب نبود. بنابراین اجرای واقعی روی PostgreSQL و Telegram پیش از انتشار عمومی همچنان لازم است.
+
+## نکته استقرار
+
+ابتدا روی دیتابیس staging دارای نسخه‌ای از داده واقعی، migrationها را اجرا کنید و سناریوهای انتخاب شغل، دریافت شیفت، خریدوفروش و کلیک هم‌زمان را بررسی کنید. سپس همان artifact را بدون تغییر روی production مستقر کنید.
 ```
 
 ### `RELEASE_SCALING_MIGRATION_FA.md`
@@ -12368,6 +13477,53 @@ def test_clean_persian_content():
     assert inspect("جمهوری روشن فردا").allowed
 ```
 
+### `tests\test_country_economy_b.py`
+
+```python
+from datetime import date
+from pathlib import Path
+from packages.core.config import get_config
+from packages.core.services.country_economy_rules import calculate_daily,shortage_bp
+
+B={"welfare":2000,"production":2500,"technology":1500,"defense":1000,"intelligence":500,"diplomacy":500,"emergency":2000}
+
+def test_shortage_formula_is_bounded():
+ assert shortage_bp(100,0)==10000
+ assert shortage_bp(100,50)==5000
+ assert shortage_bp(100,150)==0
+ assert shortage_bp(0,0)==0
+
+def test_full_supply_preserves_players_and_improves_satisfaction():
+ p=calculate_daily(citizens=20,food=1000,energy=1000,treasury=10_000_000,satisfaction=60,budget=B,completed_projects=1)
+ assert p.food_shortage_bp==0 and p.energy_shortage_bp==0
+ assert p.satisfaction>60
+ assert p.production_modifier_bp>=10000
+
+def test_shortage_degrades_but_never_destroys_production():
+ p=calculate_daily(citizens=100,food=0,energy=0,treasury=0,satisfaction=30,budget=B)
+ assert p.satisfaction>=0
+ assert get_config().int_("country_economy_b.production.minimum_modifier_bp")<=p.production_modifier_bp
+ assert p.production_modifier_bp<=10000
+
+def test_budget_is_bounded_by_treasury():
+ p=calculate_daily(citizens=5,food=100,energy=100,treasury=1000,satisfaction=70,budget=B)
+ assert 0<=p.budget_spend<=1000
+
+def test_release_b_migration_is_additive_and_numbered_after_release_a():
+ text=Path("migrations/0017_country_economy_release_b.sql").read_text(encoding="utf-8")
+ assert "DROP TABLE" not in text.upper()
+ assert "country_budget_allocations" in text
+ assert "country_economy_state" in text
+ assert "country_crises" in text
+ assert "country_offices" in text
+
+def test_scheduler_and_production_are_connected():
+ scheduler=Path("apps/scheduler/main.py").read_text(encoding="utf-8")
+ production=Path("packages/core/services/production.py").read_text(encoding="utf-8")
+ assert 'scheduler_ops.run("country_economy_b"' in scheduler
+ assert "production_modifier_bp" in production
+```
+
 ### `tests\test_country_realism_contracts.py`
 
 ```python
@@ -12387,6 +13543,60 @@ def test_realism_schema_is_additive():
  text=Path("migrations/0013_country_identity_candles_realism.sql").read_text()
  for table in ("country_indicator_daily","country_shocks","country_newspapers"):
   assert f"CREATE TABLE IF NOT EXISTS {table}" in text
+```
+
+### `tests\test_country_trade_release_c.py`
+
+```python
+from pathlib import Path
+from packages.core.config import get_config
+from packages.core.services.country_trade_rules import pair,tariff_bp,net_after_tariff,open_limit
+
+def test_country_pair_is_canonical_and_rejects_self():
+ assert pair(9,2)==(2,9)
+ try:pair(4,4)
+ except ValueError as exc:assert str(exc)=="same_country"
+ else:raise AssertionError("self relation accepted")
+
+def test_relations_change_real_tariffs():
+ assert tariff_bp("trade_partner")<tariff_bp("neutral")<tariff_bp("hostile")
+
+def test_tariff_never_creates_negative_delivery():
+ assert net_after_tariff(1,5000)==(1,0)
+ net,fee=net_after_tariff(1000,500)
+ assert net==950 and fee==50
+
+def test_reputation_increases_contract_capacity_with_a_cap():
+ assert open_limit(0)>=3
+ assert open_limit(100)>open_limit(0)
+ assert open_limit(10000)==open_limit(100)
+
+def test_contract_presets_are_bounded_and_distinct_assets():
+ cfg=get_config();maximum=cfg.int_("country_trade.contracts.max_amount")
+ for spec in cfg.section("country_trade.contracts.presets").values():
+  assert 0<int(spec["offered_amount"])<=maximum
+  assert 0<int(spec["requested_amount"])<=maximum
+  assert spec["offered_asset"]!=spec["requested_asset"]
+
+def test_release_c_migration_is_additive_and_isolated_from_stars_commerce():
+ text=Path("migrations/0018_country_trade_diplomacy_release_c.sql").read_text(encoding="utf-8")
+ assert "DROP TABLE" not in text.upper() and "DROP COLUMN" not in text.upper()
+ for name in ("country_trade_contracts","country_trade_escrow","country_relations","country_sanctions","country_humanitarian_aid"):
+  assert name in text
+ assert "ad_requests" not in text and "star_payments" not in text
+
+def test_acceptance_and_expiry_are_connected_to_atomic_service_and_scheduler():
+ service=Path("packages/core/services/country_trade.py").read_text(encoding="utf-8")
+ scheduler=Path("apps/scheduler/main.py").read_text(encoding="utf-8")
+ assert "async with db.transaction()" in service
+ assert "FOR UPDATE" in service
+ assert "country_trade_escrow" in service
+ assert '"country_trade_expiry"' in scheduler
+
+def test_ui_exposes_trade_relations_aid_and_reference_history():
+ world=Path("apps/teleworld_bot/handlers/world.py").read_text(encoding="utf-8")
+ for token in ('action == "trade"','action == "relations"','action == "aid"','action == "traderef"'):
+  assert token in world
 ```
 
 ### `tests\test_daily.py`
@@ -12986,6 +14196,56 @@ def test_release_is_declared_done_and_migration_is_additive():
     assert "DROP TABLE" not in sql and "work_claims" in sql and "IF NOT EXISTS" in sql
 ```
 
+### `tests\test_release_rebuild_regressions.py`
+
+```python
+"""Regression guards for the 2026-07-27 clean rebuild."""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def source(path: str) -> str:
+    return (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_ledger_economic_parameters_have_explicit_bigint_types() -> None:
+    text = source("packages/core/repositories/ledger_repo.py")
+    assert "wallet_toman+$2::bigint" in text
+    assert "usd_cents+$2::bigint" in text
+    assert "SELECT $1::bigint,$2::text,$3::bigint" in text
+    assert "quantity=player_resources.quantity+$3::bigint" in text
+    assert "quantity=country_resources.quantity+$3::bigint" in text
+
+
+def test_usd_trade_deltas_have_explicit_bigint_types() -> None:
+    text = source("packages/core/services/usd_market.py")
+    assert "wallet_toman=wallet_toman+$2::bigint" in text
+    assert "usd_cents=usd_cents+$3::bigint" in text
+
+
+def test_telelife_market_is_text_only() -> None:
+    text = source("apps/telelife_bot/handlers/life.py")
+    market = text[text.index("async def market(ctx,c):"):text.index("async def unlock_page")]
+    assert "send_photo" not in market
+    assert "InputFile" not in market
+    assert "market_chart" not in market
+    assert "قیمت خرید" in market
+    assert "قیمت فروش" in market
+    assert "شاخص سلامت" in market
+
+
+def test_job_is_user_selected_from_level_one() -> None:
+    config = source("packages/core/config/data/jobs.yaml")
+    keyboard = source("apps/telelife_bot/keyboards/main.py")
+    text = source("apps/telelife_bot/texts/fa.py")
+    assert "available_from_level: 1" in config
+    for code in ("farmer", "miner", "programmer", "trader", "engineer", "doctor", "journalist"):
+        assert f'"{code}"' in keyboard
+    assert "از همان سطح ۱ شغلت را خودت انتخاب کن" in text
+    assert "سطح ۵ شغل" not in text
+```
+
 ### `tests\test_scaling_migration.py`
 
 ```python
@@ -13015,6 +14275,31 @@ def test_migration_fee_bounds():
  assert exit_fee(1)==500_000
  assert exit_fee(100_000_000)==5_000_000
  assert exit_fee(2_000_000_000)==50_000_000
+```
+
+### `tests\test_subscription_release_d.py`
+
+```python
+from pathlib import Path
+ROOT=Path(__file__).parents[1]
+def test_purchase_page_lists_all_benefits():
+ text=(ROOT/'apps/teleworld_bot/handlers/world.py').read_text()
+ for phrase in ('حذف تبلیغات عمومی','گزارش اقتصادی و سیاسی کامل‌تر','یادآوری هوشمند','بدون افزایش درآمد'):
+  assert phrase in text
+def test_subscription_is_group_scoped_and_30_days():
+ text=(ROOT/'packages/core/services/commerce.py').read_text()
+ assert "UPDATE groups SET ad_free_until=" in text
+ assert "interval '30 days'" in text
+def test_ads_skip_subscribed_world_groups():
+ text=(ROOT/'packages/core/services/commerce.py').read_text()
+ assert "ad_free_until IS NULL OR ad_free_until<=now()" in text
+def test_stars_settlement_is_idempotent():
+ text=(ROOT/'packages/core/services/commerce.py').read_text()
+ assert "if payment[\"status\"]=='paid':return payment[\"purpose\"]" in text
+def test_no_gameplay_power_is_granted():
+ migration=(ROOT/'migrations/0010_stars_subscriptions_ad_marketplace.sql').read_text()
+ assert 'ad_free_until' in migration
+ assert 'production_modifier' not in migration
 ```
 
 ### `tests\test_supervisor.py`
@@ -13251,6 +14536,40 @@ def test_day_key_rotates_daily():
     assert day_key("daily", 1).count(":") == 2
     assert day_key("daily", 1) == day_key("daily", 1)
     assert day_key("daily", 1) != day_key("daily", 2)
+```
+
+### `tools\simulate_country_economy_b.py`
+
+```python
+"""Offline 30-day Release-B balance simulation; never imported by production."""
+from __future__ import annotations
+from dataclasses import dataclass
+from statistics import mean
+from packages.core.services.country_economy_rules import calculate_daily
+
+PRESETS={
+ "balanced":{"welfare":2000,"production":2500,"technology":1500,"defense":1000,"intelligence":500,"diplomacy":500,"emergency":2000},
+ "growth":{"welfare":1200,"production":3500,"technology":2500,"defense":700,"intelligence":300,"diplomacy":300,"emergency":1500},
+}
+@dataclass
+class Nation:
+ name:str;citizens:int;active_ratio:float;treasury:int;food:int;energy:int;satisfaction:int=70
+
+def run(n:Nation,preset:str="balanced",days:int=30):
+ mods=[];shortages=0;initial=n.treasury
+ for day in range(days):
+  active=max(1,int(n.citizens*n.active_ratio))
+  n.food+=active*3;n.energy+=active*2;n.treasury+=active*55_000
+  plan=calculate_daily(citizens=n.citizens,food=n.food,energy=n.energy,treasury=n.treasury,satisfaction=n.satisfaction,budget=PRESETS[preset],completed_projects=day//12)
+  n.food-=plan.food_used;n.energy-=plan.energy_used;n.treasury-=plan.budget_spend;n.satisfaction=plan.satisfaction;mods.append(plan.production_modifier_bp)
+  shortages+=int(plan.food_shortage_bp>0 or plan.energy_shortage_bp>0)
+ return {"name":n.name,"citizens":n.citizens,"treasury_growth":n.treasury-initial,"satisfaction":n.satisfaction,"shortage_days":shortages,"avg_modifier_bp":round(mean(mods)),"project_days_estimate":round(2_500_000/max(1,(n.treasury-initial)/days),1)}
+
+def main():
+ rows=[run(Nation("کشور کوچک",8,.5,3_000_000,100,80)),run(Nation("کشور متوسط",40,.35,8_000_000,300,250)),run(Nation("کشور بزرگ",180,.25,25_000_000,900,700),"growth")]
+ print("name,citizens,treasury_growth,satisfaction,shortage_days,avg_modifier_bp,project_days_estimate")
+ for r in rows:print(",".join(str(r[k]) for k in r))
+if __name__=="__main__":main()
 ```
 
 ### `UI_REDESIGN_FA.md`

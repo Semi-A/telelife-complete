@@ -4,11 +4,12 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 def text(path:str)->str:return (ROOT/path).read_text(encoding="utf-8")
 
-def test_recovered_history_ends_at_0013_and_0014_is_strict():
+def test_recovered_history_ends_at_0014_and_0015_is_strict():
     source=text("packages/core/db/migrator.py")
     legacy=source.split("LEGACY_CHECKSUM_VERSIONS = frozenset({",1)[1].split("})",1)[0]
     assert '"0013_country_identity_candles_realism"' in legacy
-    assert '"0014_free_tier_hardening"' not in legacy
+    assert '"0014_free_tier_hardening"' in legacy
+    assert '"0015_purposeful_work_loop"' not in legacy
     assert "Create a new migration instead of editing history" in source
 
 def test_admin_telegram_calls_use_transactional_outbox():

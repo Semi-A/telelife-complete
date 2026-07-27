@@ -11,10 +11,11 @@ from packages.core.db import pool as dbpool
 logger = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-# Migrations through 0013 predate the repository-wide text normalization used
-# by this recovered distribution. Existing databases may therefore contain the
-# same migration history with different raw-text checksums. Never re-run those
-# versions: preserve their records and enforce immutable checksums from 0014 on.
+# Migrations through 0014 were already shipped before this recovered
+# distribution normalized text files. Existing databases can therefore contain
+# the same applied SQL with checksums calculated from the pre-normalized bytes.
+# Never re-run those versions: preserve their records and enforce immutable
+# checksums for every migration introduced after the recovered baseline.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0001_core_schema",
     "0002_progression",
@@ -29,6 +30,7 @@ LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0011_population_channels_migration",
     "0012_reliability_live_market_engagement",
     "0013_country_identity_candles_realism",
+    "0014_free_tier_hardening",
 })
 
 _BOOTSTRAP = """
