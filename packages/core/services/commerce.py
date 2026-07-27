@@ -104,9 +104,24 @@ async def buy_with_treasury(chat_id:int,player_id:int)->int:
   return price
 
 async def approve_ad(ad_id:int,actor:str,note:str|None=None):
- return await db.fetchrow("UPDATE ad_requests SET status='approved_unpaid',approved_by=$2,admin_note=$3,approved_at=now(),payment_expires_at=now()+interval '48 hours',updated_at=now() WHERE id=$1 AND status IN ('pending_review','changes_requested') RETURNING *",ad_id,actor,note)
+ from packages.core.repositories import action_outbox_repo
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("UPDATE ad_requests SET status='approved_unpaid',approved_by=$2,admin_note=$3,approved_at=now(),payment_expires_at=now()+interval '48 hours',updated_at=now() WHERE id=$1 AND status IN ('pending_review','changes_requested') RETURNING *",ad_id,actor,note)
+  if not row:return None
+  owner=await conn.fetchrow("SELECT p.telegram_id FROM players p WHERE p.id=$1",row["requester_player_id"])
+  if not owner:raise ValueError("player_not_found")
+  payload=f"ad:{ad_id}:{int(owner['telegram_id'])}:{uuid4().hex}"
+  await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('advertisement',$1,$2,$3,$4,$5)",ad_id,int(owner["telegram_id"]),int(row["price_stars"]),payload,row["payment_expires_at"])
+  await action_outbox_repo.enqueue(conn,f"ad-approval-invoice:{ad_id}:{payload}","telelife","send_invoice",int(owner["telegram_id"]),{"title":f"پرداخت تبلیغ: {row['title']}","description":"درخواست تأیید شد. این صورتحساب ۴۸ ساعت اعتبار دارد.","invoice_payload":payload,"label":"بسته تبلیغ","stars":int(row["price_stars"])})
+  return row
 async def reject_ad(ad_id:int,actor:str,note:str):
- return await db.fetchrow("UPDATE ad_requests SET status='changes_requested',approved_by=$2,admin_note=$3,updated_at=now() WHERE id=$1 AND status IN ('pending_review','approved_unpaid') RETURNING *",ad_id,actor,note)
+ from packages.core.repositories import action_outbox_repo
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("UPDATE ad_requests SET status='changes_requested',approved_by=$2,admin_note=$3,updated_at=now() WHERE id=$1 AND status IN ('pending_review','approved_unpaid') RETURNING *",ad_id,actor,note)
+  if not row:return None
+  owner=await conn.fetchrow("SELECT p.telegram_id FROM players p WHERE p.id=$1",row["requester_player_id"])
+  if owner:await action_outbox_repo.enqueue(conn,f"ad-revision:{ad_id}:{row['updated_at'].isoformat()}","telelife","send_message",int(owner["telegram_id"]),{"text":f"✏️ درخواست تبلیغ #{ad_id} نیاز به اصلاح دارد:\n\n{note}\n\nبرای اصلاح، درخواست تازه‌ای از بخش تبلیغات ثبت کن."})
+  return row
 
 async def list_ads(limit:int=100):
  return await db.fetch("""SELECT a.id,a.package_code,a.channel,a.title,a.description,a.target_url,a.image_mime,a.status,a.price_stars,a.impressions_planned,a.campaign_hours,a.admin_note,a.requested_start_at,a.payment_expires_at,a.paid_at,a.first_delivery_at,a.created_at,p.telegram_id,p.first_name,

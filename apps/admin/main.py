@@ -1,6 +1,7 @@
 """Authenticated, lightweight administration command center."""
 from __future__ import annotations
 from pathlib import Path
+from urllib.parse import urlsplit
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,16 +20,28 @@ app.include_router(country_admin_router)
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
-    # JSON APIs already trigger CORS preflight; this also protects legacy form routes.
+    # Mutating admin APIs are same-origin JSON only. This is stateless and costs
+    # no extra service while blocking cross-site form and simple-request attacks.
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        host = request.headers.get("host", "").lower()
         origin = request.headers.get("origin")
-        host = request.headers.get("host")
-        if origin and host and origin.split("://", 1)[-1] != host:
-            return JSONResponse({"detail": "درخواست از مبدأ نامعتبر رد شد."}, status_code=403)
+        referer = request.headers.get("referer")
+        supplied = origin or referer
+        if supplied:
+            try: supplied_host = urlsplit(supplied).netloc.lower()
+            except ValueError: supplied_host = ""
+            if not host or supplied_host != host:
+                return JSONResponse({"detail": "درخواست از مبدأ نامعتبر رد شد."}, status_code=403)
+        if request.url.path.startswith("/api/admin"):
+            content_type=request.headers.get("content-type","").split(";",1)[0].strip().lower()
+            if content_type != "application/json":
+                return JSONResponse({"detail": "درخواست مدیریتی باید JSON باشد."}, status_code=415)
     response: Response = await call_next(request)
     response.headers.update({
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
         "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+        "Cross-Origin-Opener-Policy": "same-origin",
         "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; "
           "script-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'",
     })

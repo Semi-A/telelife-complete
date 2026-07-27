@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from datetime import datetime
 from uuid import uuid4
-from fastapi import APIRouter, Depends, Form, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
@@ -190,24 +190,7 @@ async def enqueue_news(body: NewsBody, actor: AdminActor) -> dict[str, bool]:
     return {"queued": await admin.enqueue_news(
         actor, body.text, destination, str(uuid4()))}
 
-# Backward-compatible form routes.
-@router.post("/ban/{player_id}")
-async def ban_form(player_id: int, actor: AdminActor,
-                   enabled: Annotated[bool, Form()],
-                   reason: Annotated[str | None, Form()] = None) -> dict[str, bool]:
-    return {"applied": await admin.ban(actor, player_id, enabled, reason, str(uuid4()))}
-
-@router.post("/grant-xp/{player_id}")
-async def grant_form(player_id: int, actor: AdminActor,
-                     amount: Annotated[int, Form(gt=0, le=1_000_000)]) -> dict[str, int]:
-    result = await admin.grant_xp(actor, player_id, amount, str(uuid4()))
-    return {"granted": result.granted if result else 0}
-
-@router.post("/feature/{key}")
-async def feature(key: str, actor: AdminActor,
-                  enabled: Annotated[bool, Form()]) -> dict[str, bool]:
-    return {"applied": await admin.feature(actor, key, enabled, str(uuid4()))}
-
+# State-changing admin routes intentionally accept JSON only.
 @router.get("/ads")
 async def ads(limit: Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
     return [dict(row) for row in await admin_repo.ads(limit)]
@@ -238,18 +221,10 @@ async def edit_ad_request(ad_id:int,body:AdEditBody,actor:AdminActor)->dict[str,
 async def approve_ad_request(ad_id:int,body:AdReviewBody,actor:AdminActor)->dict[str,bool]:
  row=await commerce.approve_ad(ad_id,actor,body.note)
  if not row:raise HTTPException(409,"وضعیت درخواست قابل تأیید نیست.")
- owner=await admin_repo.ad_owner(ad_id);payload,stars,title=await commerce.ad_invoice(ad_id,int(owner["telegram_id"]))
- from telegram import Bot,LabeledPrice
- async with Bot(get_settings().telelife_bot_token) as bot:
-  await bot.send_invoice(chat_id=owner["telegram_id"],title=f"پرداخت تبلیغ: {title}",description="درخواست تأیید شد. این صورتحساب ۴۸ ساعت اعتبار دارد.",payload=payload,currency="XTR",prices=[LabeledPrice("بسته تبلیغ",stars)],provider_token="")
  return {"approved":True}
 @router.post("/ad-requests/{ad_id}/reject")
 async def reject_ad_request(ad_id:int,body:AdRejectBody,actor:AdminActor)->dict[str,bool]:
  row=await commerce.reject_ad(ad_id,actor,body.reason)
- if row:
-  from telegram import Bot
-  owner=await admin_repo.ad_owner(ad_id)
-  async with Bot(get_settings().telelife_bot_token) as bot:await bot.send_message(owner["telegram_id"],f"✏️ درخواست تبلیغ #{ad_id} نیاز به اصلاح دارد:\n\n{body.reason}\n\nبرای اصلاح، درخواست تازه‌ای از بخش تبلیغات ثبت کن.")
  return {"rejected":bool(row)}
 @router.post("/ad-requests/{ad_id}/pause")
 async def pause_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:return {"paused":bool(await commerce.pause_ad(ad_id))}
