@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 215
+تعداد کل فایل‌ها: 217
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -192,6 +192,7 @@ telelife_complete/
 ├── tests/
 │   ├── __init__.py
 │   ├── conftest.py
+│   ├── test_admin_2026_hardening.py
 │   ├── test_all_keyboard_states.py
 │   ├── test_callbacks.py
 │   ├── test_clock.py
@@ -231,6 +232,7 @@ telelife_complete/
 ├── .env.example
 ├── .gitignore
 ├── AUDIT_AND_DEPLOY_FA_2026-07-27.md
+├── AUDIT_FINAL_FA_2026-07-27.md
 ├── AUDIT_STATUS.md
 ├── CHANGELOG_FA.md
 ├── CHANGELOG_FA_2026-07-27.md
@@ -335,14 +337,16 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from packages.core.settings import get_settings
 
-security = HTTPBasic()
+security = HTTPBasic(auto_error=False)
 
 
 def require_admin(
-    credentials: Annotated[HTTPBasicCredentials, Depends(security)],
+    credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
 ) -> str:
     """Authenticate an admin with constant-time credential comparisons."""
     settings = get_settings()
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized", headers={"WWW-Authenticate": "Basic"})
     username_ok = secrets.compare_digest(credentials.username, settings.admin_username)
     password_ok = secrets.compare_digest(credentials.password, settings.admin_password)
     if not (username_ok and password_ok):
@@ -360,7 +364,7 @@ def require_admin(
 """Authenticated, lightweight administration command center."""
 from __future__ import annotations
 from pathlib import Path
-from fastapi import Depends, FastAPI, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -378,6 +382,12 @@ app.include_router(country_admin_router)
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    # JSON APIs already trigger CORS preflight; this also protects legacy form routes.
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        host = request.headers.get("host")
+        if origin and host and origin.split("://", 1)[-1] != host:
+            return JSONResponse({"detail": "درخواست از مبدأ نامعتبر رد شد."}, status_code=403)
     response: Response = await call_next(request)
     response.headers.update({
         "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
@@ -478,6 +488,33 @@ def fail(exc: ValueError) -> HTTPException:
 
 class FreezeBody(BaseModel):
     enabled: bool
+
+class FeatureBody(BaseModel):
+    enabled: bool
+
+@router.get("/engagement")
+async def engagement_overview() -> dict[str, object]:
+    return await admin_repo.engagement_overview()
+
+@router.get("/feature-flags")
+async def feature_flags() -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.feature_flags()]
+
+@router.put("/feature-flags/{key}")
+async def set_feature_flag(key: str, body: FeatureBody, actor: AdminActor) -> dict[str, bool]:
+    allowed = {"economy_frozen", "usd_market_frozen", "ads_frozen", "registrations_frozen"}
+    if key not in allowed:
+        raise HTTPException(400, "این کلید مدیریتی مجاز نیست.")
+    return {"applied": await admin.feature(actor, key, body.enabled, str(uuid4()))}
+
+@router.get("/ledger")
+async def ledger(limit: Annotated[int, Query(ge=1, le=500)] = 100,
+                 player_id: Annotated[int | None, Query(gt=0)] = None) -> list[dict[str, object]]:
+    return [dict(row) for row in await admin_repo.ledger_rows(limit, player_id)]
+
+@router.get("/economy-integrity")
+async def economy_integrity() -> dict[str, object]:
+    return await admin_repo.economy_integrity()
 
 @router.get("/operations")
 async def operations() -> dict[str, object]:
@@ -665,7 +702,12 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .request-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:16px}.request-card{padding:0;overflow:hidden}.request-card>img{width:100%;height:190px;object-fit:cover;background:#061623}.request-card>div{padding:20px}.request-card h3{margin:4px 0 10px}.request-card p{color:var(--muted);font-size:12px;line-height:1.8}.request-card a{display:block;color:var(--cyan);font-size:11px;direction:ltr;text-align:left;overflow-wrap:anywhere;margin:10px 0}.request-card small{display:block;color:var(--dim);margin:12px 0}
 /* Operations room — inspired by an exchange tape, not a generic KPI dashboard. */
 .rate-ticker{position:relative;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:24px;padding:28px 32px;margin-bottom:16px;border-radius:6px;background:linear-gradient(100deg,#071824 0 62%,#0b2630 100%)}
-.rate-ticker:after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),var(--blue),transparent);animation:tape 4s linear infinite}.rate-ticker strong{display:block;font:500 clamp(32px,5vw,64px) JetBrains Mono,monospace;letter-spacing:-3px}.rate-ticker small{color:var(--muted)}.source-seal{font:700 10px JetBrains Mono,monospace;color:var(--cyan);letter-spacing:2px}.ticker-actions{display:flex;gap:8px;flex-wrap:wrap}.sparkline{position:absolute;inset:0 43% 0 0;opacity:.16;pointer-events:none}.ops-head{padding:22px 24px 0}.legend{font-size:10px;color:var(--muted);display:flex;gap:7px;align-items:center}.legend i{width:7px;height:7px;border-radius:50%}.legend .ok{background:var(--cyan)}.legend .bad{background:var(--rose)}.job-error{max-width:320px;white-space:normal;color:#ff9eb2}.source-stale{color:#ffbd70!important}.source-live{color:var(--cyan)!important}@keyframes tape{from{transform:translateX(100%)}to{transform:translateX(-100%)}}@media(max-width:650px){.rate-ticker{align-items:flex-start;flex-direction:column;padding:22px}.rate-ticker strong{letter-spacing:-2px}.sparkline{inset:0;opacity:.08}}
+.rate-ticker:after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),var(--blue),transparent);animation:tape 4s linear infinite}.rate-ticker strong{display:block;font:500 clamp(32px,5vw,64px) JetBrains Mono,monospace;letter-spacing:-3px}.rate-ticker small{color:var(--muted)}.source-seal{font:700 10px JetBrains Mono,monospace;color:var(--cyan);letter-spacing:2px}.ticker-actions{display:flex;gap:8px;flex-wrap:wrap}.sparkline{position:absolute;inset:0 43% 0 0;opacity:.16;pointer-events:none}.ops-head{padding:22px 24px 0}.legend{font-size:10px;color:var(--muted);display:flex;gap:7px;align-items:center}.legend i{width:7px;height:7px;border-radius:50%}.legend .ok{background:var(--cyan)}.legend .bad{background:var(--rose)}.job-error{max-width:320px;white-space:normal;color:#ff9eb2}.source-stale{color:#ffbd70!important}.source-live{color:var(--cyan)!important}@keyframes tape{from{transform:translateX(100%)}to{transform:translateX(-100%)}}@media(max-width:650px){.rate-ticker{align-items:flex-start;flex-direction:column;padding:22px}.rate-ticker strong{letter-spacing:-2px}.sparkline{inset:0;opacity:.08}}/* 2026 Command Atlas — redesigned around retention, auditability and calm density. */
+:root{--bg:#071017;--panel:#0b1821;--panel-2:#0f212c;--ink:#eaf3f5;--muted:#8aa1aa;--dim:#58707a;--cyan:#43d6c5;--blue:#72a7ff;--violet:#b394ff;--rose:#ff718d;--amber:#f4bd68;--line:rgba(145,187,198,.15);--shadow:0 22px 60px rgba(0,0,0,.26)}
+body{background:linear-gradient(125deg,#071017 0 57%,#08151e 57% 100%);font-family:TL,"Segoe UI",sans-serif}.noise{opacity:.055}.rail{width:264px;background:rgba(5,14,20,.94);border-left-color:rgba(91,214,198,.16);padding:24px 16px}.shell{margin-right:264px;max-width:1800px}.brand-mark{border-radius:7px;transform:rotate(-7deg);background:#102b31}.brand small{color:var(--cyan)}nav{gap:3px;overflow:auto}.nav{border-radius:8px;padding:10px 13px}.nav:hover,.nav.active{background:#10232c;box-shadow:inset -3px 0 var(--cyan)}.topbar{height:96px}.hero-card,.signal-card,.panel,.metric-grid article,.country-card,.market-cards article{border-radius:10px;background:linear-gradient(145deg,rgba(14,31,40,.94),rgba(8,21,29,.95));box-shadow:0 14px 42px rgba(0,0,0,.2)}.hero-card{border-top:3px solid var(--cyan)}.orbit{border-radius:8px;transform:rotate(8deg)}.orbit:before,.orbit:after{border-radius:8px}.primary,.small-btn,.secondary,.quick-grid button,.asset-tabs button{border-radius:7px}.metric-grid-five{grid-template-columns:repeat(5,1fr)}.metric-grid article{position:relative;overflow:hidden}.metric-grid article:after{content:"";position:absolute;right:0;bottom:0;width:35%;height:2px;background:var(--cyan)}
+.funnel{display:grid;gap:12px}.funnel-row{display:grid;grid-template-columns:140px 1fr 58px;gap:12px;align-items:center}.funnel-row span{font-size:11px;color:var(--muted)}.funnel-track{height:13px;background:#071219;border:1px solid var(--line);overflow:hidden}.funnel-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue));transform-origin:right}.funnel-row b{font:600 12px "JetBrains Mono",monospace;text-align:left}.insight-list{display:grid;gap:10px}.insight{display:grid;grid-template-columns:9px 1fr;gap:12px;padding:13px;background:#08171f;border:1px solid var(--line)}.insight i{width:7px;height:7px;margin-top:7px;border-radius:50%;background:var(--cyan)}.insight.warn i{background:var(--amber)}.insight strong{font-size:12px}.insight p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.8}
+.control-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.control-card{border:1px solid var(--line);background:var(--panel);padding:22px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.control-card h3{margin:0 0 6px}.control-card p{margin:0;color:var(--muted);font-size:11px}.toggle{width:52px;height:28px;border:1px solid var(--line);background:#061219;padding:3px;cursor:pointer}.toggle i{display:block;width:20px;height:20px;background:var(--dim);transition:.2s}.toggle.on{background:#173b39;border-color:#43d6c566}.toggle.on i{transform:translateX(-24px);background:var(--cyan)}.safety-note{display:flex;gap:16px;align-items:center;margin-top:16px}.safety-mark{font:700 28px Georgia;color:var(--amber);border:1px solid #f4bd6844;width:46px;height:46px;display:grid;place-items:center}.safety-note h3,.safety-note p{margin:0}.safety-note p{color:var(--muted);font-size:11px;margin-top:5px}.amount-positive{color:var(--cyan)}.amount-negative{color:var(--rose)}.mono{font-family:"JetBrains Mono",monospace;direction:ltr;text-align:right}.danger-zone{border-color:#ff718d55!important}.danger-zone h3{color:#ff9aae}
+@media(max-width:1200px){.metric-grid-five{grid-template-columns:repeat(3,1fr)}}@media(max-width:1050px){.rail{width:82px}.shell{margin-right:82px}.control-grid{grid-template-columns:1fr}}@media(max-width:650px){.rail{width:auto}.shell{margin:0}.metric-grid-five{grid-template-columns:1fr 1fr}.funnel-row{grid-template-columns:92px 1fr 48px}.control-card{padding:16px}}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -679,7 +721,7 @@ function toast(message,error=false){const el=$("#toast");el.textContent=message;
 async function api(url,options={}){const res=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
-function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده"}[name];history.replaceState(null,"",`#${name}`);load(name)}
+function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده",engagement:"ماندگاری کاربران",ledger:"دفتر اقتصاد",audit:"گزارش حسابرسی",controls:"کنترل سامانه"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
 async function overview(){const [o,h]=await Promise.all([api('/api/admin/overview'),api('/healthz')]);$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i>${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';await market(true)}
 function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
@@ -700,9 +742,9 @@ let searchTimer;$("#player-search").oninput=()=>{clearTimeout(searchTimer);searc
 
 async function requests(){const rows=await api('/api/admin/ad-requests?limit=100');$("#ad-requests").innerHTML=rows.map(x=>`<article class="panel request-card">${x.image_mime?`<img src="/api/admin/ad-requests/${x.id}/image" alt="تصویر تبلیغ">`:''}<div><p class="eyebrow">#${x.id} · ${esc(x.package_code)} · ${esc(x.channel)} · ${fa.format(x.price_stars)} ⭐</p><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><a href="${esc(x.target_url)}" target="_blank" rel="noopener">${esc(x.target_url)}</a><small>${esc(x.first_name)} · ${date(x.created_at)} · ${esc(x.status)} · ارسال‌شده ${fa.format(x.delivered||0)} · در انتظار ${fa.format(x.pending||0)}</small><div class="country-actions"><button class="small-btn" data-editrequest="${x.id}" data-title="${esc(x.title)}" data-description="${esc(x.description)}" data-url="${esc(x.target_url)}">ویرایش</button><button class="small-btn" data-approve="${x.id}">تأیید و صدور پرداخت</button><button class="small-btn danger" data-reject="${x.id}">درخواست اصلاح</button><button class="small-btn" data-pause="${x.id}">توقف</button><button class="small-btn" data-refund="${x.id}">بازپرداخت</button></div></div></article>`).join('')||'<div class="empty">درخواستی وجود ندارد</div>';$$('[data-editrequest]').forEach(b=>b.onclick=()=>editRequest(b));$$('[data-approve]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.approve,'approve'));$$('[data-reject]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.reject,'reject'));$$('[data-pause]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.pause,'pause'));$$('[data-refund]').forEach(b=>b.onclick=()=>reviewAction(b.dataset.refund,'refund'))}
 
-async function editRequest(b){const title=prompt('عنوان',b.dataset.title);if(title===null)return;const description=prompt('توضیحات',b.dataset.description);if(description===null)return;const target_url=prompt('لینک',b.dataset.url);if(target_url===null)return;try{await api(`/api/admin/ad-requests/${b.dataset.editrequest}`,{method:'PUT',body:JSON.stringify({title,description,target_url,requested_start_at:null})});toast('درخواست ویرایش شد');requests()}catch(e){toast(e.message,true)}}
+function editRequest(b){openDialog(`ویرایش درخواست #${b.dataset.editrequest}`,"بازبینی محتوای تبلیغ",`<label>عنوان<input id="f-ad-title" maxlength="120" value="${esc(b.dataset.title)}"></label><label>توضیحات<textarea id="f-ad-description" maxlength="2000">${esc(b.dataset.description)}</textarea></label><label>نشانی مقصد<input id="f-ad-url" maxlength="1000" dir="ltr" value="${esc(b.dataset.url)}"></label>`,async()=>{try{await api(`/api/admin/ad-requests/${b.dataset.editrequest}`,{method:'PUT',body:JSON.stringify({title:$("#f-ad-title").value.trim(),description:$("#f-ad-description").value.trim(),target_url:$("#f-ad-url").value.trim(),requested_start_at:null})});$("#action-dialog").close();toast('درخواست ویرایش شد');requests()}catch(e){toast(e.message,true)}})}
 
-async function reviewAction(id,action){let body={};if(action==='reject'){const reason=prompt('دلیل اصلاح را بنویس');if(!reason)return;body={reason}}else if(action==='approve')body={note:null};try{await api(`/api/admin/ad-requests/${id}/${action}`,{method:'POST',body:JSON.stringify(body)});toast('وضعیت درخواست به‌روزرسانی شد');requests()}catch(e){toast(e.message,true)}}
+function reviewAction(id,action){const labels={approve:'تأیید و صدور صورتحساب',reject:'درخواست اصلاح',pause:'توقف پخش',refund:'بازپرداخت'};const dangerous=['pause','refund','reject'].includes(action);const fields=action==='reject'?'<label>دلیل روشن برای اصلاح<textarea id="f-review-reason" maxlength="1000"></textarea></label>':`<p class="confirm-copy">عملیات <b>${labels[action]}</b> روی درخواست #${id} انجام می‌شود.${dangerous?' این تغییر حساس است و در گزارش ثبت خواهد شد.':''}</p>`;openDialog(labels[action],dangerous?'عملیات حساس':'بازبینی نهایی',fields,async()=>{const body=action==='reject'?{reason:$("#f-review-reason").value.trim()}:action==='approve'?{note:null}:{};if(action==='reject'&&body.reason.length<3)return toast('دلیل اصلاح را کامل بنویس',true);try{await api(`/api/admin/ad-requests/${id}/${action}`,{method:'POST',body:JSON.stringify(body)});$("#action-dialog").close();toast('وضعیت درخواست به‌روزرسانی شد');requests()}catch(e){toast(e.message,true)}})}
 
 async function ads(){const rows=await api('/api/admin/ads?limit=100');$("#ad-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p><b>${esc(x.title)}</b></p><small>${esc(x.status)} · مقصد ${esc(x.destination_chat_id)} · ${date(x.scheduled_at||x.created_at)}</small></div><button class="small-btn" data-adqueue="${x.id}">ارسال حالا</button></div>`).join('')||'<div class="empty">هنوز کمپینی ساخته نشده است</div>';$$('[data-adqueue]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/ads/${b.dataset.adqueue}/queue`,{method:'POST',body:'{}'});toast("تبلیغ وارد صف شد");ads()}catch(e){toast(e.message,true)}})}
 $("#save-ad").onclick=async()=>{const title=$("#ad-title").value.trim(),text=$("#ad-text").value.trim(),destination=Number($("#ad-destination").value),raw=$("#ad-scheduled").value,repeat=$("#ad-repeat").value;if(title.length<3||text.length<3||!destination)return toast("عنوان، متن و گروه مقصد را کامل کن",true);try{await api('/api/admin/ads',{method:'POST',body:JSON.stringify({title,text,destination,scheduled_at:raw?new Date(raw).toISOString():null,repeat_minutes:repeat?Number(repeat):null})});$("#ad-title").value=$("#ad-text").value='';toast("کمپین ذخیره شد");ads()}catch(e){toast(e.message,true)}};
@@ -725,7 +767,23 @@ $('#ops-refresh').onclick=()=>operations().catch(e=>toast(e.message,true));
 $('#sync-rate').onclick=async()=>{try{await api('/api/admin/operations/market/sync',{method:'POST',body:'{}'});toast('نرخ معتبر Zipodo ثبت شد');operations()}catch(e){toast(e.message,true)}};
 $('#freeze-market').onclick=async()=>{try{await api('/api/admin/operations/market/freeze',{method:'POST',body:JSON.stringify({enabled:!state.ops?.market_frozen})});toast(state.ops?.market_frozen?'بازار باز شد':'بازار متوقف شد');operations()}catch(e){toast(e.message,true)}};
 document.addEventListener('visibilitychange',()=>{clearInterval(state.opsTimer);if(!document.hidden)state.opsTimer=setInterval(()=>{if(location.hash==='#operations')operations().catch(()=>{})},30000)});state.opsTimer=setInterval(()=>{if(!document.hidden&&location.hash==='#operations')operations().catch(()=>{})},30000);
-function load(name){({overview,market,operations,players,countries,news,ads,requests}[name]||overview)().catch(e=>toast(e.message,true))}
+async function engagement(){
+ const d=await api('/api/admin/engagement'),a=d.activity||{},dy=d.daily||{},m=d.missions||{},o=d.onboarding||{};
+ const metrics=[['فعال امروز',a.active_24h,'بازیکن یکتا'],['فعال ۷ روز',a.active_7d,'هفته جاری'],['هدیه امروز',dy.claimed_today,'دریافت موفق'],['زنجیره ۷+',dy.streak_7,'کاربر وفادار'],['شروع کامل',o.completed,'چهار قدم']];
+ $('#engagement-metrics').innerHTML=metrics.map(([k,v,s])=>`<article><span>${k}</span><strong>${fa.format(v||0)}</strong><small>${s}</small></article>`).join('');
+ const total=Math.max(Number(a.total||0),1),f=[['کل بازیکنان',a.total],['فعال ۳۰ روز',a.active_30d],['شروع کامل',o.completed],['رسیده به شغل',a.reached_jobs],['رسیده به بازار',a.reached_market]];
+ $('#retention-funnel').innerHTML=f.map(([k,v])=>{const pct=Math.min(100,Math.round(Number(v||0)*100/total));return `<div class="funnel-row"><span>${k}</span><div class="funnel-track"><div class="funnel-fill" style="width:${pct}%"></div></div><b>${fa.format(pct)}٪</b></div>`}).join('');
+ const claimRate=Math.round(Number(dy.claimed_today||0)*100/Math.max(Number(a.active_24h||0),1)),completeRate=Math.round(Number(o.completed||0)*100/Math.max(Number(o.completed||0)+Number(o.incomplete||0),1)),missionRate=Math.round(Number(m.completed_today||0)*100/Math.max(Number(m.assigned_today||0),1));
+ const insights=[[completeRate<70,'مسیر شروع',completeRate<70?`فقط ${fa.format(completeRate)}٪ مسیر چهارمرحله‌ای را کامل کرده‌اند؛ متن یا قدم پرت‌ریزش را کوتاه کن.`:'مسیر شروع سالم است؛ تغییر بزرگ نده.'],[claimRate<45,'هدیه روزانه',claimRate<45?`نرخ دریافت میان فعال‌های امروز ${fa.format(claimRate)}٪ است؛ دکمه هدیه را در خانه پررنگ‌تر نگه دار.`:'هدیه روزانه به‌خوبی دیده می‌شود.'],[missionRate<35,'کارهای امروز',missionRate<35?`تکمیل کارها ${fa.format(missionRate)}٪ است؛ هدف‌ها احتمالاً سخت یا نامشخص‌اند.`:'سختی کارهای روزانه متعادل است.']];
+ $('#engagement-insights').innerHTML=insights.map(([warn,t,b])=>`<div class="insight ${warn?'warn':''}"><i></i><div><strong>${t}</strong><p>${b}</p></div></div>`).join('');
+}
+async function ledger(){const raw=$('#ledger-player').value.trim(),[rows,integrity]=await Promise.all([api(`/api/admin/ledger?limit=200${raw?`&player_id=${encodeURIComponent(raw)}`:''}`),api('/api/admin/economy-integrity')]);$('#integrity-metrics').innerHTML=[['موجودی منفی بازیکن',integrity.negative_players],['خزانه منفی',integrity.negative_countries],['ردیف منفی غیرمجاز',integrity.negative_ledger_rows],['تراکنش ۲۴ ساعت',integrity.ledger_24h]].map(([k,v])=>`<article><span>${k}</span><strong>${fa.format(v||0)}</strong><small>${Number(v||0)===0?'وضعیت سالم':'نیازمند بررسی'}</small></article>`).join('');$('#ledger-body').innerHTML=rows.map(x=>`<tr><td><b>${date(x.created_at)}</b><small>#${x.id}</small></td><td><b>${esc(x.first_name||'کشور')}</b><small>${x.player_id?'بازیکن #'+x.player_id:'کشور #'+x.country_id}</small></td><td>${esc(x.reason)}</td><td><span class="badge">${esc(x.asset_code)}</span><br><small>${esc(x.account)}</small></td><td class="mono ${Number(x.amount)>=0?'amount-positive':'amount-negative'}">${Number(x.amount)>=0?'+':''}${fa.format(x.amount)}</td><td class="mono">${fa.format(x.balance_after)}</td></tr>`).join('')||'<tr><td colspan="6">تراکنشی پیدا نشد.</td></tr>'}
+async function audit(){const rows=await api('/api/admin/audit?limit=200');$('#audit-body').innerHTML=rows.map(x=>`<tr><td>${date(x.created_at)}</td><td><b>${esc(x.admin_actor)}</b></td><td><span class="badge">${esc(x.action)}</span></td><td>${x.target_player_id?'بازیکن #'+x.target_player_id:x.target_country_id?'کشور #'+x.target_country_id:'سامانه'}</td><td><small>${esc(JSON.stringify(x.details||{}))}</small></td><td class="mono"><small>${esc(x.request_id)}</small></td></tr>`).join('')||'<tr><td colspan="6">هنوز عملیاتی ثبت نشده است.</td></tr>'}
+const flagMeta={economy_frozen:['توقف کامل اقتصاد','تراکنش‌های اقتصادی کاربران متوقف می‌شود.'],usd_market_frozen:['توقف بازار ارز','خرید و فروش ارز متوقف می‌شود.'],ads_frozen:['توقف تبلیغات','پخش تبلیغات متوقف می‌شود.'],registrations_frozen:['توقف ثبت‌نام','ورود کاربران تازه متوقف می‌شود.']};
+async function controls(){const rows=await api('/api/admin/feature-flags'),map=Object.fromEntries(rows.map(x=>[x.key,x]));$('#flag-grid').innerHTML=Object.entries(flagMeta).map(([key,[title,desc]])=>{const on=Boolean(map[key]?.enabled);return `<article class="control-card ${on?'danger-zone':''}"><div><h3>${title}</h3><p>${desc} · ${map[key]?`آخرین تغییر ${date(map[key].updated_at)}`:'هنوز تنظیم نشده'}</p></div><button class="toggle ${on?'on':''}" data-flag="${key}" data-enabled="${on}" aria-label="${title}"><i></i></button></article>`}).join('');$$('[data-flag]').forEach(b=>b.onclick=()=>confirmFlag(b.dataset.flag,b.dataset.enabled==='true'))}
+function confirmFlag(key,on){const [title,desc]=flagMeta[key];openDialog(on?`غیرفعال‌کردن: ${title}`:`فعال‌کردن: ${title}`,"تأیید عملیات حساس",`<p class="confirm-copy">${desc}</p><label>برای تأیید بنویس «تأیید»<input id="f-confirm-word" autocomplete="off"></label>`,async()=>{if($('#f-confirm-word').value.trim()!=='تأیید')return toast('واژه تأیید درست وارد نشده است',true);try{await api(`/api/admin/feature-flags/${key}`,{method:'PUT',body:JSON.stringify({enabled:!on})});$('#action-dialog').close();toast('کنترل سامانه به‌روزرسانی شد');controls()}catch(e){toast(e.message,true)}})}
+$$('[data-reload]').forEach(b=>b.onclick=()=>load(b.dataset.reload));let ledgerTimer;$('#ledger-player').oninput=()=>{clearTimeout(ledgerTimer);ledgerTimer=setTimeout(ledger,350)};
+function load(name){({overview,market,operations,engagement,players,countries,news,ads,requests,ledger,audit,controls}[name]||overview)().catch(e=>toast(e.message,true))}
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
 ```
 
@@ -750,11 +808,15 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
     <button class="nav active" data-view="overview"><span>◈</span><em>نمای کلی</em></button>
     <button class="nav" data-view="market"><span>⌁</span><em>بازار</em></button>
     <button class="nav" data-view="operations"><span>≋</span><em>عملیات زنده</em></button>
+    <button class="nav" data-view="engagement"><span>↗</span><em>ماندگاری</em></button>
     <button class="nav" data-view="players"><span>◎</span><em>بازیکنان</em></button>
     <button class="nav" data-view="countries"><span>◇</span><em>کشورها</em></button>
     <button class="nav" data-view="news"><span>◉</span><em>اتاق خبر</em></button>
     <button class="nav" data-view="ads"><span>✦</span><em>تبلیغات</em></button>
     <button class="nav" data-view="requests"><span>▣</span><em>درخواست‌ها</em></button>
+    <button class="nav" data-view="ledger"><span>≜</span><em>دفتر اقتصاد</em></button>
+    <button class="nav" data-view="audit"><span>⌾</span><em>حسابرسی</em></button>
+    <button class="nav" data-view="controls"><span>⏻</span><em>کنترل سامانه</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -776,6 +838,11 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
     <article class="panel chart-panel"><div class="panel-head"><div><p class="eyebrow">نبض بازار</p><h2>حرکت دارایی‌های اصلی</h2></div><button class="text-btn" data-go="market">مشاهده بازار ←</button></div><div id="mini-chart" class="chart-wrap"><div class="empty">داده بازار در حال بارگذاری است</div></div></article>
     <article class="panel"><div class="panel-head"><div><p class="eyebrow">کنترل سریع</p><h2>عملیات پرتکرار</h2></div></div><div class="quick-grid"><button data-go="players">اعطای XP<small>مدیریت پیشرفت</small></button><button data-go="countries">تنظیم منابع<small>اقتصاد کشور</small></button><button data-go="news">ارسال خبر<small>صف انتشار</small></button><button data-go="market">قیمت بازار<small>ثبت نقطه جدید</small></button></div></article>
   </div>
+</section>
+<section class="view" id="view-engagement">
+  <div class="section-lead"><div><p class="eyebrow">چرخه بازگشت کاربر</p><h2>ماندگاری و مسیر شروع</h2><p>به‌جای عددهای تزئینی، گلوگاه‌های واقعی ورود، هدیه و کارهای روزانه را ببین.</p></div><button class="secondary" data-reload="engagement">تازه‌سازی</button></div>
+  <div id="engagement-metrics" class="metric-grid metric-grid-five"></div>
+  <div class="split"><article class="panel"><div class="panel-head"><div><p class="eyebrow">قیف امروز</p><h2>از ورود تا عادت روزانه</h2></div></div><div id="retention-funnel" class="funnel"></div></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">راهنمای اقدام</p><h2>چه چیزی را بهتر کنیم؟</h2></div></div><div id="engagement-insights" class="insight-list"></div></article></div>
 </section>
 <section class="view" id="view-market">
   <div class="section-lead"><div><p class="eyebrow">دفتر رسمی قیمت</p><h2>بازار و نرخ دارایی‌ها</h2><p>هر تغییر قیمت ثبت و وارد تاریخچه نمودار می‌شود.</p></div><select id="market-range"><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option><option value="720">۳۰ روز</option></select></div>
@@ -813,6 +880,20 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
   </article><article class="panel"><div class="panel-head"><div><p class="eyebrow">کمپین‌ها</p><h2>صف تبلیغات</h2></div></div><div id="ad-list" class="news-list"></div></article></div>
 </section>
 <section class="view" id="view-requests"><div class="section-lead"><div><p class="eyebrow">بازبینی پیش از پرداخت</p><h2>درخواست‌های تبلیغ</h2><p>جزئیات، تصویر و لینک را بررسی و ویرایش کن؛ فقط پس از تأیید، مهلت پرداخت ۴۸ساعته آغاز می‌شود.</p></div></div><div id="ad-requests" class="request-grid"></div></section>
+<section class="view" id="view-ledger">
+  <div class="section-lead"><div><p class="eyebrow">منبع حقیقت اقتصاد</p><h2>دفتر تراکنش‌ها</h2><p>گردش دارایی، موجودی پس از عملیات و کلیدهای قابل پیگیری.</p></div><label class="search"><span>⌕</span><input id="ledger-player" inputmode="numeric" placeholder="فیلتر با شناسه بازیکن…"></label></div>
+  <div id="integrity-metrics" class="metric-grid"></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>زمان / شناسه</th><th>مالک</th><th>علت</th><th>دارایی</th><th>تغییر</th><th>مانده</th></tr></thead><tbody id="ledger-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-audit">
+  <div class="section-lead"><div><p class="eyebrow">ردپای تغییرات حساس</p><h2>گزارش حسابرسی مدیران</h2><p>چه کسی، چه زمانی و روی کدام بازیکن یا کشور تغییر اعمال کرده است.</p></div><button class="secondary" data-reload="audit">تازه‌سازی</button></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>زمان</th><th>مدیر</th><th>عملیات</th><th>هدف</th><th>جزئیات</th><th>شناسه درخواست</th></tr></thead><tbody id="audit-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-controls">
+  <div class="section-lead"><div><p class="eyebrow">کلیدهای توقف امن</p><h2>کنترل سامانه</h2><p>هر تغییر ثبت حسابرسی می‌شود. توقف اضطراری را فقط هنگام رخداد واقعی فعال کن.</p></div></div>
+  <div id="flag-grid" class="control-grid"></div>
+  <article class="panel safety-note"><div class="safety-mark">!</div><div><h3>قاعده دو مرحله‌ای</h3><p>برای هر تغییر مخرب، پنجره تأیید نام عملیات و اثر آن را دوباره نشان می‌دهد. این اصطکاک کوچک جلوی کلیک‌های گران‌قیمت را می‌گیرد.</p></div></article>
+</section>
 </main>
 <dialog id="action-dialog"><form method="dialog"><button class="dialog-close" value="cancel">×</button><p class="eyebrow" id="dialog-kicker">عملیات مدیریت</p><h2 id="dialog-title">—</h2><div id="dialog-fields"></div><div class="dialog-actions"><button value="cancel" class="secondary">انصراف</button><button type="button" id="dialog-confirm" class="primary">اعمال تغییر</button></div></form></dialog>
 {% endblock %}
@@ -3403,6 +3484,63 @@ GOV_CONFIRM='<b>{title}</b>\n\n{description}\n\nاین مدل فقط برچسب 
 - اسکن قفل nullable: مورد خطادار باقی نمانده
 - تست‌های رگرسیون قیمت و parser نرخ اضافه شد
 - اجرای کامل pytest در محیط تحویل ممکن نبود، چون محیط آفلاین ابزار `pytest` و وابستگی‌های پروژه را نصب نداشت. در CI/محیط پروژه اجرا شود: `python -m pytest -q`.
+```
+
+### `AUDIT_FINAL_FA_2026-07-27.md`
+
+```markdown
+# ممیزی نهایی TeleLife — ۲۷ ژوئیهٔ ۲۰۲۶
+
+## خلاصه اجرایی
+پروژه از دامپ ۲۱۵ بخشی بازسازی شد؛ ۲۱۳ فایل متنی بازیابی شدند و دو فایل غیرمتنی تولیدشدنی (`.dockerignore` و `MANIFEST.sha256`) دوباره ساخته شدند. تمرکز این نسخه بر امنیت و صحت اقتصاد، کاهش گیجی کاربر، مشاهده‌پذیری ماندگاری و بازطراحی کامل پنل مدیریت است.
+
+## ایرادهای مهم اصلاح‌شده
+
+1. **ریسک CSRF روی عملیات مدیریتی:** عملیات POST/PUT قدیمی با Basic Auth می‌توانستند از مبدأ دیگر فراخوانی شوند. Middleware اکنون مبدأ درخواست‌های تغییردهنده را با Host تطبیق می‌دهد.
+2. **اعتماد سراسری به Proxy Header:** مقدار `forwarded_allow_ips="*"` به loopback محدود شد تا جعل اطلاعات پراکسی کاهش یابد.
+3. **ناسازگاری احتمالی پاداش روزانه و Ledger:** اگر درج ردیف Ledger به‌دلیل برخورد کلید انجام نشود، تراکنش اکنون rollback می‌شود؛ پول بدون سند immutable ثبت نمی‌شود.
+4. **کاهش منبع با ردیف ناموجود:** UPSERT منابع اکنون فقط برای delta مثبت ردیف تازه می‌سازد و کاهش نامعتبر را رد می‌کند.
+5. **Feature flag دلخواه:** API جدید فقط چهار کلید اضطراری allowlist‌شده را می‌پذیرد.
+6. **ویرایش تبلیغ با prompt:** تمام promptهای مرورگر حذف و با Dialog معتبر، قابل‌دسترسی و دارای بازخورد جایگزین شدند.
+7. **عملیات حساس بدون اصطکاک:** توقف سامانه و بازپرداخت/رد/توقف تبلیغ تأیید واضح و دومرحله‌ای دارند.
+8. **قابلیت‌های پنهان پنل:** Audit و Ledger که داده داشتند ولی UI نداشتند، اکنون صفحه کامل دارند.
+
+## پنل مدیریت تازه
+
+- نمای ماندگاری با فعال روز/هفته/ماه، دریافت هدیه، زنجیره حضور، قیف شروع، رسیدن به شغل/بازار و پیشنهادهای داده‌محور
+- دفتر اقتصاد و کنترل سریع موجودی‌های منفی
+- گزارش کامل حسابرسی مدیران
+- مرکز توقف اضطراری اقتصاد، بازار، تبلیغات و ثبت‌نام
+- حفظ همه صفحات قبلی: نمای کلی، بازار، عملیات زنده، بازیکنان، کشورها، خبر، تبلیغات و درخواست‌ها
+- واکنش‌گرا، RTL، focus-visible و احترام به reduced-motion
+
+## پیشنهادهای درگیری کاربر
+
+این نسخه عمداً از افزودن هم‌زمان ده سیستم تازه خودداری می‌کند. برای کاربری که نباید گیج شود، بهترین چرخه این است:
+
+1. **خانه فقط یک «قدم بعدی» اصلی نشان دهد.** این ساختار در مسیر چهارمرحله‌ای فعلی حفظ شده است.
+2. **هدیه روزانه آغاز جلسه باشد، نه پایان آن.** پس از Claim، کارهای امروز اقدام اصلی باقی می‌ماند.
+3. **ماموریت‌ها کوتاه و قابل فهم باشند.** پنل جدید نرخ تکمیل را نشان می‌دهد تا سختی با داده تنظیم شود.
+4. **بازشدن شغل در سطح ۵ و بازار در سطح ۱۰** هدف میان‌مدت روشن می‌دهد بدون اینکه همه امکانات روز اول روی کاربر آوار شود.
+5. در نسخه بعد، فقط پس از جمع‌شدن داده، یک **رویداد آخرهفته مشارکتی سبک** اضافه شود؛ نه لیگ پیچیده و نه ده ارز تازه.
+
+## محدودیت اعتبارسنجی
+
+- تمام فایل‌های Python با `compileall` و AST بررسی شدند.
+- JavaScript پنل با `node --check` بررسی شد.
+- تمام YAMLها parse شدند.
+- تست‌های Regression تازه اضافه شدند.
+- محیط ممیزی Python 3.10 دارد و `pytest`/وابستگی‌های پروژه نصب نیستند؛ اجرای کامل suite نیازمند Python 3.13 و نصب dependencyهای تعریف‌شده در `pyproject.toml` است.
+- تست عملی PostgreSQL و Telegram بدون credential و سرویس خارجی انجام نشده است.
+
+## استقرار
+
+1. ZIP را استخراج کنید و `.env` را از `.env.example` بسازید.
+2. Python 3.13 و dependencyها را نصب کنید.
+3. پیش از production، `python -m pytest -q` را اجرا کنید.
+4. روی دیتابیس staging مهاجرت‌ها را اجرا و Snapshot/Backup بگیرید.
+5. یک Claim روزانه، یک معامله، یک تغییر Feature Flag و یک گردش تأیید تبلیغ را smoke-test کنید.
+6. سپس release را به production ببرید و صفحه عملیات زنده و Ledger را زیر نظر بگیرید.
 ```
 
 ### `AUDIT_STATUS.md`
@@ -6211,6 +6349,69 @@ async def operations_status() -> dict[str, object]:
     frozen=bool(await db.fetchval("SELECT COALESCE((SELECT enabled FROM feature_flags WHERE key='usd_market_frozen'),FALSE)"))
     return {"market":dict(market) if market else None,"jobs":[dict(x) for x in jobs],
             "queues":dict(queues) if queues else {},"market_frozen":frozen}
+async def engagement_overview() -> dict[str, object]:
+    """Retention and onboarding signals computed from canonical game tables."""
+    row = await db.fetchrow("""
+        SELECT
+          count(*) FILTER (WHERE created_at >= now()-interval '24 hours') AS new_24h,
+          count(*) FILTER (WHERE last_seen_at >= now()-interval '24 hours') AS active_24h,
+          count(*) FILTER (WHERE last_seen_at >= now()-interval '7 days') AS active_7d,
+          count(*) FILTER (WHERE last_seen_at >= now()-interval '30 days') AS active_30d,
+          count(*) FILTER (WHERE level >= 5) AS reached_jobs,
+          count(*) FILTER (WHERE level >= 10) AS reached_market,
+          count(*) AS total
+        FROM players
+    """)
+    claims = await db.fetchrow("""
+        SELECT
+          count(*) FILTER (WHERE last_claim_date=current_date) AS claimed_today,
+          count(*) FILTER (WHERE streak>=3) AS streak_3,
+          count(*) FILTER (WHERE streak>=7) AS streak_7,
+          COALESCE(avg(streak),0)::numeric(10,2) AS avg_streak
+        FROM daily_state
+    """)
+    missions = await db.fetchrow("""
+        SELECT
+          count(*) AS assigned_today,
+          count(*) FILTER (WHERE progress>=target) AS completed_today,
+          count(*) FILTER (WHERE claimed_at IS NOT NULL) AS claimed_today
+        FROM daily_missions WHERE mission_date=current_date
+    """)
+    onboarding = await db.fetchrow("""
+        SELECT
+          count(*) FILTER (WHERE onboarding_step>=4) AS completed,
+          count(*) FILTER (WHERE onboarding_step<4) AS incomplete
+        FROM player_ui_state
+    """)
+    return {
+        "activity": dict(row) if row else {},
+        "daily": dict(claims) if claims else {},
+        "missions": dict(missions) if missions else {},
+        "onboarding": dict(onboarding) if onboarding else {},
+    }
+
+async def feature_flags() -> list[asyncpg.Record]:
+    return await db.fetch("SELECT key,enabled,updated_by,updated_at FROM feature_flags ORDER BY key")
+
+async def ledger_rows(limit: int = 100, player_id: int | None = None) -> list[asyncpg.Record]:
+    return await db.fetch("""
+        SELECT l.id,l.player_id,l.country_id,l.reason,l.asset_code,l.account,l.amount,
+               l.balance_after,l.metadata,l.created_at,p.first_name,p.username
+        FROM ledger l LEFT JOIN players p ON p.id=l.player_id
+        WHERE $2::bigint IS NULL OR l.player_id=$2
+        ORDER BY l.created_at DESC LIMIT $1
+    """, limit, player_id)
+
+async def economy_integrity() -> dict[str, object]:
+    row = await db.fetchrow("""
+        SELECT
+          (SELECT count(*) FROM players WHERE wallet_toman<0 OR savings_toman<0 OR usd_cents<0) negative_players,
+          (SELECT count(*) FROM countries WHERE treasury_toman<0) negative_countries,
+          (SELECT count(*) FROM ledger WHERE balance_after<0) negative_ledger_rows,
+          (SELECT count(*) FROM ledger WHERE created_at>=now()-interval '24 hours') ledger_24h,
+          (SELECT COALESCE(sum(amount),0) FROM ledger WHERE asset_code='IRT' AND created_at>=now()-interval '24 hours') net_irt_24h
+    """)
+    return dict(row) if row else {}
 ```
 
 ### `packages\core\repositories\country_repo.py`
@@ -6703,7 +6904,8 @@ async def change_player(conn: asyncpg.Connection, player_id: int, asset: str, de
         )
     else:
         value = await conn.fetchval(
-            """INSERT INTO player_resources(player_id,asset_code,quantity) VALUES($1,$2,$3)
+            """INSERT INTO player_resources(player_id,asset_code,quantity)
+            SELECT $1,$2,$3 WHERE $3>=0
             ON CONFLICT(player_id,asset_code) DO UPDATE SET quantity=player_resources.quantity+$3,updated_at=now()
             WHERE player_resources.quantity+$3>=0 RETURNING quantity""",
             player_id, asset, delta,
@@ -6721,7 +6923,8 @@ async def change_country(conn: asyncpg.Connection, country_id: int, asset: str, 
         )
     else:
         value = await conn.fetchval(
-            """INSERT INTO country_resources(country_id,asset_code,quantity) VALUES($1,$2,$3)
+            """INSERT INTO country_resources(country_id,asset_code,quantity)
+            SELECT $1,$2,$3 WHERE $3>=0
             ON CONFLICT(country_id,asset_code) DO UPDATE SET quantity=country_resources.quantity+$3,updated_at=now()
             WHERE country_resources.quantity+$3>=0 RETURNING quantity""",
             country_id, asset, delta,
@@ -8447,13 +8650,13 @@ async def claim(player_id: int, today: date | None = None) -> DailyResult:
         if balance is None:
             raise ValueError(f"player {player_id} not found")
 
-        await conn.execute(
+        ledger_id = await conn.fetchval(
             """
             INSERT INTO ledger
                 (player_id, idempotency_key, reason, currency, asset_code, account,
                  amount, balance_after, metadata)
             VALUES ($1, $2, 'daily_reward', 'IRT', 'IRT', 'wallet', $3, $4, $5)
-            ON CONFLICT (idempotency_key) DO NOTHING
+            ON CONFLICT (idempotency_key) DO NOTHING RETURNING id
             """,
             player_id,
             f"daily:{player_id}:{today:%Y-%m-%d}",
@@ -8461,6 +8664,9 @@ async def claim(player_id: int, today: date | None = None) -> DailyResult:
             balance,
             {"streak": new_streak, "milestone": bool(milestone)},
         )
+        if ledger_id is None:
+            # A money mutation without its immutable ledger leg must never commit.
+            raise RuntimeError("daily_ledger_conflict")
 
         return DailyResult(
             claimed=True,
@@ -11107,7 +11313,7 @@ class AdminService:
         config = uvicorn.Config(
             "apps.admin.main:app", host=settings.host, port=settings.port,
             log_level=settings.log_level.lower(), proxy_headers=True,
-            forwarded_allow_ips="*", lifespan="on", access_log=True,
+            forwarded_allow_ips="127.0.0.1", lifespan="on", access_log=True,
         )
         self.server = uvicorn.Server(config)
 
@@ -11361,6 +11567,48 @@ collection instead of being hidden by stubs.
 """
 
 from __future__ import annotations
+```
+
+### `tests\test_admin_2026_hardening.py`
+
+```python
+"""Regression contracts for the 2026 command-centre hardening."""
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_admin_mutations_have_origin_guard() -> None:
+    text = (ROOT / "apps/admin/main.py").read_text(encoding="utf-8")
+    assert 'request.method not in {"GET", "HEAD", "OPTIONS"}' in text
+    assert "درخواست از مبدأ نامعتبر رد شد" in text
+
+
+def test_admin_emergency_flags_are_allowlisted() -> None:
+    text = (ROOT / "apps/admin/routers/country_admin.py").read_text(encoding="utf-8")
+    for key in ("economy_frozen", "usd_market_frozen", "ads_frozen", "registrations_frozen"):
+        assert key in text
+    assert "if key not in allowed" in text
+
+
+def test_daily_credit_requires_ledger_leg() -> None:
+    text = (ROOT / "packages/core/services/daily.py").read_text(encoding="utf-8")
+    assert "daily_ledger_conflict" in text
+    assert "DO NOTHING RETURNING id" in text
+
+
+def test_admin_has_retention_audit_and_ledger_views() -> None:
+    html = (ROOT / "apps/admin/templates/dashboard.html").read_text(encoding="utf-8")
+    js = (ROOT / "apps/admin/static/admin.js").read_text(encoding="utf-8")
+    for view in ("engagement", "ledger", "audit", "controls"):
+        assert f'id="view-{view}"' in html
+        assert f"async function {view}" in js
+    assert "prompt(" not in js
+
+
+def test_forwarded_headers_are_not_globally_trusted() -> None:
+    text = (ROOT / "run.py").read_text(encoding="utf-8")
+    assert 'forwarded_allow_ips="*"' not in text
 ```
 
 ### `tests\test_all_keyboard_states.py`

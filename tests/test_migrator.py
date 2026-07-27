@@ -14,13 +14,14 @@ def test_checksum_is_stable():
     b = migrator._checksum("SELECT 1;")
     assert a == b and len(a) == 16
 
-def test_only_pre_manifest_migrations_are_legacy_compatible():
+def test_only_pre_normalization_migrations_are_legacy_compatible():
     assert migrator.LEGACY_CHECKSUM_VERSIONS == {
         "0001_core_schema", "0002_progression", "0003_country_layer",
         "0004_admin_command_center", "0005_life_world_hardening",
         "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
+        "0008_world_access_lifecycle",
     }
-    assert "0008_world_access_lifecycle" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0009_ads_governance_moderation" not in migrator.LEGACY_CHECKSUM_VERSIONS
 
 
 def test_new_migrations_remain_checksum_strict():
