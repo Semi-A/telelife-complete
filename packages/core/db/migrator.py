@@ -11,6 +11,19 @@ from packages.core.db import pool as dbpool
 logger = logging.getLogger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+# Releases before 0008 were distributed without an immutable migration manifest.
+# Some installations therefore have the same legacy version with a different
+# checksum. Never re-run those migrations: accept the recorded installation and
+# keep strict checksum enforcement for every migration released from 0008 onward.
+LEGACY_CHECKSUM_VERSIONS = frozenset({
+    "0001_core_schema",
+    "0002_progression",
+    "0003_country_layer",
+    "0004_admin_command_center",
+    "0005_life_world_hardening",
+    "0006_phase3_phase4_complete",
+    "0007_unified_ui_onboarding",
+})
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -47,6 +60,13 @@ async def migrate() -> list[str]:
                 digest = _checksum(sql)
                 if version in done:
                     if done[version] != digest:
+                        if version in LEGACY_CHECKSUM_VERSIONS:
+                            logger.warning(
+                                "legacy migration checksum differs; preserving the "
+                                "database record and not re-running SQL: %s",
+                                version,
+                            )
+                            continue
                         raise RuntimeError(
                             f"Migration '{version}' changed after being applied. "
                             "Create a new migration instead of editing history."
