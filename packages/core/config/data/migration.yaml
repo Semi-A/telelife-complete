@@ -5,3 +5,4 @@ political_hold_days: 14
 exit_fee_percent: 5
 exit_fee_min_toman: 500000
 exit_fee_max_toman: 50000000
+citizenship_cancellation_min_days: 7

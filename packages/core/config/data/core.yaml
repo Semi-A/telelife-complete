@@ -4,12 +4,13 @@ timezone: Asia/Tehran
 
 menu_cleanup:
   enabled: true
-  default_timeout_seconds: 120
+  default_timeout_seconds: 60
   panels:
-    profile: 120
-    settings: 90
+    profile: 60
+    settings: 60
     market: 60
-    house: 120
+    house: 60
+    world: 60
 
 rate_limit:
   private_messages_per_minute: 25

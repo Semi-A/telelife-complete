@@ -45,6 +45,14 @@ class GameConfig:
             node = node[key]
         return node
 
+    def has(self, path: str) -> bool:
+        """Return whether a dotted path exists."""
+        try:
+            self.get(path)
+        except ConfigError:
+            return False
+        return True
+
     def int_(self, path: str, default: int | object = _MISSING) -> int:
         value = self.get(path, default)
         if isinstance(value, bool):

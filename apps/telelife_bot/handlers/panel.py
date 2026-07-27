@@ -4,6 +4,7 @@ from telegram import Message
 from telegram.error import BadRequest,Forbidden
 from telegram.ext import ContextTypes
 from packages.core.repositories import ui_state_repo
+from packages.core.ui import schedule_cleanup
 
 async def show(context:ContextTypes.DEFAULT_TYPE,player_id:int,chat_id:int,text:str,markup,*,message:Message|None=None):
  state=await ui_state_repo.ensure_life(player_id); target=None
@@ -23,4 +24,6 @@ async def show(context:ContextTypes.DEFAULT_TYPE,player_id:int,chat_id:int,text:
  if target is None:
   target=await context.bot.send_message(chat_id=chat_id,text=text,reply_markup=markup)
  await ui_state_repo.set_life_panel(player_id,chat_id,target.message_id if target else int(state["life_message_id"]))
+ if target is not None:
+  schedule_cleanup(context,target,"profile")
  return target

@@ -4,12 +4,13 @@ from datetime import UTC,datetime
 from uuid import uuid4
 from html import escape
 from telegram import Update
-from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,filters
+from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers.panel import show
 from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
+from packages.core.bot.start_limit import allow_start
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
 from packages.core.services import daily,life_progression,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
@@ -105,6 +106,11 @@ async def unlock_page(ctx,c):
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
  await panel(ctx,c,fa.UNLOCKS.format(rows="\n".join(rows)),kb.back(ctx.telegram_id))
 async def start(update,c):
+ user,chat=update.effective_user,update.effective_chat
+ if not user or not chat:return
+ if not await allow_start(c,user.id,chat.id):
+  if update.effective_message:await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
+  return
  ctx=await resolve(update)
  if ctx:await home(ctx,c)
 async def text_start(update,c):
@@ -159,4 +165,4 @@ async def callback(update,c):
   await answer(q,)
  except (ValueError,PermissionError) as e:await answer(q,why(e),show_alert=True)
 def register(app):
- app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'));app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT,text_start))
+ app.add_handler(CommandHandler('start',start));app.add_handler(CallbackQueryHandler(callback,pattern=r'^tl:'));app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND,text_start))

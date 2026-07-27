@@ -14,6 +14,7 @@
     <button class="nav" data-view="ledger"><span>≜</span><em>دفتر اقتصاد</em></button>
     <button class="nav" data-view="audit"><span>⌾</span><em>حسابرسی</em></button>
     <button class="nav" data-view="controls"><span>⏻</span><em>کنترل سامانه</em></button>
+    <button class="nav" data-view="admins"><span>♙</span><em>مدیران</em></button>
   </nav>
   <div class="rail-foot"><i class="pulse"></i><span>سامانه برخط</span><small id="clock">—</small></div>
 </aside>
@@ -92,6 +93,11 @@
 <section class="view" id="view-audit">
   <div class="section-lead"><div><p class="eyebrow">ردپای تغییرات حساس</p><h2>گزارش حسابرسی مدیران</h2><p>چه کسی، چه زمانی و روی کدام بازیکن یا کشور تغییر اعمال کرده است.</p></div><button class="secondary" data-reload="audit">تازه‌سازی</button></div>
   <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>زمان</th><th>مدیر</th><th>عملیات</th><th>هدف</th><th>جزئیات</th><th>شناسه درخواست</th></tr></thead><tbody id="audit-body"></tbody></table></div></article>
+</section>
+<section class="view" id="view-admins">
+  <div class="section-lead"><div><p class="eyebrow">دسترسی و مسئولیت</p><h2>مدیران پنل</h2><p>حساب‌های مستقل با نقش محدود بسازید؛ هر تغییر در حسابرسی ثبت می‌شود.</p></div><button id="add-admin" class="primary">افزودن مدیر</button></div>
+  <article class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>مدیر</th><th>نقش</th><th>منبع</th><th>آخرین ورود</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody id="admins-body"><tr><td colspan="6">در حال دریافت…</td></tr></tbody></table></div></article>
+  <article class="panel safety-note"><div class="safety-mark">!</div><div><h3>حساب اصلی محیطی</h3><p>حساب ساخته‌شده با ADMIN_USERNAME از داخل پنل حذف یا ویرایش نمی‌شود تا راه بازیابی اضطراری باقی بماند.</p></div></article>
 </section>
 <section class="view" id="view-controls">
   <div class="section-lead"><div><p class="eyebrow">کلیدهای توقف امن</p><h2>کنترل سامانه</h2><p>هر تغییر ثبت حسابرسی می‌شود. توقف اضطراری را فقط هنگام رخداد واقعی فعال کن.</p></div></div>

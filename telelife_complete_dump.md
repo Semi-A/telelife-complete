@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 249
+تعداد کل فایل‌ها: 259
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -99,7 +99,9 @@ telelife_complete/
 │   ├── 0015_purposeful_work_loop.sql
 │   ├── 0016_national_projects_and_missions.sql
 │   ├── 0017_country_economy_release_b.sql
-│   └── 0018_country_trade_diplomacy_release_c.sql
+│   ├── 0018_country_trade_diplomacy_release_c.sql
+│   ├── 0019_life_progression_system.sql
+│   └── 0020_admin_operations_10.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -119,6 +121,7 @@ telelife_complete/
 │   │   │   │   ├── economy.yaml
 │   │   │   │   ├── elections.yaml
 │   │   │   │   ├── jobs.yaml
+│   │   │   │   ├── life_progression.yaml
 │   │   │   │   ├── market.yaml
 │   │   │   │   ├── migration.yaml
 │   │   │   │   ├── missions.yaml
@@ -157,6 +160,7 @@ telelife_complete/
 │   │   │   ├── __init__.py
 │   │   │   ├── action_outbox.py
 │   │   │   ├── admin.py
+│   │   │   ├── admin_security.py
 │   │   │   ├── commerce.py
 │   │   │   ├── content_filter.py
 │   │   │   ├── country.py
@@ -174,6 +178,7 @@ telelife_complete/
 │   │   │   ├── elections.py
 │   │   │   ├── engagement.py
 │   │   │   ├── governance.py
+│   │   │   ├── life_progression.py
 │   │   │   ├── live_market.py
 │   │   │   ├── maintenance.py
 │   │   │   ├── market_chart.py
@@ -208,6 +213,7 @@ telelife_complete/
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_admin_2026_hardening.py
+│   ├── test_admin_operations_10.py
 │   ├── test_all_keyboard_states.py
 │   ├── test_callbacks.py
 │   ├── test_clock.py
@@ -225,6 +231,7 @@ telelife_complete/
 │   ├── test_governance.py
 │   ├── test_hardening_contracts.py
 │   ├── test_interval_bindings.py
+│   ├── test_life_progression_system.py
 │   ├── test_live_market.py
 │   ├── test_market_chart_contracts.py
 │   ├── test_message_driven_bots.py
@@ -256,6 +263,8 @@ telelife_complete/
 ├── .env.example
 ├── .gitattributes
 ├── .gitignore
+├── ADMIN_10_RELEASE_FA.md
+├── ADMIN_COMMAND_THEATRE_RELEASE_FA.md
 ├── AUDIT_AND_DEPLOY_FA_2026-07-27.md
 ├── AUDIT_FINAL_FA_2026-07-27.md
 ├── AUDIT_STATUS.md
@@ -267,6 +276,7 @@ telelife_complete/
 ├── Dockerfile
 ├── dump.py
 ├── HOTFIX_2026-07-27_FA.md
+├── LIFE_PROGRESSION_RELEASE_FA.md
 ├── MANIFEST.sha256
 ├── pyproject.toml
 ├── README.md
@@ -321,6 +331,7 @@ PORT=8000
 HOST=0.0.0.0
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
+ADMIN_ROLE=superadmin
 MEMORY_WARNING_MB=450
 # Telegram Stars uses currency XTR and an empty provider token.
 AD_REVIEW_NOTIFICATION_CHAT_ID=
@@ -354,6 +365,51 @@ venv/
 .mypy_cache/
 .ruff_cache/
 *.log
+```
+
+### `ADMIN_10_RELEASE_FA.md`
+
+```markdown
+# پنل مدیریت TeleLife — عملیات سطح ۱۰
+
+## قابلیت‌ها
+- رادار رخداد پایدار با پذیرش، بررسی، حل، مسئول و شمارش تکرار
+- هشدار فوری SSE با fallback تازه‌سازی هوشمند
+- تأیید عملیات حساس در Backend با توکن یک‌بارمصرف، انقضای دو دقیقه و اتصال به payload
+- RBAC سمت سرور: viewer، support، content، economy، operator و superadmin
+- بازگردانی ۱۰دقیقه‌ای برای Feature Flag، قیمت بازار و دارایی کشور
+- جست‌وجوی سراسری با Ctrl/Cmd+K
+- تشخیص ناهنجاری تراکنش، حجم گردش و ثروت
+- نقشه اقتصاد کشور با آخرین شاخص واقعی تورم و بیکاری
+- حسابرسی عملیات بازگردانی و Ledger متناظر
+- طراحی سینمایی واکنش‌گرا با reduced-motion
+
+## اصلاح مهم
+کوئری نسخه قبلی تورم و بیکاری را از `country_economy_state` می‌خواند، در حالی که ستون‌ها در `country_indicator_daily` هستند. اکنون آخرین شاخص هر کشور با LATERAL query خوانده می‌شود.
+
+## استقرار
+1. `ADMIN_ROLE=superadmin` یا نقش محدودتر را تنظیم کنید.
+2. مهاجرت `0020_admin_operations_10.sql` را اعمال کنید.
+3. روی staging دستور `python -m pytest -q` را با Python 3.13 و PostgreSQL واقعی اجرا کنید.
+4. Preview token، SSE، Undo و عملیات هم‌زمان را با داده واقعی آزمایش کنید.
+```
+
+### `ADMIN_COMMAND_THEATRE_RELEASE_FA.md`
+
+```markdown
+# انتشار Command Theatre پنل مدیریت
+
+- صفحهٔ نخست هشدارمحور با رادار رخداد و تفکیک بحرانی/هشدار/اطلاع
+- نقشهٔ زندهٔ کشورها و نمایش بحران‌های فعال
+- نبض اقتصاد بر پایه نقدینگی، جریان خالص و تعداد تراکنش‌های ۲۴ ساعت
+- شبکهٔ سلامت سرویس‌ها و تازه‌سازی هوشمند هر ۳۰ ثانیه فقط هنگام مشاهده صفحه
+- API جدید `/api/admin/command-center` با داده‌های واقعی جداول پروژه
+- تأیید دومرحله‌ای و پیش‌نمایش اثر برای عملیات حساس
+- پالت سرمه‌ای عمیق، آبی یخی و قرمز هشدار
+- انیمیشن‌های سینمایی هدفمند با رعایت `prefers-reduced-motion`
+- چیدمان دسکتاپ حرفه‌ای و واکنش‌گرا برای نمایشگرهای کوچک‌تر
+
+کنترل کیفیت: parse تمام Python/YAML، compileall، بررسی نحوی JavaScript و قراردادهای ایستا انجام شد. تست یکپارچه PostgreSQL باید در staging با `python -m pytest -q` اجرا شود.
 ```
 
 ### `apps\__init__.py`
@@ -488,17 +544,22 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 from datetime import datetime
+import asyncio, json
 from uuid import uuid4
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from apps.admin.auth import require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, commerce, live_market, scheduler_ops, engagement
+from packages.core.services import admin, admin_security, commerce, live_market, scheduler_ops, engagement
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[str, Depends(require_admin)]
-router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin)])
+async def enforce_admin_request(request: Request, actor: AdminActor) -> None:
+    await admin_security.verify_request(request, actor)
+
+router = APIRouter(prefix="/api/admin", dependencies=[Depends(require_admin),Depends(enforce_admin_request)])
 
 class BanBody(BaseModel):
     enabled: bool
@@ -551,6 +612,63 @@ class FreezeBody(BaseModel):
 class FeatureBody(BaseModel):
     enabled: bool
 
+
+class PreviewBody(BaseModel):
+    method: Literal["POST","PUT","PATCH","DELETE"]
+    path: str = Field(min_length=12,max_length=500)
+    payload: dict[str,object] = Field(default_factory=dict)
+class IncidentBody(BaseModel):
+    status: Literal["acknowledged","investigating","resolved"]
+    note: str | None = Field(default=None,max_length=1000)
+
+@router.post("/action-preview")
+async def action_preview(body:PreviewBody,actor:AdminActor)->dict[str,object]:
+    return await admin_security.issue_preview(actor,body.method,body.path,body.payload)
+
+@router.get("/me")
+async def me(actor:AdminActor)->dict[str,str]:
+    return {"username":actor,"role":get_settings().admin_role}
+
+@router.get("/search")
+async def global_search(q:Annotated[str,Query(min_length=2,max_length=100)]) -> dict[str,list[dict[str,object]]]:
+    return await admin_repo.global_search(q)
+
+@router.get("/incidents")
+async def incidents(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return [dict(x) for x in await admin_repo.incident_rows(limit)]
+
+@router.patch("/incidents/{incident_id}")
+async def incident_update(incident_id:int,body:IncidentBody,actor:AdminActor)->dict[str,object]:
+    row=await admin_repo.update_incident(incident_id,body.status,actor,body.note)
+    if not row:raise HTTPException(404,"رخداد پیدا نشد.")
+    return dict(row)
+
+@router.get("/anomalies")
+async def anomalies(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return await admin_repo.anomaly_rows(limit)
+
+@router.post("/undo/{action_id}")
+async def undo(action_id:int,actor:AdminActor)->dict[str,bool]:
+    try:return {"undone":await admin_repo.undo_action(action_id,actor)}
+    except ValueError as exc:raise HTTPException(409,"عملیات دیگر قابل بازگردانی نیست.") from exc
+
+@router.get("/undos")
+async def undos(limit:Annotated[int,Query(ge=1,le=100)]=50)->list[dict[str,object]]:
+    return [dict(x) for x in await admin_repo.available_undos(limit)]
+
+@router.get("/events")
+async def admin_events(request:Request):
+    async def stream():
+        last=""
+        while not await request.is_disconnected():
+            rows=[dict(x) for x in await admin_repo.incident_rows(30)]
+            payload=json.dumps(rows,default=str,ensure_ascii=False,separators=(",",":"))
+            if payload!=last:
+                yield f"event: incidents\ndata: {payload}\n\n";last=payload
+            else:yield ": keepalive\n\n"
+            await asyncio.sleep(8)
+    return StreamingResponse(stream(),media_type="text/event-stream",headers={"Cache-Control":"no-store","X-Accel-Buffering":"no"})
+
 @router.get("/engagement")
 async def engagement_overview() -> dict[str, object]:
     return await admin_repo.engagement_overview()
@@ -598,6 +716,10 @@ async def run_job(job_name: str, actor: AdminActor) -> dict[str, bool]:
     result=await scheduler_ops.run(f"manual:{job_name}",allowed[job_name])
     if result is None:raise HTTPException(502,"Job اجرا نشد؛ جزئیات خطا در عملیات زنده ثبت شد.")
     return {"completed":True}
+
+@router.get("/command-center")
+async def command_center() -> dict[str, object]:
+    return await admin_repo.command_center()
 
 @router.get("/overview")
 async def overview() -> dict[str, object]:
@@ -742,6 +864,19 @@ body{background:linear-gradient(125deg,#071017 0 57%,#08151e 57% 100%);font-fami
 .funnel{display:grid;gap:12px}.funnel-row{display:grid;grid-template-columns:140px 1fr 58px;gap:12px;align-items:center}.funnel-row span{font-size:11px;color:var(--muted)}.funnel-track{height:13px;background:#071219;border:1px solid var(--line);overflow:hidden}.funnel-fill{height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue));transform-origin:right}.funnel-row b{font:600 12px "JetBrains Mono",monospace;text-align:left}.insight-list{display:grid;gap:10px}.insight{display:grid;grid-template-columns:9px 1fr;gap:12px;padding:13px;background:#08171f;border:1px solid var(--line)}.insight i{width:7px;height:7px;margin-top:7px;border-radius:50%;background:var(--cyan)}.insight.warn i{background:var(--amber)}.insight strong{font-size:12px}.insight p{margin:4px 0 0;color:var(--muted);font-size:11px;line-height:1.8}
 .control-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.control-card{border:1px solid var(--line);background:var(--panel);padding:22px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}.control-card h3{margin:0 0 6px}.control-card p{margin:0;color:var(--muted);font-size:11px}.toggle{width:52px;height:28px;border:1px solid var(--line);background:#061219;padding:3px;cursor:pointer}.toggle i{display:block;width:20px;height:20px;background:var(--dim);transition:.2s}.toggle.on{background:#173b39;border-color:#43d6c566}.toggle.on i{transform:translateX(-24px);background:var(--cyan)}.safety-note{display:flex;gap:16px;align-items:center;margin-top:16px}.safety-mark{font:700 28px Georgia;color:var(--amber);border:1px solid #f4bd6844;width:46px;height:46px;display:grid;place-items:center}.safety-note h3,.safety-note p{margin:0}.safety-note p{color:var(--muted);font-size:11px;margin-top:5px}.amount-positive{color:var(--cyan)}.amount-negative{color:var(--rose)}.mono{font-family:"JetBrains Mono",monospace;direction:ltr;text-align:right}.danger-zone{border-color:#ff718d55!important}.danger-zone h3{color:#ff9aae}
 @media(max-width:1200px){.metric-grid-five{grid-template-columns:repeat(3,1fr)}}@media(max-width:1050px){.rail{width:82px}.shell{margin-right:82px}.control-grid{grid-template-columns:1fr}}@media(max-width:650px){.rail{width:auto}.shell{margin:0}.metric-grid-five{grid-template-columns:1fr 1fr}.funnel-row{grid-template-columns:92px 1fr 48px}.control-card{padding:16px}}
+/* Command Theatre 2026 — alert-first, navy/ice/red, built for wide operations screens. */
+:root{--bg:#030914;--panel:#071525;--panel-2:#0a1d31;--ink:#edf8ff;--muted:#87a5bb;--dim:#4f6d83;--cyan:#84ddff;--blue:#3f8cff;--violet:#7d77ff;--rose:#ff3d64;--amber:#ffb648;--line:rgba(132,221,255,.14);--shadow:0 24px 80px rgba(0,0,0,.38)}
+body{background:radial-gradient(circle at 72% -18%,#123356 0,transparent 32%),radial-gradient(circle at 18% 70%,#0b1b38 0,transparent 38%),linear-gradient(135deg,#020813,#06101d 58%,#030a14);background-attachment:fixed}.noise{opacity:.08;mix-blend-mode:screen}.rail{background:linear-gradient(180deg,rgba(3,10,20,.98),rgba(4,13,25,.94));border-left:1px solid rgba(132,221,255,.16);box-shadow:-22px 0 70px rgba(0,0,0,.2)}.brand-mark{background:conic-gradient(from 220deg,#0c2135,#215176,#0a1727);border-color:#84ddff55;color:var(--cyan);box-shadow:inset 0 0 24px #84ddff12,0 0 28px #3f8cff18}.brand small{letter-spacing:4px;color:#70cffa}.nav{border:1px solid transparent}.nav:hover,.nav.active{background:linear-gradient(90deg,rgba(63,140,255,.16),rgba(132,221,255,.045));border-color:rgba(132,221,255,.1);box-shadow:inset -3px 0 var(--cyan),0 7px 24px rgba(0,0,0,.18)}
+.topbar{position:sticky;top:0;z-index:8;background:linear-gradient(180deg,rgba(3,9,19,.96),rgba(3,9,19,.76));backdrop-filter:blur(20px);margin-inline:-38px;padding-inline:38px}.live{border-color:#84ddff33;color:var(--cyan);box-shadow:inset 0 0 18px #84ddff0b}.panel,.metric-grid article,.country-card,.market-cards article{background:linear-gradient(145deg,rgba(8,25,42,.96),rgba(4,15,28,.96));border-color:rgba(132,221,255,.13);box-shadow:0 20px 65px rgba(0,0,0,.27),inset 0 1px rgba(255,255,255,.025)}
+.command-view{perspective:1200px}.command-mast{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;padding-bottom:17px;border-bottom:1px solid var(--line)}.command-mast h2{font-size:clamp(27px,3vw,46px);letter-spacing:-1.8px;margin:0}.command-mast>div>p:not(.eyebrow){color:var(--muted);font-size:12px;margin:8px 0 0}.sync-state{display:grid;grid-template-columns:9px 1fr;gap:3px 9px;align-items:center;color:var(--cyan);font-size:11px}.sync-state i{width:8px;height:8px;background:var(--cyan);box-shadow:0 0 18px var(--cyan);border-radius:50%;animation:commandPulse 1.8s infinite}.sync-state small{grid-column:2;color:var(--dim);font:10px "JetBrains Mono",monospace;direction:ltr}.command-grid{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(300px,.75fr);gap:14px}.incident-core{position:relative;min-height:470px;padding:23px;overflow:hidden;border-top:2px solid var(--rose)}.incident-core:before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 55%,rgba(255,61,100,.035));pointer-events:none}.severity-counts{display:flex;gap:7px}.severity-counts span{min-width:31px;height:27px;display:grid;place-items:center;font:700 11px "JetBrains Mono";border:1px solid}.severity-counts .critical{color:#ff8098;border-color:#ff3d6455;background:#ff3d6414}.severity-counts .warning{color:#ffc66d;border-color:#ffb64855;background:#ffb64812}
+.radar-stage{position:absolute;left:4%;top:54px;width:330px;height:330px;border:1px solid #84ddff26;border-radius:50%;background:repeating-radial-gradient(circle,transparent 0 47px,#84ddff13 48px 49px),conic-gradient(from 15deg,transparent 0 70%,rgba(132,221,255,.09) 84%,transparent 100%);display:grid;place-items:center;opacity:.78}.radar-stage:before,.radar-stage:after{content:"";position:absolute;background:#84ddff1c}.radar-stage:before{width:100%;height:1px}.radar-stage:after{height:100%;width:1px}.radar-stage b{position:absolute;inset:50% 50% auto auto;width:48%;height:1px;background:linear-gradient(90deg,var(--cyan),transparent);transform-origin:right;animation:radarSweep 5s linear infinite}.radar-stage span{font:800 18px Georgia;color:var(--cyan);text-shadow:0 0 18px var(--cyan)}.radar-stage i{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--rose);box-shadow:0 0 0 7px #ff3d6410,0 0 20px var(--rose);animation:signal 2s infinite}.radar-stage i:nth-child(1){right:23%;top:28%}.radar-stage i:nth-child(2){left:17%;bottom:29%;animation-delay:.6s;background:var(--amber)}.radar-stage i:nth-child(3){right:40%;bottom:15%;animation-delay:1.1s;background:var(--cyan)}
+.incident-feed{position:relative;z-index:2;width:calc(100% - 365px);margin-right:auto;display:grid;gap:8px;max-height:370px;overflow:auto}.incident{display:grid;grid-template-columns:7px 1fr auto;gap:11px;padding:13px 14px;background:rgba(2,12,23,.78);border:1px solid var(--line);border-right:0;animation:incidentIn .42s cubic-bezier(.2,.7,.2,1) both}.incident:before{content:"";width:7px;height:7px;margin-top:5px;border-radius:50%;background:var(--cyan);box-shadow:0 0 13px currentColor}.incident.critical{border-color:#ff3d6438}.incident.critical:before{background:var(--rose)}.incident.warning:before{background:var(--amber)}.incident h3{font-size:12px;margin:0}.incident p{font-size:10px;color:var(--muted);margin:4px 0 0;line-height:1.7}.incident button{align-self:center}.command-side{display:grid;gap:14px}.pulse-card{min-height:246px;position:relative;overflow:hidden}.pulse-value strong{display:block;font:500 clamp(28px,3vw,48px) "JetBrains Mono",monospace;letter-spacing:-2px;direction:ltr;text-align:right}.pulse-value small{color:var(--muted)}.economy-wave{height:70px;margin:15px -24px;position:relative;overflow:hidden;background:linear-gradient(180deg,transparent,#3f8cff0b)}.economy-wave:before,.economy-wave:after,.economy-wave i{content:"";position:absolute;left:-15%;right:-15%;height:45px;border-top:2px solid var(--cyan);border-radius:50%;transform:rotate(-4deg);top:29px;filter:drop-shadow(0 0 5px #84ddff)}.economy-wave:after{top:39px;opacity:.22;transform:rotate(3deg)}.economy-wave i{top:20px;opacity:.12;transform:rotate(-9deg)}.pulse-meta{display:flex;justify-content:space-between;color:var(--dim);font-size:10px}.pulse-meta b{color:var(--ink);display:block;margin-top:4px}.network-card{min-height:210px}.world-strip{margin-top:14px;padding:22px 24px;overflow:hidden}.world-head{display:flex;justify-content:space-between;align-items:center}.world-head h2{margin:0}.world-map{height:215px;position:relative;direction:ltr}.world-map svg{width:100%;height:100%;fill:#0b263e;stroke:#84ddff29;stroke-width:1.2}.world-map svg path+path{fill:none;stroke-dasharray:4 8;opacity:.5}.world-nodes{position:absolute;inset:0}.world-node{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;direction:rtl;padding:6px 9px;background:#061525de;border:1px solid #84ddff25;color:var(--ink);font-size:9px;white-space:nowrap}.world-node i{width:6px;height:6px;background:var(--cyan);box-shadow:0 0 12px var(--cyan);border-radius:50%}.world-node.crisis{border-color:#ff3d6466}.world-node.crisis i{background:var(--rose);box-shadow:0 0 14px var(--rose);animation:signal 1.4s infinite}.command-metrics{margin-top:14px}.command-metrics article:after{background:linear-gradient(90deg,var(--blue),var(--cyan))}
+.confirm-preview{padding:14px;border:1px solid #ffb64844;background:#ffb6480b;color:var(--muted);font-size:11px;line-height:1.8}.confirm-preview strong{color:var(--ink)}
+@keyframes radarSweep{to{transform:rotate(360deg)}}@keyframes signal{50%{opacity:.35;transform:scale(.72)}}@keyframes commandPulse{50%{opacity:.35}}@keyframes incidentIn{from{opacity:0;transform:translateX(-18px)}}
+@media(max-width:1250px){.incident-feed{width:100%;margin-top:305px}.incident-core{min-height:720px}.radar-stage{left:50%;transform:translateX(-50%)}}@media(max-width:1050px){.command-grid{grid-template-columns:1fr}.command-side{grid-template-columns:1fr 1fr}}@media(max-width:700px){.command-mast{align-items:flex-start;gap:18px;flex-direction:column}.command-side{grid-template-columns:1fr}.incident-core{min-height:750px}.radar-stage{width:270px;height:270px}.incident-feed{margin-top:275px}.world-map{height:270px}.world-node{font-size:8px}.topbar{margin-inline:-15px;padding-inline:15px}}
+@media(prefers-reduced-motion:reduce){.radar-stage b,.radar-stage i,.sync-state i,.world-node i{animation:none!important}}
+.ops-intelligence{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.ops-list{display:grid;gap:7px;max-height:220px;overflow:auto}.ops-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid var(--line);background:#04111f}.ops-row b{font-size:11px}.ops-row small{color:var(--dim);font-size:9px}.kbd{border:1px solid var(--line);padding:5px 8px;color:var(--muted);font:9px "JetBrains Mono"}.command-palette{max-width:680px;background:#061321}.command-palette form{padding:28px}.command-palette input{font-size:16px;padding:15px}.search-results{display:grid;gap:14px;max-height:430px;overflow:auto;margin-top:16px}.search-results section h3{color:var(--cyan);font-size:10px;letter-spacing:1px}.search-results section button{width:100%;display:flex;justify-content:space-between;border:1px solid var(--line);background:#081a29;color:var(--ink);padding:12px;cursor:pointer}.search-results small,.incident small{display:block;color:var(--dim);font-size:9px;margin-top:5px}@media(max-width:850px){.ops-intelligence{grid-template-columns:1fr}}
+.incident-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.incident-actions .small-btn{padding:6px 8px;font-size:9px}
 ```
 
 ### `apps\admin\static\admin.js`
@@ -752,15 +887,19 @@ const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelect
 const fa=new Intl.NumberFormat("fa-IR"), money=n=>`${fa.format(Number(n||0))} تومان`;
 const state={market:[],asset:"USD",ops:null,opsTimer:null};
 function toast(message,error=false){const el=$("#toast");el.textContent=message;el.className=error?"show error":"show";clearTimeout(el._t);el._t=setTimeout(()=>el.className="",3500)}
-async function api(url,options={}){const res=await fetch(url,{headers:{"Content-Type":"application/json",...(options.headers||{})},...options});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
+async function api(url,options={}){const method=(options.method||'GET').toUpperCase(),headers={"Content-Type":"application/json",...(options.headers||{})};if(!['GET','HEAD','OPTIONS'].includes(method)&&url!='/api/admin/action-preview'){let payload={};try{payload=options.body?JSON.parse(options.body):{}}catch{}const preview=await api('/api/admin/action-preview',{method:'POST',body:JSON.stringify({method,path:url,payload}),headers:{"X-Preview-Bootstrap":"1"}});headers["X-Admin-Preview"]=preview.token}const res=await fetch(url,{...options,method,headers});if(res.status===401){location.reload();throw Error("ورود منقضی شده است")};const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof data.detail==="string"?data.detail:"خطا در ارتباط با سرور");return data}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function date(v){if(!v)return "—";return new Intl.DateTimeFormat("fa-IR",{dateStyle:"short",timeStyle:"short"}).format(new Date(v))}
 function go(name){$$('.view').forEach(v=>v.classList.toggle('active',v.id===`view-${name}`));$$('.nav').forEach(v=>v.classList.toggle('active',v.dataset.view===name));$("#view-title").textContent={overview:"مرکز فرماندهی",market:"بازار دارایی‌ها",players:"مدیریت بازیکنان",countries:"مدیریت کشورها",news:"اتاق خبر",ads:"مرکز تبلیغات",requests:"بازبینی تبلیغات",operations:"عملیات زنده",engagement:"ماندگاری کاربران",ledger:"دفتر اقتصاد",audit:"گزارش حسابرسی",controls:"کنترل سامانه"}[name];history.replaceState(null,"",`#${name}`);load(name)}
 $$('.nav').forEach(b=>b.onclick=()=>go(b.dataset.view));$$('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
-async function overview(){const [o,h]=await Promise.all([api('/api/admin/overview'),api('/healthz')]);$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i>${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';await market(true)}
+async function overview(){const [cc,h]=await Promise.all([api('/api/admin/command-center'),api('/healthz')]);const o=cc.overview||{};$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'TeleLife',teleworld:'TeleWorld'};$("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>`<span>${names[k]||esc(k)}<i class="${v.status==='healthy'?'source-live':'source-stale'}">${v.status==='healthy'?'سالم':esc(v.status)}</i></span>`).join('')||'<span>اطلاعات سرویس موجود نیست</span>';renderCommand(cc);state.command=cc;loadOperationalTools();$("#last-sync").textContent=new Date().toLocaleTimeString('fa-IR');} 
+function renderCommand(cc){const alerts=cc.alerts||[],summary=cc.summary||{},integrity=cc.integrity||{};$("#critical-count").textContent=fa.format(summary.critical||0);$("#warning-count").textContent=fa.format(summary.warning||0);$("#crisis-count").textContent=fa.format(summary.crises||0);$("#ledger-24").textContent=fa.format(integrity.ledger_24h||0);$("#net-irt").textContent=money(integrity.net_irt_24h||0);$("#incident-feed").innerHTML=alerts.map((a,i)=>`<article class="incident ${esc(a.severity)}" style="animation-delay:${i*.06}s"><div><h3>${esc(a.title)}</h3><p>${esc(a.detail)}</p><small>${esc(a.status||'open')} · ${fa.format(a.occurrences||1)} بار</small></div><div class="incident-actions"><button class="small-btn" data-incident-go="${esc(a.action_view||a.action)}">بررسی</button>${a.status==='resolved'?'':`<button class="small-btn" data-incident-ack="${a.id}">پذیرش</button><button class="small-btn danger" data-incident-resolve="${a.id}">حل شد</button>`}</div></article>`).join('');$$('[data-incident-go]').forEach(b=>b.onclick=()=>go(b.dataset.incidentGo));$$('[data-incident-ack]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentAck,'acknowledged'));$$('[data-incident-resolve]').forEach(b=>b.onclick=()=>setIncident(b.dataset.incidentResolve,'resolved'));const spots=[[13,41],[25,67],[39,35],[51,61],[63,29],[74,55],[84,38],[91,70]];$("#world-nodes").innerHTML=(cc.countries||[]).slice(0,8).map((x,i)=>`<button class="world-node ${x.crisis?'crisis':''}" style="left:${spots[i][0]}%;top:${spots[i][1]}%" data-go="countries"><i></i>${esc(x.name)} · ${fa.format(x.citizens||0)}</button>`).join('');$$('#world-nodes [data-go]').forEach(b=>b.onclick=()=>go('countries'));}
+
+async function setIncident(id,status){try{await api(`/api/admin/incidents/${id}`,{method:'PATCH',body:JSON.stringify({status,note:status==='resolved'?'حل‌شده از مرکز فرماندهی':null})});toast(status==='resolved'?'رخداد حل شد':'مسئولیت رخداد پذیرفته شد');await overview()}catch(e){toast(e.message,true)}}
 function chart(target,points){const el=$(target);if(!points?.length){el.innerHTML='<div class="empty">هنوز نقطه تاریخی ثبت نشده است</div>';return}const w=900,h=310,p=28,vals=points.map(x=>Number(x.price)),min=Math.min(...vals),max=Math.max(...vals),spread=Math.max(max-min,1);const xy=points.map((x,i)=>[p+i*(w-2*p)/Math.max(points.length-1,1),h-p-(Number(x.price)-min)*(h-2*p)/spread]);const path=xy.map((v,i)=>`${i?'L':'M'}${v[0].toFixed(1)},${v[1].toFixed(1)}`).join(' ');const area=`${path} L${xy.at(-1)[0]},${h-p} L${xy[0][0]},${h-p} Z`;el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="نمودار قیمت"><defs><linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3ee6d0" stop-opacity=".22"/><stop offset="1" stop-color="#3ee6d0" stop-opacity="0"/></linearGradient></defs>${[.2,.4,.6,.8].map(v=>`<line class="gridline" x1="${p}" x2="${w-p}" y1="${h*v}" y2="${h*v}"/>`).join('')}<path class="area" d="${area}"/><path class="line" d="${path}"/>${xy.map(v=>`<circle class="dot" cx="${v[0]}" cy="${v[1]}" r="3.5"/>`).join('')}</svg><span class="chart-label" style="top:6px;right:8px">${money(max)}</span><span class="chart-label" style="bottom:6px;right:8px">${money(min)}</span>`}
 async function market(mini=false){state.market=await api(`/api/admin/market?hours=${$("#market-range")?.value||24}`);if(!state.market.length)return;let selected=state.market.find(x=>x.asset_code===state.asset)||state.market[0];state.asset=selected.asset_code;chart(mini?'#mini-chart':'#market-chart',selected.points?.length?selected.points:[{price:selected.current_price_toman,time:selected.updated_at}]);if(mini)return;$("#market-tabs").innerHTML=state.market.map(x=>`<button class="${x.asset_code===state.asset?'active':''}" data-asset="${esc(x.asset_code)}">${esc(x.title_fa)}</button>`).join('');$("#market-cards").innerHTML=state.market.map(x=>`<article><span>${esc(x.title_fa)} · ${esc(x.asset_code)}</span><strong>${money(x.current_price_toman)}</strong><small>آخرین تغییر: ${date(x.updated_at)}</small><button class="small-btn" data-price="${esc(x.asset_code)}">ثبت قیمت جدید</button></article>`).join('');$$('[data-asset]').forEach(b=>b.onclick=()=>{state.asset=b.dataset.asset;market()});$$('[data-price]').forEach(b=>b.onclick=()=>priceDialog(b.dataset.price))}
-function openDialog(title,kicker,fields,confirm){$("#dialog-title").textContent=title;$("#dialog-kicker").textContent=kicker;$("#dialog-fields").innerHTML=fields;$("#dialog-confirm").onclick=confirm;$("#action-dialog").showModal()}
+function guardedConfirm(summary,run){let armed=false;return async()=>{if(!armed){armed=true;$('#dialog-fields').insertAdjacentHTML('afterbegin',`<div class="confirm-preview"><strong>پیش‌نمایش اثر</strong><br>${esc(summary)}<br>برای اجرای نهایی، دوباره دکمه تأیید را بزن.</div>`);$('#dialog-confirm').textContent='تأیید نهایی و اجرا';return}await run()}}
+function openDialog(title,kicker,fields,confirm){$("#dialog-title").textContent=title;$("#dialog-kicker").textContent=kicker;$("#dialog-fields").innerHTML=fields;$("#dialog-confirm").textContent="تأیید عملیات";const risky=/مسدود|بازپرداخت|توقف|فریز|تنظیم|ریاست|قیمت/.test(`${title} ${kicker}`);$("#dialog-confirm").onclick=risky?guardedConfirm(`عملیات «${title}» پس از تأیید نهایی اجرا و در حسابرسی ثبت می‌شود.`,confirm):confirm;$("#action-dialog").showModal()}
 function priceDialog(asset){const row=state.market.find(x=>x.asset_code===asset);openDialog(`قیمت ${row?.title_fa||asset}`,"ثبت نقطه بازار",`<label>قیمت جدید به تومان<input id="f-price" type="number" min="1" value="${row?.current_price_toman||1}"></label>`,async()=>{try{await api(`/api/admin/market/${encodeURIComponent(asset)}`,{method:'POST',body:JSON.stringify({price:Number($("#f-price").value)})});$("#action-dialog").close();toast("قیمت ثبت شد");await market()}catch(e){toast(e.message,true)}})}
 async function players(){const q=encodeURIComponent($("#player-search").value.trim()),rows=await api(`/api/admin/users?limit=150&q=${q}`);$("#players-body").innerHTML=rows.map(x=>`<tr><td><b>${esc(x.first_name)}</b>@${esc(x.username||'—')} · #${x.id}<br><small>TG ${x.telegram_id}</small></td><td><b>سطح ${fa.format(x.level)}</b>${fa.format(x.xp)} XP</td><td><b>${money(Number(x.wallet_toman)+Number(x.savings_toman))}</b>${fa.format(x.usd_cents)} سنت</td><td>${date(x.last_seen_at)}</td><td><span class="badge ${x.is_banned?'danger':''}">${x.is_banned?'مسدود':'فعال'}</span></td><td><div class="row-actions"><button class="small-btn" data-xp="${x.id}">XP</button><button class="small-btn ${x.is_banned?'':'danger'}" data-ban="${x.id}" data-banned="${x.is_banned}">${x.is_banned?'رفع مسدودی':'مسدود'}</button></div></td></tr>`).join('')||'<tr><td colspan="6">بازیکنی پیدا نشد.</td></tr>';$$('[data-xp]').forEach(b=>b.onclick=()=>xpDialog(Number(b.dataset.xp)));$$('[data-ban]').forEach(b=>b.onclick=()=>banDialog(Number(b.dataset.ban),b.dataset.banned==='true'))}
 function xpDialog(id){openDialog(`اعطای XP به #${id}`,"پیشرفت بازیکن",'<label>مقدار XP<input id="f-xp" type="number" min="1" max="1000000" value="1000"></label>',async()=>{try{const r=await api(`/api/admin/users/${id}/xp`,{method:'POST',body:JSON.stringify({amount:Number($("#f-xp").value)})});$("#action-dialog").close();toast(`${fa.format(r.granted)} XP اعمال شد`);players()}catch(e){toast(e.message,true)}})}
@@ -819,6 +958,18 @@ function confirmFlag(key,on){const [title,desc]=flagMeta[key];openDialog(on?`غ�
 $$('[data-reload]').forEach(b=>b.onclick=()=>load(b.dataset.reload));let ledgerTimer;$('#ledger-player').oninput=()=>{clearTimeout(ledgerTimer);ledgerTimer=setTimeout(ledger,350)};
 function load(name){({overview,market,operations,engagement,players,countries,news,ads,requests,ledger,audit,controls}[name]||overview)().catch(e=>toast(e.message,true))}
 setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1000);go(location.hash.slice(1)||'overview');
+
+// Visibility-aware command-centre polling: fast while watched, silent in background.
+let commandTimer=null;
+function scheduleCommandRefresh(){clearTimeout(commandTimer);if(document.hidden)return;commandTimer=setTimeout(async()=>{if((location.hash.slice(1)||'overview')==='overview'){try{await overview()}catch(e){console.warn('command refresh',e)}}scheduleCommandRefresh()},30000)}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if((location.hash.slice(1)||'overview')==='overview')overview().catch(()=>{});scheduleCommandRefresh()}else clearTimeout(commandTimer)});
+scheduleCommandRefresh();
+
+function mountCommandTools(){if($('#command-palette'))return;document.body.insertAdjacentHTML('beforeend',`<dialog id="command-palette" class="command-palette"><form method="dialog"><button class="dialog-close" aria-label="بستن">×</button><p class="eyebrow">COMMAND PALETTE</p><h2>جست‌وجوی سراسری</h2><input id="global-search" autocomplete="off" placeholder="بازیکن، کشور، رخداد یا عملیات…"><div id="search-results" class="search-results"></div></form></dialog>`);let timer;$('#global-search').oninput=()=>{clearTimeout(timer);timer=setTimeout(runGlobalSearch,220)}}
+async function runGlobalSearch(){const q=$('#global-search').value.trim();if(q.length<2){$('#search-results').innerHTML='';return}try{const d=await api(`/api/admin/search?q=${encodeURIComponent(q)}`),groups=[['بازیکنان',d.players,'players'],['کشورها',d.countries,'countries'],['رخدادها',d.incidents,'overview'],['حسابرسی',d.audit,'audit']];$('#search-results').innerHTML=groups.map(([title,rows,view])=>rows?.length?`<section><h3>${title}</h3>${rows.map(x=>`<button type="button" data-search-go="${view}"><b>${esc(x.first_name||x.name||x.title||x.action)}</b><small>#${x.id} ${esc(x.status||x.username||'')}</small></button>`).join('')}</section>`:'').join('')||'<div class="empty">نتیجه‌ای پیدا نشد.</div>';$$('[data-search-go]').forEach(b=>b.onclick=()=>{$('#command-palette').close();go(b.dataset.searchGo)})}catch(e){toast(e.message,true)}}
+async function loadOperationalTools(){try{const [anomalies,undos]=await Promise.all([api('/api/admin/anomalies?limit=20'),api('/api/admin/undos?limit=20')]);if($('#anomaly-list'))$('#anomaly-list').innerHTML=anomalies.map(x=>`<div class="ops-row"><span class="badge danger">${esc(x.anomaly)}</span><b>${esc(x.first_name)} #${x.id}</b><small>${money(x.wealth)} · ${fa.format(x.tx_count)} تراکنش</small></div>`).join('')||'<div class="empty">ناهنجاری پرخطر پیدا نشد.</div>';if($('#undo-list'))$('#undo-list').innerHTML=undos.map(x=>`<div class="ops-row"><span class="badge">${esc(x.action_type)}</span><b>${esc(x.target_key)}</b><button class="small-btn" data-undo="${x.id}">بازگردانی</button></div>`).join('')||'<div class="empty">عملیات قابل بازگردانی وجود ندارد.</div>';$$('[data-undo]').forEach(b=>b.onclick=async()=>{try{await api(`/api/admin/undo/${b.dataset.undo}`,{method:'POST',body:'{}'});toast('عملیات با موفقیت بازگردانی شد');loadOperationalTools()}catch(e){toast(e.message,true)}})}catch(e){console.warn(e)}}
+function connectIncidentStream(){if(!window.EventSource)return;const es=new EventSource('/api/admin/events');es.addEventListener('incidents',e=>{if((location.hash.slice(1)||'overview')!=='overview')return;try{const alerts=JSON.parse(e.data),cc=state.command||{};cc.alerts=alerts;cc.summary={...(cc.summary||{}),critical:alerts.filter(x=>x.severity==='critical'&&x.status!=='resolved').length,warning:alerts.filter(x=>x.severity==='warning'&&x.status!=='resolved').length};renderCommand(cc)}catch{}});es.onerror=()=>console.warn('incident stream reconnecting')}
+mountCommandTools();document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#command-palette').showModal();setTimeout(()=>$('#global-search').focus(),30)}});connectIncidentStream();
 ```
 
 ### `apps\admin\templates\base.html`
@@ -857,21 +1008,28 @@ setInterval(()=>$("#clock").textContent=new Date().toLocaleTimeString('fa-IR'),1
 <main class="shell">
 <header class="topbar"><div><p class="eyebrow">شبکه اقتصادی تله‌لایف</p><h1 id="view-title">مرکز فرماندهی</h1></div><div class="top-actions"><div class="live"><i></i><span>LIVE</span></div><button id="refresh" class="icon-btn" title="تازه‌سازی">↻</button></div></header>
 <div id="toast" role="status" aria-live="polite"></div>
-<section class="view active" id="view-overview">
-  <div class="hero-grid">
-    <article class="hero-card"><div><p class="eyebrow">حجم اقتصاد بازیکنان</p><strong data-stat="player_liquidity">{{ stats.get('player_liquidity',0) }}</strong><span>تومان نقدینگی ثبت‌شده</span></div><div class="orbit"><b>TL</b><i></i><i></i><i></i></div></article>
-    <article class="signal-card"><p>وضعیت شبکه</p><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
+<section class="view active command-view" id="view-overview">
+  <div class="command-mast">
+    <div><p class="eyebrow">TELELIFE // GLOBAL OPERATIONS</p><h2>تصویر عملیاتی جهان</h2><p>رخدادهای قابل‌اقدام، نبض اقتصاد و وضعیت کشورها در یک میدان زنده.</p></div>
+    <div class="sync-state"><i></i><span>همگام‌سازی هوشمند</span><small id="last-sync">در حال اتصال…</small></div>
   </div>
-  <div class="metric-grid">
-    <article><span>بازیکن</span><strong data-stat="players_total">{{ stats.get('players_total',0) }}</strong><small>کل حساب‌ها</small></article>
-    <article><span>فعال</span><strong data-stat="players_active">{{ stats.get('players_active',0) }}</strong><small>هفت روز اخیر</small></article>
-    <article><span>کشور</span><strong data-stat="countries_total">{{ stats.get('countries_total',0) }}</strong><small>جهان فعال</small></article>
-    <article><span>صف خبر</span><strong data-stat="news_pending">{{ stats.get('news_pending',0) }}</strong><small>در انتظار انتشار</small></article>
+  <div class="command-grid">
+    <article class="incident-core panel">
+      <div class="panel-head"><div><p class="eyebrow">INCIDENT RADAR</p><h2>رادار رخداد</h2></div><div class="severity-counts"><span class="critical" id="critical-count">۰</span><span class="warning" id="warning-count">۰</span></div></div>
+      <div class="radar-stage" aria-hidden="true"><i></i><i></i><i></i><b></b><span>TL</span></div>
+      <div id="incident-feed" class="incident-feed"><div class="empty">دریافت سیگنال‌های عملیاتی…</div></div>
+    </article>
+    <aside class="command-side">
+      <article class="panel pulse-card"><p class="eyebrow">ECONOMY PULSE</p><div class="pulse-value"><strong data-stat="player_liquidity">۰</strong><small>تومان نقدینگی بازیکنان</small></div><div id="economy-wave" class="economy-wave"><i></i></div><div class="pulse-meta"><span>دفتر ۲۴ ساعت <b id="ledger-24">۰</b></span><span>جریان خالص <b id="net-irt">۰</b></span></div></article>
+      <article class="panel network-card"><div class="panel-head"><div><p class="eyebrow">SERVICE MESH</p><h2>شبکه سرویس‌ها</h2></div></div><div id="service-radar" class="service-radar"><span>در حال دریافت…</span></div></article>
+    </aside>
   </div>
-  <div class="split">
-    <article class="panel chart-panel"><div class="panel-head"><div><p class="eyebrow">نبض بازار</p><h2>حرکت دارایی‌های اصلی</h2></div><button class="text-btn" data-go="market">مشاهده بازار ←</button></div><div id="mini-chart" class="chart-wrap"><div class="empty">داده بازار در حال بارگذاری است</div></div></article>
-    <article class="panel"><div class="panel-head"><div><p class="eyebrow">کنترل سریع</p><h2>عملیات پرتکرار</h2></div></div><div class="quick-grid"><button data-go="players">اعطای XP<small>مدیریت پیشرفت</small></button><button data-go="countries">تنظیم منابع<small>اقتصاد کشور</small></button><button data-go="news">ارسال خبر<small>صف انتشار</small></button><button data-go="market">قیمت بازار<small>ثبت نقطه جدید</small></button></div></article>
+  <div class="world-strip panel">
+    <div class="world-head"><div><p class="eyebrow">LIVE WORLD MAP</p><h2>نقشهٔ زنده کشورها</h2></div><button class="text-btn" data-go="countries">ورود به ژئو‌اقتصاد ←</button></div>
+    <div class="world-map"><svg viewBox="0 0 900 250" aria-hidden="true"><path d="M42 113C99 48 182 44 237 83s97 16 144-21 117-42 161 1 87 43 136 17 120-19 165 38-17 93-85 84-91-10-143 19-117 22-158-8-91-33-153-5-127-21-142-55 5-40 51-48Z"/><path d="M128 82l91 96m84-113 63 139m104-167 27 184m107-159 58 140m84-98-29 79"/></svg><div id="world-nodes" class="world-nodes"></div></div>
   </div>
+  <div class="ops-intelligence"><article class="panel"><div class="panel-head"><div><p class="eyebrow">ANOMALY WATCH</p><h2>تشخیص ناهنجاری</h2></div><button class="text-btn" data-go="ledger">دفتر اقتصاد ←</button></div><div id="anomaly-list" class="ops-list"><div class="empty">در حال تحلیل…</div></div></article><article class="panel"><div class="panel-head"><div><p class="eyebrow">SAFE ROLLBACK</p><h2>بازگردانی ۱۰ دقیقه‌ای</h2></div><span class="kbd">Ctrl K</span></div><div id="undo-list" class="ops-list"><div class="empty">در حال بررسی…</div></div></article></div>
+  <div class="metric-grid command-metrics"><article><span>بازیکن فعال</span><strong data-stat="players_active">۰</strong><small>هفت روز اخیر</small></article><article><span>کشور</span><strong data-stat="countries_total">۰</strong><small>شبکه جهانی</small></article><article><span>بحران فعال</span><strong id="crisis-count">۰</strong><small>نیازمند پایش</small></article><article><span>صف انتشار</span><strong data-stat="news_pending">۰</strong><small>در انتظار</small></article></div>
 </section>
 <section class="view" id="view-engagement">
   <div class="section-lead"><div><p class="eyebrow">چرخه بازگشت کاربر</p><h2>ماندگاری و مسیر شروع</h2><p>به‌جای عددهای تزئینی، گلوگاه‌های واقعی ورود، هدیه و کارهای روزانه را ببین.</p></div><button class="secondary" data-reload="engagement">تازه‌سازی</button></div>
@@ -1501,13 +1659,14 @@ from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,missions,personal_economy,production,progression,unlocks,usd_market,xp
+from packages.core.services import daily,life_progression,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
 SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
-ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست."}
+SKILL_FA={"agriculture":"کشاورزی","extraction":"استخراج","commerce":"تجارت","media":"رسانه","medicine":"پزشکی","software":"نرم‌افزار","engineering":"مهندسی"}
+ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری."}
 def why(e):
  return ERR.get(str(e),"فعلاً نشد انجامش بدیم. یک‌بار صفحه را تازه کن و دوباره امتحان کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
@@ -1568,6 +1727,27 @@ async def market(ctx,c):
        +access)
  await panel(ctx,c,text,kb.market(ctx.telegram_id,p.level>=10))
 
+async def progress_center(ctx,c):
+ p=await fresh(ctx);skill=await life_progression.primary_skill(p.id);assets=await life_progression.assets_view(p.id)
+ cur,need=progression.level_progress(p.level,p.xp)
+ if skill:
+  skill_line=f"{SKILL_FA.get(skill.code,skill.code)} · {skill.title} · سطح {fmt.number(skill.level)}\n{fmt.progress_bar(skill.xp,skill.needed,width=8)} {fmt.number(skill.xp)}/{fmt.number(skill.needed)} تجربه مهارت"
+ else:skill_line="هنوز مهارتی فعال نیست؛ یک شغل انتخاب کن و نتیجه نخستین شیفت را بگیر."
+ next_asset=next((a for a in assets if not a.owned and a.available),None)
+ locked=next((a for a in assets if not a.owned),None)
+ target=(f"خرید {next_asset.title} با {fmt.toman(next_asset.cost)}" if next_asset else f"بازکردن {locked.title}: {locked.reason}" if locked else "همه دارایی‌های فعلی را ساخته‌ای")
+ owned=sum(1 for a in assets if a.owned)
+ text=(f"🧭 <b>مرکز پیشرفت واقعی</b>\n\n<b>سطح زندگی {fmt.number(p.level)}</b>\n{fmt.progress_bar(cur,need,width=10)} {fmt.number(cur)}/{fmt.number(need)} XP\n\n🛠 <b>مهارت اصلی</b>\n{skill_line}\n\n🏠 <b>دارایی‌های کاربردی</b>\n{fmt.number(owned)} از {fmt.number(len(assets))} دارایی\n\n🎯 <b>هدف بعدی</b>\n{target}\n\nکار واقعی مهارت می‌سازد؛ سطح زندگی قابلیت باز می‌کند؛ دارایی مناسب بازده، فرصت و هزینه نگهداری واقعی دارد.")
+ await panel(ctx,c,text,kb.progress(ctx.telegram_id))
+
+async def assets_page(ctx,c):
+ rows=await life_progression.assets_view(ctx.player.id);lines=[]
+ for a in rows:
+  icon="✅" if a.owned else "🟢" if a.available else "🔒"
+  upkeep=f" · نگهداری روزانه {fmt.toman(a.maintenance)}" if a.maintenance else ""
+  lines.append(f"{icon} <b>{a.title}</b> — {a.reason}\n{fmt.toman(a.cost)}{upkeep}\n{a.opportunity}")
+ await panel(ctx,c,"🚗 <b>دارایی‌های کاربردی</b>\n\n"+"\n\n".join(lines),kb.assets(ctx.telegram_id,rows))
+
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
@@ -1590,8 +1770,8 @@ async def callback(update,c):
   from apps.telelife_bot.handlers.advertising import begin
   await begin(update,c);return
  try:
-  if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings'}:
-   await answer(q,);fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page}[a];await fn(ctx,c);return
+  if a in {'home','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
+   await answer(q,);fn={'home':home,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
   if a=='jstep':
    step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
    if step!=expected:await answer(q,'این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
@@ -1611,6 +1791,7 @@ async def callback(update,c):
   if a in {'deposit','withdraw'}:await personal_economy.savings_transfer(ctx.player.id,int(parsed.arg),a,ik(a,ctx.player.id));await answer(q,"انتقال انجام شد.",show_alert=True);await savings_page(ctx,c);return
   if a=='living':paid,_=await personal_economy.pay_living(ctx.player.id,ik(a,ctx.player.id));await answer(q,"تسویه شد." if paid else "بدهی نداری.",show_alert=True);await economy(ctx,c);return
   if a in {'hrent','hbuy'}:await personal_economy.acquire_housing(ctx.player.id,parsed.arg,'rent' if a=='hrent' else 'owned',ik(a,ctx.player.id));await answer(q,"خانه ثبت شد.",show_alert=True);await housing_page(ctx,c);return
+  if a=='abuy':await life_progression.buy_asset(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,"دارایی خریده شد و اثرش فعال است.",show_alert=True);await assets_page(ctx,c);return
   if a=='jchoose':await production.choose(ctx.player.id,parsed.arg);await answer(q,"عالیه؛ شغلت ثبت شد و از همین حالا درآمدش جمع می‌شود.",show_alert=True);await jobs(ctx,c);return
   if a=='jshift':mode=await production.choose_shift(ctx.player.id,parsed.arg);await answer(q,f"شیفت {SHIFT_FA.get(mode,mode)} فعال شد.",show_alert=True);await jobs(ctx,c);return
   if a=='jcollect':
@@ -1619,7 +1800,7 @@ async def callback(update,c):
    else:
     personal=f"💵 سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"📦 سهم شما: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}"
     national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
-    msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه: +{fmt.number(r.xp)}"
+    msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه زندگی: +{fmt.number(r.xp)}\n🛠 مهارت {SKILL_FA.get(r.skill_code or '',r.skill_code or 'شغلی')}: سطح {fmt.number(r.skill_level)} · {fmt.number(r.skill_xp)}/{fmt.number(r.skill_needed)}"
    await answer(q,msg,show_alert=True);await jobs(ctx,c);return
   if a=='jupgrade':lvl=await production.upgrade(ctx.player.id,parsed.arg,ik(a,ctx.player.id));await answer(q,f"ارتقا به سطح {fmt.number(lvl)}",show_alert=True);await jobs(ctx,c);return
   if a in {'mbuy','msell'}:r=await usd_market.trade(ctx.player.id,'buy' if a=='mbuy' else 'sell',int(parsed.arg),ik(a,ctx.player.id));await answer(q,f"معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}",show_alert=True);await market(ctx,c);return
@@ -2024,7 +2205,7 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
-    k.row(B("🪪 شخصیت من", "profile", owner), B("🗺 مسیر پیشرفت", "unlocks", owner))
+    k.row(B("🪪 شخصیت من", "profile", owner), B("🧭 مرکز پیشرفت", "progress", owner))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
@@ -2091,6 +2272,19 @@ def market(owner, unlocked=True):
     return (k.row(B("خرید ۱۰ دلار", "mbuy", owner, "1000", Style.PRIMARY), B("فروش ۱۰ دلار", "msell", owner, "1000"))
             .row(B("خرید ۵۰ دلار", "mbuy", owner, "5000"), B("فروش ۵۰ دلار", "msell", owner, "5000"))
             .row(B("🔄 تازه‌سازی", "market", owner), B("🏠 خانه", "home", owner)).build())
+
+
+def progress(owner):
+    return (Keyboard().row(B("🚗 دارایی‌های کاربردی", "assets", owner, style=Style.PRIMARY), B("🗺 همه قابلیت‌ها", "unlocks", owner))
+            .row(B("💼 کار و رشد مهارت", "jobs", owner), B("🏠 خانه", "home", owner)).build())
+
+def assets(owner, rows):
+    k=Keyboard()
+    for item in rows:
+        if item.available and not item.owned:
+            k.row(B(f"خرید {item.title}", "abuy", owner, item.code, Style.PRIMARY))
+    k.row(B("🧭 مرکز پیشرفت", "progress", owner), B("🏠 خانه", "home", owner))
+    return k.build()
 ```
 
 ### `apps\telelife_bot\main.py`
@@ -4238,6 +4432,40 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 محیط تحویل آفلاین است و dependencyهای اجرایی، PostgreSQL و credentialهای Telegram را ندارد؛ بنابراین اجرای `pytest` کامل و smoke test زنده در این محیط ممکن نبود. پیش از تغییر ترافیک production، image را در CI/staging بسازید، `python -m pytest -q` را اجرا کنید و startup را روی clone یا backup دیتابیس production بررسی کنید.
 ```
 
+### `LIFE_PROGRESSION_RELEASE_FA.md`
+
+```markdown
+# انتشار سیستم پیشرفت واقعی TeleLife
+
+## تغییرات اصلی
+- مرکز پیشرفت یکپارچه برای نمایش سطح زندگی، مهارت اصلی، دارایی‌ها و هدف بعدی.
+- مهارت‌های مبتنی بر انجام کار واقعی؛ هر نتیجه شیفت، مهارت همان حرفه را رشد می‌دهد.
+- ۲۰ سطح مهارت و عنوان‌های تازه‌کار، کارآموز، ماهر، حرفه‌ای، خبره و استاد.
+- دارایی‌های کاربردی شامل دوچرخه، لپ‌تاپ، خودرو، کارگاه و سبد سرمایه‌گذاری.
+- دارایی‌ها روی بازده کار، سرعت یادگیری، اعتبار، شادی و هزینه زندگی اثر دارند.
+- اتصال مقاوم به World: اقتصاد و پروژه کشور روی کار اثر می‌گذارند، اما نبود تابعیت مسیر شخصی را قفل نمی‌کند.
+
+## باگ‌های رفع‌شده
+- نقشه قابلیت‌ها شغل را سطح ۵ نشان می‌داد، درحالی‌که منطق اجرا آن را از سطح ۱ فعال کرده بود؛ نقشه با واقعیت هماهنگ شد.
+- `work_claims.xp_awarded` مقدار XP پیش از اعمال سقف روزانه را ذخیره می‌کرد؛ اکنون مقدار واقعی اعطاشده ثبت می‌شود.
+- پاداش شادی تعریف‌شده برای خانه‌ها اعمال نمی‌شد؛ اکنون اختلاف پاداش خانه قبلی و جدید بدون امکان انباشت سوءاستفاده اعمال می‌شود.
+- تجربه شغلی و اثر دارایی در تراکنش دریافت نتیجه کار ثبت می‌شود تا دوبارکلیک، مهارت یا درآمد اضافه نسازد.
+
+## کنترل کیفیت انجام‌شده
+- کامپایل تمام فایل‌های Python.
+- Parse تمام فایل‌های Python و YAML.
+- بررسی نحوی JavaScript پنل مدیریت.
+- بررسی پوشش callbackهای رابط TeleLife.
+- تست‌های قراردادی جدید برای منحنی مهارت، نگاشت همه شغل‌ها، اثر و قفل دارایی‌ها و مهاجرت افزایشی.
+
+## تست باقی‌مانده در محیط استقرار
+این محیط `pytest` و وابستگی‌های runtime مانند `asyncpg` را ندارد. پس پیش از انتشار عمومی، در محیط Python 3.13 پروژه اجرا شود:
+
+`python -m pytest -q`
+
+سپس مهاجرت `0019_life_progression_system.sql` روی staging اعمال و خرید دارایی، پرداخت هزینه زندگی و دریافت هم‌زمان شیفت با PostgreSQL واقعی تست شود.
+```
+
 ### `MANIFEST.sha256`
 
 _[این فایل باینری/غیرمتنی تشخیص داده شد و محتوایش درج نشد]_
@@ -5560,6 +5788,97 @@ CREATE TABLE IF NOT EXISTS country_diplomacy_audit (
 CREATE INDEX IF NOT EXISTS idx_country_diplomacy_audit_country ON country_diplomacy_audit(country_id,created_at DESC);
 ```
 
+### `migrations\0019_life_progression_system.sql`
+
+```sql
+-- TeleLife action-based skill and useful personal-asset progression.
+CREATE TABLE IF NOT EXISTS player_skills (
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ skill_code TEXT NOT NULL CHECK (length(skill_code) BETWEEN 1 AND 32),
+ level INTEGER NOT NULL DEFAULT 1 CHECK (level BETWEEN 1 AND 20),
+ xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
+ total_xp BIGINT NOT NULL DEFAULT 0 CHECK (total_xp >= 0),
+ actions_count BIGINT NOT NULL DEFAULT 0 CHECK (actions_count >= 0),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(player_id,skill_code)
+);
+CREATE TABLE IF NOT EXISTS skill_events (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ skill_code TEXT NOT NULL,
+ amount INTEGER NOT NULL CHECK (amount >= 0),
+ level_after INTEGER NOT NULL CHECK (level_after >= 1),
+ source TEXT NOT NULL,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_skill_events_player_time ON skill_events(player_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS player_assets (
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ asset_code TEXT NOT NULL CHECK (length(asset_code) BETWEEN 1 AND 40),
+ acquired_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ purchase_price_toman BIGINT NOT NULL CHECK (purchase_price_toman >= 0),
+ PRIMARY KEY(player_id,asset_code)
+);
+CREATE INDEX IF NOT EXISTS idx_player_assets_player ON player_assets(player_id,acquired_at DESC);
+```
+
+### `migrations\0020_admin_operations_10.sql`
+
+```sql
+-- Persistent incidents, backend previews, RBAC identities and reversible operations.
+CREATE TABLE IF NOT EXISTS admin_identities (
+ username TEXT PRIMARY KEY,
+ role TEXT NOT NULL CHECK(role IN ('viewer','support','content','economy','operator','superadmin')),
+ enabled BOOLEAN NOT NULL DEFAULT TRUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS admin_action_previews (
+ token_hash TEXT PRIMARY KEY,
+ admin_actor TEXT NOT NULL,
+ method TEXT NOT NULL,
+ path TEXT NOT NULL,
+ payload_hash TEXT NOT NULL,
+ expires_at TIMESTAMPTZ NOT NULL,
+ used_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_preview_expiry ON admin_action_previews(expires_at) WHERE used_at IS NULL;
+CREATE TABLE IF NOT EXISTS admin_incidents (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ fingerprint TEXT NOT NULL UNIQUE,
+ severity TEXT NOT NULL CHECK(severity IN ('critical','warning','info')),
+ domain TEXT NOT NULL,
+ title TEXT NOT NULL,
+ detail TEXT NOT NULL,
+ action_view TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','acknowledged','investigating','resolved')),
+ assigned_to TEXT,
+ first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ acknowledged_at TIMESTAMPTZ,
+ resolved_at TIMESTAMPTZ,
+ resolution_note TEXT,
+ occurrences BIGINT NOT NULL DEFAULT 1 CHECK(occurrences > 0),
+ metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+CREATE INDEX IF NOT EXISTS idx_admin_incidents_queue ON admin_incidents(status,severity,last_seen_at DESC);
+CREATE TABLE IF NOT EXISTS admin_reversible_actions (
+ id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+ admin_actor TEXT NOT NULL,
+ action_type TEXT NOT NULL,
+ target_key TEXT NOT NULL,
+ inverse_payload JSONB NOT NULL,
+ source_request_id TEXT NOT NULL UNIQUE,
+ expires_at TIMESTAMPTZ NOT NULL,
+ undone_at TIMESTAMPTZ,
+ undone_by TEXT,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_undo_available ON admin_reversible_actions(expires_at) WHERE undone_at IS NULL;
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -6220,6 +6539,85 @@ purpose_loop:
       xp_percent: 75
 ```
 
+### `packages\core\config\data\life_progression.yaml`
+
+```yaml
+# Action-based, realistic progression for TeleLife.
+skills:
+  max_level: 20
+  base_xp: 120
+  exponent: 1.35
+  work_xp_at_full_capacity: 40
+  jobs:
+    farmer: agriculture
+    miner: extraction
+    trader: commerce
+    journalist: media
+    doctor: medicine
+    programmer: software
+    engineer: engineering
+  titles:
+    1: "تازه‌کار"
+    3: "کارآموز"
+    6: "ماهر"
+    10: "حرفه‌ای"
+    15: "خبره"
+    20: "استاد"
+assets:
+  bicycle:
+    title: "دوچرخه شهری"
+    min_level: 2
+    cost_toman: 250000
+    maintenance_daily_toman: 1000
+    reputation_bonus: 0
+    happiness_bonus: 1
+    work_bonus_bp: 100
+    skill_xp_bonus_bp: 0
+    opportunity: "رفت‌وآمد اقتصادی و ۱٪ بازده بیشتر کار"
+  laptop:
+    title: "لپ‌تاپ کاری"
+    min_level: 4
+    cost_toman: 1800000
+    maintenance_daily_toman: 2500
+    reputation_bonus: 1
+    happiness_bonus: 1
+    work_bonus_bp: 200
+    skill_xp_bonus_bp: 500
+    opportunity: "۵٪ یادگیری سریع‌تر و ۲٪ بازده بیشتر کار"
+  car:
+    title: "خودروی اقتصادی"
+    min_level: 8
+    cost_toman: 8500000
+    maintenance_daily_toman: 18000
+    reputation_bonus: 3
+    happiness_bonus: 2
+    work_bonus_bp: 350
+    skill_xp_bonus_bp: 0
+    opportunity: "دسترسی شغلی بهتر و ۳٫۵٪ بازده بیشتر"
+  workshop:
+    title: "کارگاه کوچک"
+    min_level: 12
+    min_skill_level: 5
+    cost_toman: 22000000
+    maintenance_daily_toman: 35000
+    reputation_bonus: 5
+    happiness_bonus: 1
+    work_bonus_bp: 700
+    skill_xp_bonus_bp: 500
+    opportunity: "زیرساخت کسب‌وکار؛ ۷٪ بازده و ۵٪ یادگیری بیشتر"
+  investment_fund:
+    title: "سبد سرمایه‌گذاری"
+    min_level: 15
+    min_skill_level: 6
+    cost_toman: 40000000
+    maintenance_daily_toman: 0
+    reputation_bonus: 4
+    happiness_bonus: 0
+    work_bonus_bp: 250
+    skill_xp_bonus_bp: 250
+    opportunity: "آمادگی برای لایه سرمایه‌گذاری و تنوع دارایی"
+```
+
 ### `packages\core\config\data\market.yaml`
 
 ```yaml
@@ -6443,7 +6841,8 @@ happiness:
 levels:
   2:  { key: daily_missions, title: "ماموریت‌های روزانه", icon: "🎯", phase: 2 }
   3:  { key: savings,        title: "حساب پس‌انداز",      icon: "🏦", phase: 3 }
-  5:  { key: jobs_basic,     title: "شغل‌های پایه",        icon: "💼", phase: 3 }
+  1:  { key: jobs_basic,     title: "انتخاب شغل و شروع مهارت", icon: "💼", phase: 3 }
+  5:  { key: career_growth,  title: "رشد حرفه‌ای شغل",       icon: "🧭", phase: 3 }
   7:  { key: rankings,       title: "جدول رتبه‌بندی",      icon: "🏆", phase: 5 }
   10: { key: usd_market,     title: "بازار دلار",          icon: "💲", phase: 4 }
   12: { key: housing,        title: "خرید خونه",           icon: "🏠", phase: 3 }
@@ -7208,6 +7607,140 @@ async def economy_integrity() -> dict[str, object]:
           (SELECT COALESCE(sum(amount),0) FROM ledger WHERE asset_code='IRT' AND created_at>=now()-interval '24 hours') net_irt_24h
     """)
     return dict(row) if row else {}
+
+
+async def command_center() -> dict[str, object]:
+    """Actionable operational picture assembled from canonical tables."""
+    overview = await dashboard_stats()
+    ops = await operations_status()
+    integrity = await economy_integrity()
+    countries_rows = await db.fetch("""
+      SELECT c.id,c.name,c.status,c.treasury_toman,
+        count(DISTINCT cs.player_id) FILTER (WHERE cs.is_active) citizens,
+        COALESCE(i.inflation_bp,0) inflation_bp,
+        COALESCE(i.unemployment_bp,0) unemployment_bp,
+        COALESCE(e.production_modifier_bp,10000) production_modifier_bp,
+        EXISTS(SELECT 1 FROM country_crises x WHERE x.country_id=c.id AND x.status='active') crisis
+      FROM countries c
+      LEFT JOIN citizenships cs ON cs.country_id=c.id
+      LEFT JOIN country_economy_state e ON e.country_id=c.id
+      LEFT JOIN LATERAL (SELECT inflation_bp,unemployment_bp FROM country_indicator_daily d WHERE d.country_id=c.id ORDER BY indicator_date DESC LIMIT 1) i ON TRUE
+      GROUP BY c.id,i.inflation_bp,i.unemployment_bp,e.production_modifier_bp
+      ORDER BY crisis DESC,c.treasury_toman DESC LIMIT 24
+    """)
+    alerts: list[dict[str, object]] = []
+    queues = dict(ops.get("queues") or {})
+    market = dict(ops.get("market") or {}) if ops.get("market") else {}
+    if int(queues.get("outbox_failed") or 0):
+        alerts.append({"severity":"critical","domain":"service","title":"خطا در صف انتشار","detail":f"{queues['outbox_failed']} پیام ناموفق نیازمند بررسی است.","action":"operations"})
+    if int(queues.get("ads_failed") or 0):
+        alerts.append({"severity":"warning","domain":"content","title":"تحویل تبلیغ ناموفق","detail":f"{queues['ads_failed']} تحویل تبلیغ شکست خورده است.","action":"requests"})
+    failed_jobs=[j for j in ops.get("jobs",[]) if j.get("status") not in {"success","completed","healthy"}]
+    for job in failed_jobs[:4]:
+        alerts.append({"severity":"critical","domain":"service","title":f"Job ناموفق: {job['job_name']}","detail":job.get("error_message") or "اجرای اخیر موفق نبوده است.","action":"operations"})
+    if market.get("source_error"):
+        alerts.append({"severity":"warning","domain":"economy","title":"منبع نرخ بازار ناپایدار","detail":str(market["source_error"]),"action":"operations"})
+    if bool(ops.get("market_frozen")):
+        alerts.append({"severity":"info","domain":"economy","title":"بازار دلار متوقف است","detail":"فریز مدیریتی بازار فعال است.","action":"controls"})
+    negatives=sum(int(integrity.get(k) or 0) for k in ("negative_players","negative_countries","negative_ledger_rows"))
+    if negatives:
+        alerts.append({"severity":"critical","domain":"economy","title":"ناسازگاری دفتر اقتصاد","detail":f"{negatives} رکورد با مانده منفی پیدا شد.","action":"ledger"})
+    crisis_count=sum(1 for x in countries_rows if x["crisis"])
+    if crisis_count:
+        alerts.append({"severity":"warning","domain":"world","title":"بحران فعال در جهان","detail":f"{crisis_count} کشور درگیر بحران فعال است.","action":"countries"})
+    if not alerts:
+        alerts.append({"severity":"info","domain":"system","title":"وضعیت پایدار","detail":"در این لحظه رخداد قابل‌اقدام بحرانی ثبت نشده است.","action":"operations"})
+    order={"critical":0,"warning":1,"info":2};alerts.sort(key=lambda x:order[str(x["severity"])])
+    await persist_incidents(alerts)
+    durable=[dict(x) for x in await incident_rows(30)]
+    return {"overview":dict(overview) if overview else {},"operations":ops,"integrity":integrity,
+      "alerts":durable,"countries":[dict(x) for x in countries_rows],
+      "summary":{"critical":sum(a["severity"]=="critical" and a["status"]!='resolved' for a in durable),"warning":sum(a["severity"]=="warning" and a["status"]!='resolved' for a in durable),"crises":crisis_count}}
+
+async def persist_incidents(items:list[dict[str,object]])->list[dict[str,object]]:
+    """Upsert observations while preserving acknowledgement and ownership."""
+    import hashlib
+    seen=[]
+    for item in items:
+        fingerprint=hashlib.sha256(f"{item['domain']}|{item['title']}".encode()).hexdigest()[:32]
+        row=await db.fetchrow("""INSERT INTO admin_incidents(fingerprint,severity,domain,title,detail,action_view,metadata)
+          VALUES($1,$2,$3,$4,$5,$6,$7)
+          ON CONFLICT(fingerprint) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,
+          action_view=EXCLUDED.action_view,last_seen_at=now(),occurrences=admin_incidents.occurrences+1,
+          status=CASE WHEN admin_incidents.status='resolved' THEN 'open' ELSE admin_incidents.status END,
+          resolved_at=CASE WHEN admin_incidents.status='resolved' THEN NULL ELSE admin_incidents.resolved_at END
+          RETURNING *""",fingerprint,item['severity'],item['domain'],item['title'],item['detail'],item['action'],item)
+        seen.append(dict(row))
+    return seen
+
+async def incident_rows(limit:int=100)->list[asyncpg.Record]:
+    return await db.fetch("""SELECT * FROM admin_incidents ORDER BY
+      CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+      CASE status WHEN 'open' THEN 0 WHEN 'investigating' THEN 1 WHEN 'acknowledged' THEN 2 ELSE 3 END,
+      last_seen_at DESC LIMIT $1""",limit)
+
+async def update_incident(incident_id:int,status:str,actor:str,note:str|None)->asyncpg.Record|None:
+    return await db.fetchrow("""UPDATE admin_incidents SET status=$2,assigned_to=CASE WHEN $2 IN ('acknowledged','investigating') THEN $3 ELSE assigned_to END,
+      acknowledged_at=CASE WHEN $2 IN ('acknowledged','investigating') THEN COALESCE(acknowledged_at,now()) ELSE acknowledged_at END,
+      resolved_at=CASE WHEN $2='resolved' THEN now() ELSE NULL END,resolution_note=CASE WHEN $2='resolved' THEN $4 ELSE resolution_note END
+      WHERE id=$1 RETURNING *""",incident_id,status,actor,note)
+
+async def global_search(query:str,limit:int=8)->dict[str,list[dict[str,object]]]:
+    q=query.strip();like=f"%{q}%"
+    if not q:return {"players":[],"countries":[],"incidents":[],"audit":[]}
+    players=await db.fetch("""SELECT id,first_name,username,telegram_id,level,is_banned FROM players
+      WHERE first_name ILIKE $1 OR COALESCE(username,'') ILIKE $1 OR id::text=$2 OR telegram_id::text=$2 ORDER BY last_seen_at DESC LIMIT $3""",like,q,limit)
+    countries=await db.fetch("SELECT id,name,status,treasury_toman FROM countries WHERE name ILIKE $1 OR id::text=$2 ORDER BY name LIMIT $3",like,q,limit)
+    incidents=await db.fetch("SELECT id,title,severity,status,action_view FROM admin_incidents WHERE title ILIKE $1 OR detail ILIKE $1 ORDER BY last_seen_at DESC LIMIT $2",like,limit)
+    audits=await db.fetch("SELECT id,admin_actor,action,created_at FROM admin_audit_log WHERE action ILIKE $1 OR admin_actor ILIKE $1 ORDER BY created_at DESC LIMIT $2",like,limit)
+    return {"players":[dict(x) for x in players],"countries":[dict(x) for x in countries],"incidents":[dict(x) for x in incidents],"audit":[dict(x) for x in audits]}
+
+async def anomaly_rows(limit:int=100)->list[dict[str,object]]:
+    rows=await db.fetch("""WITH flow AS (
+      SELECT player_id,count(*) tx_count,COALESCE(sum(abs(amount)),0) volume,
+       count(*) FILTER(WHERE reason='level_up' OR reason LIKE '%xp%') xp_related
+      FROM ledger WHERE created_at>=now()-interval '24 hours' AND player_id IS NOT NULL GROUP BY player_id
+    ), wealth AS (SELECT id,first_name,username,wallet_toman+savings_toman wealth FROM players)
+    SELECT w.id,w.first_name,w.username,w.wealth,COALESCE(f.tx_count,0) tx_count,COALESCE(f.volume,0) volume,
+      CASE WHEN COALESCE(f.tx_count,0)>250 THEN 'transaction_burst'
+           WHEN COALESCE(f.volume,0)>GREATEST(w.wealth*5,50000000) THEN 'volume_spike'
+           WHEN w.wealth>1000000000 THEN 'wealth_outlier' END anomaly
+    FROM wealth w LEFT JOIN flow f ON f.player_id=w.id
+    WHERE COALESCE(f.tx_count,0)>250 OR COALESCE(f.volume,0)>GREATEST(w.wealth*5,50000000) OR w.wealth>1000000000
+    ORDER BY volume DESC,wealth DESC LIMIT $1""",limit)
+    return [dict(x) for x in rows]
+
+async def register_undo(actor:str,action_type:str,target_key:str,inverse:dict[str,object],request_id:str)->int:
+    return int(await db.fetchval("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+      VALUES($1,$2,$3,$4,$5,now()+interval '10 minutes') RETURNING id""",actor,action_type,target_key,inverse,request_id))
+
+async def undo_action(action_id:int,actor:str)->bool:
+    async with db.transaction() as conn:
+        row=await conn.fetchrow("SELECT * FROM admin_reversible_actions WHERE id=$1 FOR UPDATE",action_id)
+        if not row or row['undone_at'] or row['expires_at']<=await conn.fetchval('SELECT now()'):raise ValueError('undo_unavailable')
+        data=dict(row['inverse_payload']);kind=str(row['action_type'])
+        if kind=='feature_toggle':
+            await set_flag(conn,str(data['key']),bool(data['enabled']),actor)
+        elif kind=='market_price':
+            await conn.execute("UPDATE market_prices SET current_price_toman=$2,updated_by=$3,updated_at=now() WHERE asset_code=$1",data['asset'],int(data['price']),actor)
+            await conn.execute("INSERT INTO market_price_snapshots(asset_code,price_toman,captured_at) VALUES($1,$2,date_trunc('minute',now())) ON CONFLICT(asset_code,captured_at) DO UPDATE SET price_toman=EXCLUDED.price_toman",data['asset'],int(data['price']))
+        elif kind=='country_asset':
+            country_id=int(data['country_id']);asset=str(data['asset']);delta=int(data['delta'])
+            if asset=='IRT':
+                balance=await conn.fetchval("UPDATE countries SET treasury_toman=treasury_toman+$2 WHERE id=$1 AND treasury_toman+$2>=0 RETURNING treasury_toman",country_id,delta)
+            else:
+                balance=await conn.fetchval("UPDATE country_resources SET quantity=quantity+$3 WHERE country_id=$1 AND asset_code=$2 AND quantity+$3>=0 RETURNING quantity",country_id,asset,delta)
+            if balance is None:raise ValueError('undo_insufficient_balance')
+            await conn.execute("INSERT INTO ledger(player_id,country_id,idempotency_key,reason,currency,asset_code,account,amount,balance_after,metadata) VALUES(NULL,$1,$2,'admin_undo',$3,$3,'treasury',$4,$5,$6)",country_id,f"admin-undo:{action_id}",asset,delta,int(balance),{'admin_actor':actor,'source_action_id':action_id})
+        else:raise ValueError('undo_unsupported')
+        await conn.execute("UPDATE admin_reversible_actions SET undone_at=now(),undone_by=$2 WHERE id=$1",action_id,actor)
+        await audit(conn,actor,'undo',f"undo:{action_id}",{'source_action_id':action_id})
+        return True
+
+
+async def available_undos(limit:int=50)->list[asyncpg.Record]:
+    return await db.fetch("""SELECT id,admin_actor,action_type,target_key,expires_at,created_at
+      FROM admin_reversible_actions WHERE undone_at IS NULL AND expires_at>now() ORDER BY created_at DESC LIMIT $1""",limit)
 ```
 
 ### `packages\core\repositories\country_repo.py`
@@ -8628,7 +9161,10 @@ async def feature(actor: str, key: str, enabled: bool, request_id: str) -> bool:
         if not await admin_repo.audit(conn, actor, "feature_toggle", request_id,
                                       {"key": key, "enabled": enabled}):
             return False
+        previous=await conn.fetchval("SELECT enabled FROM feature_flags WHERE key=$1 FOR UPDATE",key)
         await admin_repo.set_flag(conn, key, enabled, actor)
+        await conn.execute("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+          VALUES($1,'feature_toggle',$2,$3,$4,now()+interval '10 minutes')""",actor,key,{"key":key,"enabled":bool(previous)},request_id)
         return True
 
 async def grant_xp(actor: str, player_id: int, amount: int,
@@ -8645,6 +9181,7 @@ async def set_market_price(actor: str, asset: str, price: int, request_id: str) 
         if not await admin_repo.audit(conn, actor, "market_price", request_id,
                                       {"asset": asset, "price": price}):
             return False
+        previous=await conn.fetchval("SELECT current_price_toman FROM market_prices WHERE asset_code=$1 FOR UPDATE",asset)
         changed = await conn.fetchval("""
             UPDATE market_prices SET current_price_toman=$2,updated_by=$3,updated_at=now()
             WHERE asset_code=$1 RETURNING asset_code
@@ -8656,6 +9193,8 @@ async def set_market_price(actor: str, asset: str, price: int, request_id: str) 
             VALUES($1,$2,date_trunc('minute',now()))
             ON CONFLICT(asset_code,captured_at) DO UPDATE SET price_toman=EXCLUDED.price_toman
         """, asset, price)
+        await conn.execute("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+          VALUES($1,'market_price',$2,$3,$4,now()+interval '10 minutes')""",actor,asset,{"asset":asset,"price":int(previous)},request_id)
         return True
 
 async def adjust_country_asset(actor: str, country_id: int, asset: str, delta: int,
@@ -8687,6 +9226,8 @@ async def adjust_country_asset(actor: str, country_id: int, asset: str, delta: i
             VALUES(NULL,$1,$2,'admin_adjustment',$3,$3,'treasury',$4,$5,$6)
         """, country_id, f"admin-country:{request_id}", asset, delta, value,
              {"admin_actor": actor})
+        await conn.execute("""INSERT INTO admin_reversible_actions(admin_actor,action_type,target_key,inverse_payload,source_request_id,expires_at)
+          VALUES($1,'country_asset',$2,$3,$4,now()+interval '10 minutes')""",actor,f"{country_id}:{asset}",{"country_id":country_id,"asset":asset,"delta":-delta},request_id)
         return int(value)
 
 async def set_president(actor: str, country_id: int, player_id: int | None,
@@ -8740,6 +9281,72 @@ async def queue_ad(actor: str, ad_id: int, request_id: str) -> bool:
                                          {"text":row["body"],"ad_id":ad_id},row["destination_chat_id"])
         if queued: await conn.execute("UPDATE ad_campaigns SET status='queued',last_queued_at=now(),updated_at=now() WHERE id=$1",ad_id)
         return queued
+```
+
+### `packages\core\services\admin_security.py`
+
+```python
+"""Backend-enforced RBAC and one-use previews for privileged admin mutations."""
+from __future__ import annotations
+import hashlib,json,secrets
+from datetime import UTC,datetime,timedelta
+from fastapi import HTTPException,Request
+from packages.core import db
+from packages.core.settings import get_settings
+
+ROLE_PERMISSIONS={
+ "viewer":{"read"},
+ "support":{"read","players"},
+ "content":{"read","content"},
+ "economy":{"read","economy","countries"},
+ "operator":{"read","operations","content"},
+ "superadmin":{"read","players","content","economy","countries","operations","undo"},
+}
+SENSITIVE=(
+ ("/users/","players"),("/market/","economy"),("/countries/","countries"),
+ ("/feature-flags/","operations"),("/operations/","operations"),("/ad-requests/","content"),
+)
+
+def permission_for(path:str,method:str)->str:
+ if method in {"GET","HEAD","OPTIONS"}:return "read"
+ for fragment,permission in SENSITIVE:
+  if fragment in path:return permission
+ return "content"
+
+def require_permission(actor:str,path:str,method:str)->str:
+ role=get_settings().admin_role
+ permission=permission_for(path,method)
+ if permission not in ROLE_PERMISSIONS.get(role,set()):
+  raise HTTPException(403,f"نقش {role} اجازه این عملیات را ندارد.")
+ return role
+
+def payload_hash(payload:object)->str:
+ raw=json.dumps(payload,sort_keys=True,separators=(",",":"),ensure_ascii=False)
+ return hashlib.sha256(raw.encode()).hexdigest()
+
+async def issue_preview(actor:str,method:str,path:str,payload:object)->dict[str,object]:
+ require_permission(actor,path,method)
+ if not path.startswith("/api/admin/") or path=="/api/admin/action-preview":raise HTTPException(400,"مسیر پیش‌نمایش معتبر نیست.")
+ token=secrets.token_urlsafe(32);digest=hashlib.sha256(token.encode()).hexdigest();expires=datetime.now(UTC)+timedelta(minutes=2)
+ await db.execute("""INSERT INTO admin_action_previews(token_hash,admin_actor,method,path,payload_hash,expires_at)
+ VALUES($1,$2,$3,$4,$5,$6)""",digest,actor,method.upper(),path,payload_hash(payload),expires)
+ return {"token":token,"expires_at":expires,"permission":permission_for(path,method),"summary":f"{method.upper()} {path}"}
+
+async def verify_request(request:Request,actor:str)->None:
+ role=require_permission(actor,request.url.path,request.method)
+ if request.method in {"GET","HEAD","OPTIONS"}:return
+ # Creating a preview is authenticated and RBAC checked, but naturally needs no preview itself.
+ if request.url.path=="/api/admin/action-preview":return
+ token=request.headers.get("x-admin-preview","")
+ if not token:raise HTTPException(428,"برای این عملیات پیش‌نمایش معتبر لازم است.")
+ try:payload=await request.json()
+ except Exception:payload={}
+ digest=hashlib.sha256(token.encode()).hexdigest()
+ used=await db.fetchval("""UPDATE admin_action_previews SET used_at=now()
+ WHERE token_hash=$1 AND admin_actor=$2 AND method=$3 AND path=$4 AND payload_hash=$5
+ AND used_at IS NULL AND expires_at>now() RETURNING token_hash""",digest,actor,request.method.upper(),request.url.path,payload_hash(payload))
+ if not used:raise HTTPException(409,"پیش‌نمایش منقضی، مصرف‌شده یا ناسازگار است.")
+ request.state.admin_role=role
 ```
 
 ### `packages\core\services\commerce.py`
@@ -10290,6 +10897,112 @@ RULES={
 def rules_for(code:str)->Rules:return RULES.get(code,RULES["republic"])
 ```
 
+### `packages\core\services\life_progression.py`
+
+```python
+"""Action-based career skills and useful personal assets for TeleLife."""
+from __future__ import annotations
+from dataclasses import dataclass
+from math import floor
+from typing import Any
+import asyncpg
+from packages.core import db
+from packages.core.config import get_config
+from packages.core.repositories import ledger_repo
+
+@dataclass(frozen=True, slots=True)
+class SkillProgress:
+    code: str; level: int; xp: int; needed: int; total_xp: int; actions: int; title: str
+
+@dataclass(frozen=True, slots=True)
+class AssetView:
+    code: str; title: str; owned: bool; available: bool; reason: str; cost: int
+    maintenance: int; opportunity: str
+
+def skill_required(level:int)->int:
+    cfg=get_config()
+    return max(1,int(cfg.int_("life_progression.skills.base_xp")*(level**cfg.float_("life_progression.skills.exponent"))))
+
+def skill_title(level:int)->str:
+    titles=get_config().section("life_progression.skills.titles")
+    eligible=[(int(k),str(v)) for k,v in titles.items() if int(k)<=level]
+    return max(eligible,key=lambda item:item[0])[1] if eligible else "تازه‌کار"
+
+def skill_for_job(job_code:str)->str:
+    return str(get_config().get(f"life_progression.skills.jobs.{job_code}"))
+
+def apply_skill_levels(level:int,xp:int)->tuple[int,int]:
+    top=get_config().int_("life_progression.skills.max_level")
+    while level<top and xp>=skill_required(level):
+        xp-=skill_required(level);level+=1
+    return level,xp
+
+async def record_work(conn:asyncpg.Connection,player_id:int,job_code:str,key:str,fraction:float)->SkillProgress:
+    code=skill_for_job(job_code)
+    await conn.execute("""INSERT INTO player_skills(player_id,skill_code) VALUES($1,$2)
+      ON CONFLICT DO NOTHING""",player_id,code)
+    row=await conn.fetchrow("SELECT * FROM player_skills WHERE player_id=$1 AND skill_code=$2 FOR UPDATE",player_id,code)
+    duplicate=await conn.fetchval("SELECT 1 FROM skill_events WHERE idempotency_key=$1",key)
+    level=int(row["level"]);current=int(row["xp"])
+    if duplicate:return SkillProgress(code,level,current,skill_required(level),int(row["total_xp"]),int(row["actions_count"]),skill_title(level))
+    # Asset configuration is application-owned; only owned codes are read from DB.
+    owned=[str(r["asset_code"]) for r in await conn.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)]
+    specs=get_config().section("life_progression.assets")
+    bonus=sum(int(specs[c].get("skill_xp_bonus_bp",0)) for c in owned if c in specs)
+    base=get_config().int_("life_progression.skills.work_xp_at_full_capacity")
+    amount=max(1,floor(base*max(0.05,min(1.5,fraction))*(10000+min(2500,bonus))/10000))
+    after,remaining=apply_skill_levels(level,current+amount)
+    await conn.execute("""UPDATE player_skills SET level=$3,xp=$4,total_xp=total_xp+$5,
+      actions_count=actions_count+1,updated_at=now() WHERE player_id=$1 AND skill_code=$2""",player_id,code,after,remaining,amount)
+    await conn.execute("""INSERT INTO skill_events(idempotency_key,player_id,skill_code,amount,level_after,source)
+      VALUES($1,$2,$3,$4,$5,'work_claim')""",key,player_id,code,amount,after)
+    return SkillProgress(code,after,remaining,skill_required(after),int(row["total_xp"])+amount,int(row["actions_count"])+1,skill_title(after))
+
+async def primary_skill(player_id:int)->SkillProgress|None:
+    row=await db.fetchrow("""SELECT * FROM player_skills WHERE player_id=$1
+      ORDER BY level DESC,total_xp DESC,skill_code LIMIT 1""",player_id)
+    if not row:return None
+    level=int(row["level"])
+    return SkillProgress(str(row["skill_code"]),level,int(row["xp"]),skill_required(level),int(row["total_xp"]),int(row["actions_count"]),skill_title(level))
+
+async def asset_bonus_bp(conn:asyncpg.Connection,player_id:int,field:str)->int:
+    if field not in {"work_bonus_bp","skill_xp_bonus_bp"}:raise ValueError("invalid_asset_bonus")
+    owned=[str(r["asset_code"]) for r in await conn.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)]
+    specs=get_config().section("life_progression.assets")
+    return min(2500,sum(int(specs[c].get(field,0)) for c in owned if c in specs))
+
+async def assets_view(player_id:int)->list[AssetView]:
+    player=await db.fetchrow("SELECT level FROM players WHERE id=$1",player_id)
+    if not player:raise ValueError("player_not_found")
+    owned={str(r["asset_code"]) for r in await db.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)}
+    skill=await primary_skill(player_id);skill_level=skill.level if skill else 1
+    result=[]
+    for code,spec in get_config().section("life_progression.assets").items():
+        min_level=int(spec["min_level"]);min_skill=int(spec.get("min_skill_level",1));is_owned=str(code) in owned
+        available=int(player["level"])>=min_level and skill_level>=min_skill
+        reason="خریده شده" if is_owned else "آماده خرید" if available else f"نیازمند سطح {min_level}"+(f" و مهارت {min_skill}" if min_skill>1 else "")
+        result.append(AssetView(str(code),str(spec["title"]),is_owned,available,reason,int(spec["cost_toman"]),int(spec["maintenance_daily_toman"]),str(spec["opportunity"])))
+    return result
+
+async def buy_asset(player_id:int,code:str,key:str)->bool:
+    specs=get_config().section("life_progression.assets")
+    if code not in specs:raise ValueError("invalid_asset")
+    spec=specs[code]
+    async with db.transaction() as conn:
+        player=await ledger_repo.lock_player(conn,player_id)
+        if not player:raise ValueError("player_not_found")
+        if await conn.fetchval("SELECT 1 FROM player_assets WHERE player_id=$1 AND asset_code=$2",player_id,code):raise ValueError("asset_owned")
+        skill=await conn.fetchrow("SELECT level FROM player_skills WHERE player_id=$1 ORDER BY level DESC LIMIT 1",player_id)
+        if int(player["level"])<int(spec["min_level"]) or int(skill["level"] if skill else 1)<int(spec.get("min_skill_level",1)):raise ValueError("asset_locked")
+        cost=int(spec["cost_toman"]);balance=await ledger_repo.change_player(conn,player_id,"IRT",-cost)
+        await conn.execute("INSERT INTO player_assets(player_id,asset_code,purchase_price_toman) VALUES($1,$2,$3)",player_id,code,cost)
+        ok=await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=key,reason="personal_asset_purchase",asset="IRT",account="wallet",amount=-cost,balance=balance,metadata={"asset":code})
+        if not ok:raise RuntimeError("asset_ledger_conflict")
+        rep=int(spec.get("reputation_bonus",0));happy=int(spec.get("happiness_bonus",0))
+        await conn.execute("UPDATE players SET reputation=reputation+$2,happiness=LEAST(100,happiness+$3) WHERE id=$1",player_id,rep,happy)
+        return True
+```
+
 ### `packages\core\services\live_market.py`
 
 ```python
@@ -10995,6 +11708,9 @@ async def view(player_id:int)->EconomyView:
     days=1 if last is None else max(0,min((today-last).days,get_config().int_("phase3.living.max_catch_up_days")))
     daily=get_config().int_("phase3.living.base_daily_cost_toman")
     if house: daily+=get_config().int_(f"phase3.housing.options.{house['housing_code']}.daily_living_toman")
+    assets=await db.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)
+    specs=get_config().section("life_progression.assets")
+    daily+=sum(int(specs[str(a["asset_code"])].get("maintenance_daily_toman",0)) for a in assets if str(a["asset_code"]) in specs)
     return EconomyView(int(player["wallet_toman"]),int(player["savings_toman"]),dict(house) if house else None,daily*days,days)
 
 async def savings_transfer(player_id:int,amount:int,direction:str,key:str)->tuple[int,int]:
@@ -11025,6 +11741,9 @@ async def acquire_housing(player_id:int,code:str,tenure:str,key:str)->dict[str,A
         if int(player["level"])<int(spec["min_level"]): raise ValueError("housing_locked")
         if await ledger_repo.idempotency_exists(conn,key):
             row=await conn.fetchrow("SELECT * FROM player_housing WHERE player_id=$1",player_id); return dict(row)
+        previous=await conn.fetchrow("SELECT housing_code FROM player_housing WHERE player_id=$1 FOR UPDATE",player_id)
+        previous_bonus=int(options[str(previous["housing_code"])].get("happiness_bonus",0)) if previous and str(previous["housing_code"]) in options else 0
+        new_bonus=int(spec.get("happiness_bonus",0))
         balance=await ledger_repo.change_player(conn,player_id,"IRT",-cost)
         until=clock.game_today()+timedelta(days=cfg.int_("phase3.housing.rent_period_days")) if tenure=="rent" else None
         row=await conn.fetchrow("""INSERT INTO player_housing(player_id,housing_code,tenure,rent_paid_until,purchased_at)
@@ -11032,6 +11751,7 @@ async def acquire_housing(player_id:int,code:str,tenure:str,key:str)->dict[str,A
           ON CONFLICT(player_id) DO UPDATE SET housing_code=$2,tenure=$3,rent_paid_until=$4,
           purchased_at=CASE WHEN $3='owned' THEN now() END,updated_at=now() RETURNING *""",player_id,code,tenure,until)
         if not await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=key,reason=f"housing_{tenure}",asset="IRT",account="wallet",amount=-cost,balance=balance,metadata={"housing":code}): raise RuntimeError("housing_ledger_conflict")
+        await conn.execute("UPDATE players SET happiness=GREATEST(0,LEAST(100,happiness+$2)) WHERE id=$1",player_id,new_bonus-previous_bonus)
         return dict(row)
 
 async def pay_living(player_id:int,key:str)->tuple[int,int]:
@@ -11049,6 +11769,9 @@ async def pay_living(player_id:int,key:str)->tuple[int,int]:
             await conn.execute("DELETE FROM player_housing WHERE player_id=$1", player_id)
             house = None
         daily=cfg.int_("phase3.living.base_daily_cost_toman")+(cfg.int_(f"phase3.housing.options.{house['housing_code']}.daily_living_toman") if house else 0)
+        assets=await conn.fetch("SELECT asset_code FROM player_assets WHERE player_id=$1",player_id)
+        specs=cfg.section("life_progression.assets")
+        daily+=sum(int(specs[str(a["asset_code"])].get("maintenance_daily_toman",0)) for a in assets if str(a["asset_code"]) in specs)
         amount=daily*days
         if int(player["wallet_toman"])<amount: raise ValueError("insufficient_balance")
         balance=await ledger_repo.change_player(conn,player_id,"IRT",-amount)
@@ -11071,7 +11794,7 @@ from math import floor
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.repositories import ledger_repo, production_repo
-from packages.core.services import xp
+from packages.core.services import xp, life_progression
 
 UPGRADE_KINDS = frozenset({"storage", "production"})
 
@@ -11240,6 +11963,10 @@ class WorkReceipt:
     country_asset: str | None
     country_name: str | None
     shift_mode: str
+    skill_code: str | None = None
+    skill_level: int = 1
+    skill_xp: int = 0
+    skill_needed: int = 1
 
 
 def shift_modes() -> dict[str, dict[str, object]]:
@@ -11268,6 +11995,8 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
         if existing:
             return WorkReceipt(0,0,str(existing['asset_code']),0,0,None,None,str(existing['shift_mode']))
         accrual=accrue(row,now);gross=accrual.stored
+        asset_bonus=await life_progression.asset_bonus_bp(conn,player_id,'work_bonus_bp')
+        gross=floor(gross*(10000+asset_bonus)/10000)
         if gross<cfg.int_("jobs.production.minimum_collection_amount"):
             return WorkReceipt(0,0,str(row['output_asset_code']),0,0,None,None,str(row.get('shift_mode') or 'balanced'))
         mode=str(row.get('shift_mode') or 'balanced');spec=cfg.section(f"jobs.purpose_loop.shift_modes.{mode}")
@@ -11304,14 +12033,16 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",key,player_id,int(country['id']) if country else None,row['job_code'],mode,asset,gross,player_amount,country_amount,tax,award)
         await conn.execute("""UPDATE player_jobs SET stored_amount=0,production_updated_at=$2,last_claim_at=$2,total_claims=total_claims+1,
           total_tax_toman=total_tax_toman+$3,total_country_output=total_country_output+$4,updated_at=now() WHERE player_id=$1""",player_id,now,tax,country_amount)
+        skill=await life_progression.record_work(conn,player_id,str(row['job_code']),f"{key}:skill",fraction)
     if award:
         result=await xp.grant(player_id,"purposeful_work",idempotency_key=f"{key}:xp",amount=award);award=result.granted
+        await db.execute("UPDATE work_claims SET xp_awarded=$2 WHERE idempotency_key=$1",key,award)
     from packages.core.services import missions
     await missions.report_progress(player_id,"work_shift")
     if country_amount:await missions.report_progress(player_id,"national_output")
     if tax:await missions.report_progress(player_id,"pay_work_tax")
     if award:await missions.report_progress(player_id,"earn_xp_100",award)
-    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode)
+    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode,skill.code,skill.level,skill.xp,skill.needed)
 ```
 
 ### `packages\core\services\progression.py`
@@ -11785,6 +12516,15 @@ class Settings(BaseSettings):
 
     admin_username: str = ""
     admin_password: str = ""
+    admin_role: str = "superadmin"
+
+    @field_validator("admin_role")
+    @classmethod
+    def validate_admin_role(cls, value: str) -> str:
+        role=value.strip().lower()
+        if role not in {"viewer","support","content","economy","operator","superadmin"}:
+            raise ValueError("ADMIN_ROLE is invalid")
+        return role
 
     @field_validator("log_level")
     @classmethod
@@ -13329,6 +14069,45 @@ def test_forwarded_headers_are_not_globally_trusted() -> None:
     assert 'forwarded_allow_ips="*"' not in text
 ```
 
+### `tests\test_admin_operations_10.py`
+
+```python
+from pathlib import Path
+ROOT=Path(__file__).resolve().parents[1]
+def text(path):return (ROOT/path).read_text(encoding='utf-8')
+
+def test_backend_preview_is_one_use_and_payload_bound():
+ s=text('packages/core/services/admin_security.py')
+ assert 'x-admin-preview' in s and 'payload_hash' in s and 'used_at IS NULL' in s
+ assert 'expires_at>now()' in s
+
+def test_rbac_is_backend_enforced():
+ s=text('packages/core/services/admin_security.py')
+ for role in ('viewer','support','content','economy','operator','superadmin'):assert role in s
+ assert 'require_permission' in s and 'HTTPException(403' in s
+
+def test_incidents_are_persistent_and_managed():
+ sql=text('migrations/0020_admin_operations_10.sql');repo=text('packages/core/repositories/admin_repo.py')
+ assert 'admin_incidents' in sql and 'acknowledged' in sql and 'resolved' in sql
+ assert 'persist_incidents' in repo and 'update_incident' in repo
+
+def test_macro_map_reads_latest_indicator_table():
+ s=text('packages/core/repositories/admin_repo.py')
+ assert 'country_indicator_daily d' in s and 'ORDER BY indicator_date DESC LIMIT 1' in s
+ assert 'e.inflation_bp' not in s
+
+def test_search_anomaly_sse_and_undo_exist():
+ router=text('apps/admin/routers/country_admin.py');repo=text('packages/core/repositories/admin_repo.py')
+ for token in ('/search','/anomalies','/events','/undo/{action_id}','/action-preview'):assert token in router
+ for token in ('global_search','anomaly_rows','undo_action','available_undos'):assert token in repo
+
+def test_frontend_uses_backend_preview_and_command_palette():
+ s=text('apps/admin/static/admin.js')
+ assert '/api/admin/action-preview' in s and 'X-Admin-Preview' in s
+ assert 'Ctrl K' not in s or 'command-palette' in s
+ assert 'EventSource' in s and 'setIncident' in s
+```
+
 ### `tests\test_all_keyboard_states.py`
 
 ```python
@@ -13846,6 +14625,48 @@ def test_integer_intervals_use_numeric_bind_casts() -> None:
     assert "::text || ' hours'" not in text
     assert "$1 || ' days'" not in text
     assert "interval '1 day'" in text
+```
+
+### `tests\test_life_progression_system.py`
+
+```python
+from pathlib import Path
+from packages.core.config import get_config
+from packages.core.services.life_progression import apply_skill_levels,skill_required
+
+
+def test_skill_curve_is_monotonic_and_bounded():
+    values=[skill_required(i) for i in range(1,20)]
+    assert values==sorted(values) and all(v>0 for v in values)
+    level,xp=apply_skill_levels(1,10**9)
+    assert level==get_config().int_("life_progression.skills.max_level") and xp>=0
+
+
+def test_every_job_maps_to_one_skill():
+    cfg=get_config()
+    assert set(cfg.section("jobs.jobs"))==set(cfg.section("life_progression.skills.jobs"))
+
+
+def test_assets_have_real_cost_effect_and_gate():
+    for spec in get_config().section("life_progression.assets").values():
+        assert int(spec["cost_toman"])>0
+        assert int(spec["maintenance_daily_toman"])>=0
+        assert int(spec["min_level"])>=1
+        assert str(spec["opportunity"]).strip()
+        assert int(spec["work_bonus_bp"]) or int(spec["skill_xp_bonus_bp"])
+
+
+def test_work_unlock_matches_runtime_policy():
+    cfg=get_config()
+    unlock=cfg.section("unlocks.levels")[1]
+    assert unlock["key"]=="jobs_basic"
+    assert cfg.int_("jobs.purpose_loop.available_from_level")==1
+
+
+def test_migration_is_additive():
+    sql=Path("migrations/0019_life_progression_system.sql").read_text()
+    assert "DROP TABLE" not in sql and "IF NOT EXISTS" in sql
+    assert "player_skills" in sql and "player_assets" in sql and "skill_events" in sql
 ```
 
 ### `tests\test_live_market.py`

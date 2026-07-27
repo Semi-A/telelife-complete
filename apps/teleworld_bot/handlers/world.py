@@ -5,11 +5,13 @@ from datetime import UTC,datetime
 from html import escape
 from telegram.constants import ChatMemberStatus, ChatType
 from telegram.error import BadRequest, Forbidden
-from telegram.ext import CallbackQueryHandler, MessageHandler, PreCheckoutQueryHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, PreCheckoutQueryHandler, filters
 from telegram import LabeledPrice
 from apps.teleworld_bot import keyboards as kb
 from apps.teleworld_bot.texts import fa
 from packages.core import db
+from packages.core.bot.start_limit import allow_start
+from packages.core.ui import schedule_cleanup
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
 from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade
 from packages.core.services import world_access
@@ -22,7 +24,9 @@ GOV = {code: item[0] for code, item in fa.GOVERNMENT_DETAILS.items()}
 ASSET = {"IRT":"تومان", "food":"غذا", "minerals":"مواد معدنی", "oil":"نفت", "energy":"انرژی", "technology":"فناوری"}
 ERRORS = {
     "citizen_required":"ابتدا شهروند این کشور شو.", "president_required":"فقط رهبر کشور می‌تواند این کار را انجام دهد.",
-    "already_citizen_elsewhere":"اکنون شهروند کشور دیگری هستی؛ ابتدا از آن خارج شو.",
+    "already_citizen_elsewhere":"اکنون شهروند کشور دیگری هستی؛ از همین پنل قوانین مهاجرت را ببین یا شهروندی فعلی را لغو کن.",
+    "citizenship_too_new":"برای جلوگیری از جابه‌جایی سوءاستفاده‌آمیز، لغو مستقیم تا ۷ روز پس از عضویت ممکن نیست.",
+    "leader_must_transfer_power":"رهبر باید ابتدا قدرت را واگذار کند.", "migration_pending":"ابتدا درخواست مهاجرت در انتظار را تعیین تکلیف کن.",
     "election_already_open":"یک انتخابات فعال وجود دارد.", "project_not_active":"پروژه فعالی وجود ندارد.",
     "country_already_exists":"این گروه از قبل کشور دارد.", "insufficient_balance":"موجودی کافی نیست.",
     "insufficient_player_balance":"موجودی کیف پولت کافی نیست.", "country_not_found":"کشوری پیدا نشد.",
@@ -50,16 +54,23 @@ async def show(update, context, text, markup):
     message_id = query.message.message_id if query and query.message else int(state["message_id"]) if state else None
     if message_id:
         try:
-            await context.bot.edit_message_text(chat_id=chat.id, message_id=message_id, text=text, reply_markup=markup)
+            edited = await context.bot.edit_message_text(chat_id=chat.id, message_id=message_id, text=text, reply_markup=markup)
             await ui_state_repo.set_world(chat.id, message_id)
+            if hasattr(edited, "message_id"):
+                schedule_cleanup(context, edited, "world")
+            elif query and query.message:
+                schedule_cleanup(context, query.message, "world")
             return
         except BadRequest as exc:
             if "message is not modified" in str(exc).lower():
+                if query and query.message:
+                    schedule_cleanup(context, query.message, "world")
                 return
         except Forbidden:
             pass
     sent = await context.bot.send_message(chat.id, text, reply_markup=markup)
     await ui_state_repo.set_world(chat.id, sent.message_id)
+    schedule_cleanup(context, sent, "world")
 
 async def facts(chat_id):
     row = await country_repo.by_chat(chat_id)
@@ -397,9 +408,27 @@ async def callback(update, context):
         elif action == "subtreasury":
             p=await player(update);price=await commerce.buy_with_treasury(update.effective_chat.id,p.id);await answer(query,f"اشتراک با {fmt.toman(price)} از خزانه فعال شد.",show_alert=True);await home(update,context)
         elif action == "join":
-            p = await player(update); joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id); await answer(query, "شهروند شدی." if joined else "از قبل شهروندی.", show_alert=True); await home(update, context)
+            p = await player(update)
+            try:
+                joined = await countries.join_country(chat_id=update.effective_chat.id, player_id=p.id)
+            except ValueError as exc:
+                if str(exc) == "migration_required":
+                    await answer(query)
+                    await show(update, context, "🌐 <b>شهروند کشور دیگری هستی</b>\n\nبرای پیوستن به این کشور، یکی از مسیرهای قانونی را انتخاب کن: مهاجرت با عوارض و محدودیت سیاسی، یا لغو شهروندی فعلی در صورت گذشت حداقل ۷ روز. رهبر کشور و کاربر دارای درخواست مهاجرت باز نمی‌توانند لغو مستقیم انجام دهند.", kb.citizenship_elsewhere())
+                    return
+                raise
+            await answer(query, "شهروند شدی." if joined else "از قبل شهروند همین کشور هستی.", show_alert=True); await home(update, context)
+        elif action == "migration_rules":
+            await answer(query)
+            await show(update, context, "✈️ <b>قوانین مهاجرت</b>\n\n• فاصله دو مهاجرت: ۳۰ روز\n• عوارض خروج: ۵٪ دارایی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان\n• مهلت بررسی مقصد: ۷۲ ساعت\n• نشان مهاجر: ۳۰ روز\n• محدودیت فعالیت سیاسی: ۱۴ روز\n\nلغو مستقیم شهروندی فقط پس از ۷ روز، برای افراد غیررهبر و بدون درخواست مهاجرت باز ممکن است.", kb.citizenship_elsewhere())
+        elif action == "citizenship_cancel_ask":
+            await answer(query)
+            await show(update, context, "⚠️ <b>لغو شهروندی فعلی</b>\n\nبا تأیید، عضویت فعلی غیرفعال می‌شود. دارایی شخصی حفظ می‌شود، اما دسترسی‌های شهروندی کشور را از دست می‌دهی. این کار برای رهبر یا عضویت کمتر از ۷ روز مجاز نیست.", kb.citizenship_cancel_confirm())
+        elif action == "citizenship_cancel_confirm":
+            p = await player(update); await countries.cancel_citizenship(p.id)
+            await answer(query, "شهروندی فعلی لغو شد؛ اکنون می‌توانی به کشور مقصد بپیوندی.", show_alert=True); await home(update, context)
         elif action == "leave":
-            await answer(query,"برای جلوگیری از دورزدن عوارض و محدودیت زمانی، خروج مستقیم بسته است؛ از بخش «مهاجرت» کشور مقصد را انتخاب کن.",show_alert=True)
+            await answer(query,"برای جلوگیری از دورزدن عوارض و محدودیت زمانی، از بخش مهاجرت استفاده کن؛ لغو مستقیم فقط طبق قوانین نمایش‌داده‌شده ممکن است.",show_alert=True)
         elif action.startswith("donate:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
@@ -496,6 +525,16 @@ async def text(update, context):
             await show(update, context, f"ساخت کشور انجام نشد: {ERRORS.get(str(exc), 'اطلاعات معتبر نبود.')}\n\nاز صفحه اصلی دوباره تلاش کن.", kb.back()); return
         context.chat_data.pop(FLOW, None); await home(update, context)
 
+
+async def start(update, context):
+    user, chat = update.effective_user, update.effective_chat
+    if not user or not chat: return
+    if not await allow_start(context, user.id, chat.id):
+        if update.effective_message:
+            await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
+        return
+    await home(update, context)
+
 async def precheckout(update,context):
  q=update.pre_checkout_query;ok=await commerce.precheckout(q.invoice_payload,q.from_user.id,q.total_amount);await q.answer(ok=ok,error_message=None if ok else "صورتحساب نامعتبر یا منقضی شده است.")
 async def successful_payment(update,context):
@@ -504,7 +543,8 @@ async def successful_payment(update,context):
  purpose=await commerce.settle(payment.invoice_payload,update.effective_user.id,payment.total_amount,payment.telegram_payment_charge_id,payment.provider_payment_charge_id or None)
  await update.effective_message.reply_text("✅ سهم شما ثبت شد. با تکمیل هدف جمعیت‌محور، اشتراک ۳۰روزه گروه فعال می‌شود." if purpose=="subscription" else "✅ پرداخت ثبت شد.")
 def register(app):
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback, pattern=r"^tw:"))
     app.add_handler(PreCheckoutQueryHandler(precheckout))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
-    app.add_handler(MessageHandler(filters.TEXT, text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text))

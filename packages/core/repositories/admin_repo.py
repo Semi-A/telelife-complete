@@ -195,10 +195,10 @@ async def economy_integrity() -> dict[str, object]:
 
 
 async def command_center() -> dict[str, object]:
-    """Actionable operational picture assembled from canonical tables."""
-    overview = await dashboard_stats()
-    ops = await operations_status()
-    integrity = await economy_integrity()
+    """Build an actionable picture without reviving stale or expected events."""
+    overview, ops, integrity = await asyncio.gather(
+        dashboard_stats(), operations_status(), economy_integrity()
+    )
     countries_rows = await db.fetch("""
       SELECT c.id,c.name,c.status,c.treasury_toman,
         count(DISTINCT cs.player_id) FILTER (WHERE cs.is_active) citizens,
@@ -209,7 +209,10 @@ async def command_center() -> dict[str, object]:
       FROM countries c
       LEFT JOIN citizenships cs ON cs.country_id=c.id
       LEFT JOIN country_economy_state e ON e.country_id=c.id
-      LEFT JOIN LATERAL (SELECT inflation_bp,unemployment_bp FROM country_indicator_daily d WHERE d.country_id=c.id ORDER BY indicator_date DESC LIMIT 1) i ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT inflation_bp,unemployment_bp FROM country_indicator_daily d
+        WHERE d.country_id=c.id ORDER BY indicator_date DESC LIMIT 1
+      ) i ON TRUE
       GROUP BY c.id,i.inflation_bp,i.unemployment_bp,e.production_modifier_bp
       ORDER BY crisis DESC,c.treasury_toman DESC LIMIT 24
     """)
@@ -220,49 +223,85 @@ async def command_center() -> dict[str, object]:
         alerts.append({"severity":"critical","domain":"service","title":"خطا در صف انتشار","detail":f"{queues['outbox_failed']} پیام ناموفق نیازمند بررسی است.","action":"operations"})
     if int(queues.get("ads_failed") or 0):
         alerts.append({"severity":"warning","domain":"content","title":"تحویل تبلیغ ناموفق","detail":f"{queues['ads_failed']} تحویل تبلیغ شکست خورده است.","action":"requests"})
-    failed_jobs=[j for j in ops.get("jobs",[]) if j.get("status") not in {"success","completed","healthy"}]
-    for job in failed_jobs[:4]:
-        alerts.append({"severity":"critical","domain":"service","title":f"Job ناموفق: {job['job_name']}","detail":job.get("error_message") or "اجرای اخیر موفق نبوده است.","action":"operations"})
-    if market.get("source_error"):
+
+    now = datetime.now(UTC)
+    healthy_statuses = {"success", "completed", "healthy"}
+    for job in ops.get("jobs", []):
+        status = str(job.get("status") or "").lower()
+        finished = job.get("finished_at") or job.get("started_at")
+        # Old failures are history, not live incidents. They remain visible in Operations.
+        recent = bool(finished and (now - finished).total_seconds() <= 3600)
+        if status and status not in healthy_statuses and recent:
+            alerts.append({"severity":"critical","domain":"service","title":f"Job ناموفق: {job['job_name']}","detail":job.get("error_message") or "اجرای اخیر موفق نبوده است.","action":"operations"})
+
+    source_checked = market.get("source_checked_at")
+    source_error_is_current = bool(
+        market.get("source_error") and source_checked
+        and (now-source_checked).total_seconds() <= 1800
+    )
+    if source_error_is_current:
         alerts.append({"severity":"warning","domain":"economy","title":"منبع نرخ بازار ناپایدار","detail":str(market["source_error"]),"action":"operations"})
-    if bool(ops.get("market_frozen")):
-        alerts.append({"severity":"info","domain":"economy","title":"بازار دلار متوقف است","detail":"فریز مدیریتی بازار فعال است.","action":"controls"})
-    negatives=sum(int(integrity.get(k) or 0) for k in ("negative_players","negative_countries","negative_ledger_rows"))
+    # An intentional freeze is state, not an error; it stays visible in Controls.
+    negatives = sum(int(integrity.get(k) or 0) for k in (
+        "negative_players", "negative_countries", "negative_ledger_rows"
+    ))
     if negatives:
         alerts.append({"severity":"critical","domain":"economy","title":"ناسازگاری دفتر اقتصاد","detail":f"{negatives} رکورد با مانده منفی پیدا شد.","action":"ledger"})
-    crisis_count=sum(1 for x in countries_rows if x["crisis"])
+    crisis_count = sum(1 for row in countries_rows if row["crisis"])
     if crisis_count:
         alerts.append({"severity":"warning","domain":"world","title":"بحران فعال در جهان","detail":f"{crisis_count} کشور درگیر بحران فعال است.","action":"countries"})
-    if not alerts:
-        alerts.append({"severity":"info","domain":"system","title":"وضعیت پایدار","detail":"در این لحظه رخداد قابل‌اقدام بحرانی ثبت نشده است.","action":"operations"})
-    order={"critical":0,"warning":1,"info":2};alerts.sort(key=lambda x:order[str(x["severity"])])
-    await persist_incidents(alerts)
-    durable=[dict(x) for x in await incident_rows(30)]
-    return {"overview":dict(overview) if overview else {},"operations":ops,"integrity":integrity,
-      "alerts":durable,"countries":[dict(x) for x in countries_rows],
-      "summary":{"critical":sum(a["severity"]=="critical" and a["status"]!='resolved' for a in durable),"warning":sum(a["severity"]=="warning" and a["status"]!='resolved' for a in durable),"crises":crisis_count}}
 
-async def persist_incidents(items:list[dict[str,object]])->list[dict[str,object]]:
-    """Upsert observations while preserving acknowledgement and ownership."""
+    alerts.sort(key=lambda item: {"critical":0,"warning":1,"info":2}[str(item["severity"])])
+    active_fingerprints = await persist_incidents(alerts)
+    await resolve_unobserved_incidents(active_fingerprints)
+    durable = [dict(row) for row in await incident_rows(30, include_resolved=False)]
+    return {
+        "overview": dict(overview) if overview else {},
+        "operations": ops,
+        "integrity": integrity,
+        "alerts": durable,
+        "countries": [dict(row) for row in countries_rows],
+        "summary": {
+            "critical": sum(row["severity"] == "critical" for row in durable),
+            "warning": sum(row["severity"] == "warning" for row in durable),
+            "crises": crisis_count,
+        },
+    }
+
+async def persist_incidents(items:list[dict[str,object]])->set[str]:
+    """Upsert current observations without inflating counts on every refresh."""
     import hashlib
-    seen=[]
+    seen: set[str] = set()
     for item in items:
         fingerprint=hashlib.sha256(f"{item['domain']}|{item['title']}".encode()).hexdigest()[:32]
-        row=await db.fetchrow("""INSERT INTO admin_incidents(fingerprint,severity,domain,title,detail,action_view,metadata)
+        seen.add(fingerprint)
+        await db.fetchrow("""INSERT INTO admin_incidents(fingerprint,severity,domain,title,detail,action_view,metadata)
           VALUES($1,$2,$3,$4,$5,$6,$7)
           ON CONFLICT(fingerprint) DO UPDATE SET severity=EXCLUDED.severity,detail=EXCLUDED.detail,
-          action_view=EXCLUDED.action_view,last_seen_at=now(),occurrences=admin_incidents.occurrences+1,
-          status=CASE WHEN admin_incidents.status='resolved' THEN 'open' ELSE admin_incidents.status END,
-          resolved_at=CASE WHEN admin_incidents.status='resolved' THEN NULL ELSE admin_incidents.resolved_at END
+          action_view=EXCLUDED.action_view,last_seen_at=now(),
+          occurrences=CASE WHEN admin_incidents.last_seen_at<now()-interval '10 minutes'
+                           THEN admin_incidents.occurrences+1 ELSE admin_incidents.occurrences END,
+          status=CASE WHEN admin_incidents.status='resolved' AND admin_incidents.last_seen_at<now()-interval '10 minutes'
+                      THEN 'open' ELSE admin_incidents.status END,
+          resolved_at=CASE WHEN admin_incidents.status='resolved' AND admin_incidents.last_seen_at<now()-interval '10 minutes'
+                           THEN NULL ELSE admin_incidents.resolved_at END
           RETURNING *""",fingerprint,item['severity'],item['domain'],item['title'],item['detail'],item['action'],item)
-        seen.append(dict(row))
     return seen
 
-async def incident_rows(limit:int=100)->list[asyncpg.Record]:
-    return await db.fetch("""SELECT * FROM admin_incidents ORDER BY
-      CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+async def resolve_unobserved_incidents(active:set[str])->None:
+    """Automatically close recovered signals after a short observation grace period."""
+    values=list(active)
+    await db.execute("""UPDATE admin_incidents SET status='resolved',resolved_at=now(),
+      resolution_note=COALESCE(resolution_note,'بازیابی خودکار پس از رفع سیگنال')
+      WHERE status<>'resolved' AND last_seen_at<now()-interval '2 minutes'
+        AND NOT (fingerprint=ANY($1::text[]))""",values)
+
+async def incident_rows(limit:int=100,*,include_resolved:bool=True)->list[asyncpg.Record]:
+    return await db.fetch("""SELECT * FROM admin_incidents
+      WHERE $2::boolean OR status<>'resolved'
+      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
       CASE status WHEN 'open' THEN 0 WHEN 'investigating' THEN 1 WHEN 'acknowledged' THEN 2 ELSE 3 END,
-      last_seen_at DESC LIMIT $1""",limit)
+      last_seen_at DESC LIMIT $1""",limit,include_resolved)
 
 async def update_incident(incident_id:int,status:str,actor:str,note:str|None)->asyncpg.Record|None:
     return await db.fetchrow("""UPDATE admin_incidents SET status=$2,assigned_to=CASE WHEN $2 IN ('acknowledged','investigating') THEN $3 ELSE assigned_to END,

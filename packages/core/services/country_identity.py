@@ -15,7 +15,9 @@ async def by_chat(chat_id:int):
  return row if row and row["country_id"] else None
 
 def masthead(country_name:str, text:str)->str:
- return f"🏛 <b>خبرگزاری {escape(country_name)}</b>\n\n{text}"
+ """Wrap country news in valid, balanced Telegram HTML."""
+ name=escape(country_name)
+ return f"🏛 <b>خبرگزاری حکومت {name}</b>\n\n📊 <b>خلاصه امروز حکومت {name}</b>\n\n{text}"
 
 async def should_send_setup_notice(chat_id:int)->bool:
  key=f"missing-country-notice:{chat_id}"

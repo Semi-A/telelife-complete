@@ -31,6 +31,20 @@ def home(country, admin, citizen=False):
         return InlineKeyboardMarkup([[b("🏗 ساخت کشور", "create", "primary")], [b("📘 راهنمای ساخت کشور", "guide")], [b("🔄 تازه‌سازی", "home")]])
     return InlineKeyboardMarkup([[b("📘 برای ساخت کشور چه کنیم؟", "guide", "primary")], [b("🔄 تازه‌سازی", "home")]])
 
+
+def citizenship_elsewhere():
+    return InlineKeyboardMarkup([
+        [b("✈️ قوانین مهاجرت", "migration_rules", "primary")],
+        [b("🚪 لغو شهروندی فعلی", "citizenship_cancel_ask", "danger")],
+        [b("🏠 خانه جهان", "home")],
+    ])
+
+def citizenship_cancel_confirm():
+    return InlineKeyboardMarkup([
+        [b("تأیید لغو شهروندی", "citizenship_cancel_confirm", "danger")],
+        [b("انصراف", "home", "primary")],
+    ])
+
 def governments():
     items=[("🏛 جمهوری","republic"),("🗳 ریاستی","presidential"),("🏢 پارلمانی","parliamentary"),("⚖️ نیمه‌ریاستی","semi_presidential"),("👑 پادشاهی","monarchy"),("📜 مشروطه","constitutional_monarchy"),("🛡 دیکتاتوری","dictatorship"),("🧭 فدرال","federal"),("🤝 شورایی","council"),("👥 مستقیم","direct_democracy"),("⛪ دینی","theocracy"),("🎖 شورای نظامی","military_junta"),("💠 الیگارشی","oligarchy")]
     rows=[[b(label,f"gov:{code}") for label,code in items[i:i+2]] for i in range(0,len(items),2)]

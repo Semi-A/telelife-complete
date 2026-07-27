@@ -1,6 +1,7 @@
 """Country lifecycle, membership and deterministic initial-resource allocation."""
 from __future__ import annotations
 import hashlib, random
+from datetime import UTC, datetime, timedelta
 import asyncpg
 from packages.core import db
 from packages.core.config import get_config
@@ -108,3 +109,35 @@ async def leave_country(*, chat_id: int, player_id: int) -> bool:
             await conn.execute("UPDATE countries SET president_player_id=NULL WHERE id=$1 AND president_player_id=$2",country["id"],player_id)
             await _refresh_status(conn,int(country["id"]))
         return changed is not None
+
+async def cancel_citizenship(player_id: int) -> int:
+    """Cancel active citizenship under the configured anti-abuse rules."""
+    cfg = get_config()
+    async with db.transaction() as conn:
+        current = await conn.fetchrow(
+            """SELECT cs.country_id,cs.joined_at,c.president_player_id
+               FROM citizenships cs JOIN countries c ON c.id=cs.country_id
+               WHERE cs.player_id=$1 AND cs.is_active FOR UPDATE OF cs,c""",
+            player_id,
+        )
+        if not current:
+            raise ValueError("citizenship_not_found")
+        if current["president_player_id"] == player_id:
+            raise ValueError("leader_must_transfer_power")
+        pending = await conn.fetchval(
+            "SELECT 1 FROM migration_requests WHERE player_id=$1 AND status='pending'",
+            player_id,
+        )
+        if pending:
+            raise ValueError("migration_pending")
+        minimum_days = cfg.int_("migration.citizenship_cancellation_min_days")
+        joined_at = current["joined_at"]
+        if joined_at and joined_at > datetime.now(UTC) - timedelta(days=minimum_days):
+            raise ValueError("citizenship_too_new")
+        country_id = int(current["country_id"])
+        await conn.execute(
+            "UPDATE citizenships SET is_active=FALSE,left_at=now() WHERE player_id=$1",
+            player_id,
+        )
+        await _refresh_status(conn,country_id)
+        return country_id
