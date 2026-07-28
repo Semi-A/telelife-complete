@@ -39,7 +39,7 @@ async def lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if old_status in INACTIVE and await world_access_repo.claim_welcome(chat.id):
         state = "✅ دسترسی لازم کامل است." if access.ready else f"⚠️ دسترسی ناقص: {access.missing_fa()}"
         text = (
-            f"🌍 <b>به {escape(chat.title or 'این گروه')} خوش آمدم</b>\n\n"
+            f"🌍 به {escape(chat.title or 'این گروه')} خوش آمدم\n\n"
             "اینجا می‌توانید کشور، شهروندی، اقتصاد عمومی، انتخابات و پروژه ملی بسازید.\n\n"
             f"{state}"
         )

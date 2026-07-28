@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     memory_warning_mb: int = Field(default=450, ge=64, le=4096)
 
     telelife_bot_token: str = ""
+    telelife_bot_username: str = ""
     teleworld_bot_token: str = ""
     global_news_chat_id: int | None = None
 

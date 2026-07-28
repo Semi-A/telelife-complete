@@ -32,6 +32,8 @@ async def sell(player_id:int,asset:str,amount:int,key:str)->SaleReceipt:
  allowed_amount(amount);cfg=get_config();item=spec(asset)
  async with db.transaction() as conn:
   if await ledger_repo.economy_frozen(conn):raise ValueError("economy_frozen")
+  # Serialize sales for this player; otherwise two simultaneous clicks can both pass the daily cap.
+  if await ledger_repo.lock_player(conn,player_id) is None:raise ValueError("player_not_found")
   old=await conn.fetchrow("SELECT * FROM player_resource_sales WHERE idempotency_key=$1",key)
   if old:
    wallet=int(await conn.fetchval("SELECT wallet_toman FROM players WHERE id=$1",player_id) or 0)
@@ -56,6 +58,8 @@ async def transfer(actor:int,asset:str,amount:int,key:str,*,recipient:int|None=N
  allowed_amount(amount,social=True);spec(asset);cfg=get_config();kind="gift" if recipient else "country_donation"
  async with db.transaction() as conn:
   if await ledger_repo.economy_frozen(conn):raise ValueError("economy_frozen")
+  # Serialize all outgoing transfers for the actor so daily limits and reputation stay exact.
+  if await ledger_repo.lock_player(conn,actor) is None:raise ValueError("player_not_found")
   old=await conn.fetchrow("SELECT * FROM citizen_resource_transfers WHERE idempotency_key=$1",key)
   if old:
    balance=int(await conn.fetchval("SELECT quantity FROM player_resources WHERE player_id=$1 AND asset_code=$2",actor,asset) or 0)

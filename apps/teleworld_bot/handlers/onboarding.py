@@ -125,5 +125,5 @@ async def wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
 def register(app)->None:
  app.add_handler(CommandHandler("start",start),group=0)
  app.add_handler(ChatMemberHandler(welcomed,ChatMemberHandler.MY_CHAT_MEMBER),group=0)
- app.add_handler(CallbackQueryHandler(callback,pattern=r"^tw:"),group=0)
+ app.add_handler(CallbackQueryHandler(callback,pattern=r"^tw:(?:start|new|create|government:|confirm|cancel)",group=0))
  app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,wizard_text),group=1)

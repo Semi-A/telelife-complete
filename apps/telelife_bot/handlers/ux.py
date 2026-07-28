@@ -52,9 +52,9 @@ async def today_view(player: Any) -> TodayView:
 
     job_status = "شغل نداری" if not job else (f"{fmt.number(accrual.stored)} واحد درآمد آماده" if accrual and accrual.stored else "درآمد در حال جمع‌شدن")
     rows = [
-        "☀️ <b>امروز من</b>", "",
-        "🎯 <b>بهترین کار الان</b>", next_label, why, "",
-        "<b>وضعیت کوتاه</b>",
+        "☀️ امروز من", "",
+        "🎯 بهترین کار الان", next_label, why, "",
+        "وضعیت کوتاه",
         f"🎁 هدیه: {'آماده' if ready_daily else 'گرفته شده'} · زنجیره {fmt.number(streak)} روز",
         f"🎯 کارها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""),
         f"💼 شغل: {job_status}",
@@ -75,9 +75,9 @@ def upgrade_preview(row: Any, kind: str, wallet: int) -> str:
     cost = cfg.int_(f"{section}.{target}")
     title = "ظرفیت انبار" if kind == "storage" else "بازده تولید"
     extra = "ساعت بیشتری پیش از پرشدن انبار فرصت داری." if kind == "storage" else "سرعت درآمد شغل افزایش می‌یابد."
-    return (f"⚙️ <b>پیش‌نمایش ارتقای {title}</b>\n\n"
-            f"سطح فعلی: <b>{fmt.number(current)}</b>\nسطح جدید: <b>{fmt.number(target)}</b>\n"
-            f"هزینه: <b>{fmt.toman(cost)}</b>\nموجودی پس از ارتقا: <b>{fmt.toman(wallet-cost)}</b>\n\n{extra}")
+    return (f"⚙️ پیش‌نمایش ارتقای {title}\n\n"
+            f"سطح فعلی: {fmt.number(current)}\nسطح جدید: {fmt.number(target)}\n"
+            f"هزینه: {fmt.toman(cost)}\nموجودی پس از ارتقا: {fmt.toman(wallet-cost)}\n\n{extra}")
 
 
 def housing_preview(player: Any, code: str, tenure: str) -> str:
@@ -87,10 +87,10 @@ def housing_preview(player: Any, code: str, tenure: str) -> str:
     cost = int(spec["weekly_rent_toman"] if tenure == "rent" else spec["purchase_toman"])
     title = escape(str(spec.get("title") or HOUSING_FA.get(code, code)))
     mode = "اجاره هفت‌روزه" if tenure == "rent" else "خرید دائمی"
-    return (f"🏠 <b>پیش‌نمایش {mode} {title}</b>\n\nهزینه: <b>{fmt.toman(cost)}</b>\n"
-            f"هزینه زندگی روزانه: <b>{fmt.toman(int(spec.get('daily_living_toman',0)))}</b>\n"
-            f"حداقل سطح: <b>{fmt.number(spec['min_level'])}</b>\n"
-            f"موجودی پس از پرداخت: <b>{fmt.toman(player.wallet_toman-cost)}</b>\n\n"
+    return (f"🏠 پیش‌نمایش {mode} {title}\n\nهزینه: {fmt.toman(cost)}\n"
+            f"هزینه زندگی روزانه: {fmt.toman(int(spec.get('daily_living_toman',0)))}\n"
+            f"حداقل سطح: {fmt.number(spec['min_level'])}\n"
+            f"موجودی پس از پرداخت: {fmt.toman(player.wallet_toman-cost)}\n\n"
             "با تأیید، خانه فعلی جایگزین می‌شود و اثر شادی آن اعمال خواهد شد.")
 
 
@@ -104,20 +104,20 @@ async def market_preview(player: Any, side: str, cents: int) -> str:
     after_wallet = player.wallet_toman - total if side == "buy" else player.wallet_toman + total
     after_usd = player.usd_cents + cents if side == "buy" else player.usd_cents - cents
     verb = "خرید" if side == "buy" else "فروش"
-    return (f"💵 <b>پیش‌نمایش {verb} {fmt.usd(cents)}</b>\n\nنرخ محاسبه: <b>{fmt.toman(unit)}</b>\n"
-            f"ارزش معامله: <b>{fmt.toman(toman)}</b>\nکارمزد: <b>{fmt.toman(fee)}</b>\n"
-            f"دریافت/پرداخت نهایی: <b>{fmt.toman(total)}</b>\n\n"
-            f"کیف پول پس از معامله: <b>{fmt.toman(after_wallet)}</b>\nدلار پس از معامله: <b>{fmt.usd(after_usd)}</b>")
+    return (f"💵 پیش‌نمایش {verb} {fmt.usd(cents)}\n\nنرخ محاسبه: {fmt.toman(unit)}\n"
+            f"ارزش معامله: {fmt.toman(toman)}\nکارمزد: {fmt.toman(fee)}\n"
+            f"دریافت/پرداخت نهایی: {fmt.toman(total)}\n\n"
+            f"کیف پول پس از معامله: {fmt.toman(after_wallet)}\nدلار پس از معامله: {fmt.usd(after_usd)}")
 
 
 def actionable_error(code: str, *, player: Any | None = None) -> str:
     messages = {
-        "insufficient_balance": "❌ <b>موجودی کافی نیست</b>\n\nمبلغ لازم بیشتر از کیف پول فعلی است. درآمد شغل را دریافت کن، مبلغ کمتری انتخاب کن یا از پس‌انداز برداشت کن.",
-        "insufficient_player_balance": "❌ <b>موجودی کافی نیست</b>\n\nابتدا درآمد آماده را دریافت کن یا موجودی کیف پول را افزایش بده.",
-        "housing_locked": "🔒 <b>این خانه هنوز باز نشده است</b>\n\nدر صفحه مرکز پیشرفت، سطح لازم و بهترین مسیر رسیدن به آن را ببین.",
-        "market_locked": "🔒 <b>بازار ارز از سطح ۱۰ باز می‌شود</b>\n\nمأموریت‌ها و نتیجه شیفت‌ها سریع‌ترین مسیر دریافت تجربه‌اند.",
-        "job_not_found": "💼 <b>هنوز شغلی نداری</b>\n\nابتدا یک شغل انتخاب کن تا درآمد با گذشت زمان جمع شود.",
-        "max_level_reached": "✅ <b>این بخش در بالاترین سطح است</b>\n\nنیازی به ارتقای بیشتر نیست؛ روی دارایی یا هدف بعدی تمرکز کن.",
-        "market_frozen": "⏸ <b>بازار موقتاً متوقف است</b>\n\nقیمت‌ها قابل مشاهده‌اند، اما معامله تا بازشدن بازار انجام نمی‌شود.",
+        "insufficient_balance": "❌ موجودی کافی نیست\n\nمبلغ لازم بیشتر از کیف پول فعلی است. درآمد شغل را دریافت کن، مبلغ کمتری انتخاب کن یا از پس‌انداز برداشت کن.",
+        "insufficient_player_balance": "❌ موجودی کافی نیست\n\nابتدا درآمد آماده را دریافت کن یا موجودی کیف پول را افزایش بده.",
+        "housing_locked": "🔒 این خانه هنوز باز نشده است\n\nدر صفحه مرکز پیشرفت، سطح لازم و بهترین مسیر رسیدن به آن را ببین.",
+        "market_locked": "🔒 بازار ارز از سطح ۱۰ باز می‌شود\n\nمأموریت‌ها و نتیجه شیفت‌ها سریع‌ترین مسیر دریافت تجربه‌اند.",
+        "job_not_found": "💼 هنوز شغلی نداری\n\nابتدا یک شغل انتخاب کن تا درآمد با گذشت زمان جمع شود.",
+        "max_level_reached": "✅ این بخش در بالاترین سطح است\n\nنیازی به ارتقای بیشتر نیست؛ روی دارایی یا هدف بعدی تمرکز کن.",
+        "market_frozen": "⏸ بازار موقتاً متوقف است\n\nقیمت‌ها قابل مشاهده‌اند، اما معامله تا بازشدن بازار انجام نمی‌شود.",
     }
     return messages.get(code, "❌ عملیات کامل نشد. صفحه را تازه کن و شرایط نمایش‌داده‌شده را دوباره بررسی کن.")

@@ -29,20 +29,29 @@ def home(country, admin, citizen=False, official_role=None):
         rows = [[b("▶️ بهترین کار امروز کشور", "country_today", "primary")],
                 [b("👥 مردم و جامعه", "society"), b("🗳 رأی و سیاست", "politics")],
                 [b("💰 اقتصاد کشور", "economy"), b("🏗 همکاری در پروژه", "project")],
-                [b("🌐 ارتباط با کشورها", "trade"), b("🏛 اطلاعات کشور", "country")]]
+                [b("🌍 شورای جهان", "council", "success"), b("🏛 اطلاعات کشور", "country")]]
         if official_role in {"president", "economy_minister", "industry_minister"}:
             rows.insert(2,[b("⚙️ مدیریت حوزه من", "economyb", "success")])
         if official_role in {"president", "foreign_minister"}:
             rows.insert(3,[b("🤝 عملیات دیپلماسی", "trade", "success")])
         if official_role == "president" or admin:
             rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
-        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription"), b("🔄 تازه‌سازی", "home")])
+        rows.append([b("📣 بزرگ‌کردن کشور", "grow_country", "success"), b("🔄 تازه‌سازی", "home")])
+        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription")])
         return InlineKeyboardMarkup(rows)
     if admin:
         return InlineKeyboardMarkup([[b("🏗 ساخت کشور", "create", "primary")], [b("📘 راهنمای ساخت کشور", "guide")], [b("🔄 تازه‌سازی", "home")]])
     return InlineKeyboardMarkup([[b("📘 برای ساخت کشور چه کنیم؟", "guide", "primary")], [b("🔄 تازه‌سازی", "home")]])
 
 
+
+def grow_country(bot_username=""):
+ rows=[]
+ if bot_username:
+  add=f"https://t.me/{bot_username}?startgroup=true"
+  rows.append([InlineKeyboardButton("➕ افزودن تله‌ورلد به یک گروه",url=add,style="primary")])
+ rows.append([b("🌍 رفتن به شورای جهان","council","success")])
+ rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
 
 def confirm_world(confirm_action, back_action="home"):
  return InlineKeyboardMarkup([[b("✅ تأیید و اجرا",confirm_action,"success")],[b("↩️ انصراف",back_action,"primary")]])
@@ -185,6 +194,32 @@ def outgoing_trade(rows):
 def pending_relations(rows):
  buttons=[[b(f"✅ پذیرش {r['counterparty_name']}",f"relaccept:{r['counterparty_id']}","success")] for r in rows]
  buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)
+
+# ---------- شورای جهان: تصمیم ساده بین گروه‌ها ----------
+def council_home(items=()):
+ rows=[[b("🟣 پیشنهاد تازه","councilnew","primary"),b("🔵 تازه‌سازی","council")]]
+ for item in items:
+  side="پیشنهاد ما" if item.get("is_local") else "پیشنهاد دریافتی"
+  rows.append([b(f"{side}: {item['action_title']}",f"councilview:{item['id']}")])
+ rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
+
+def council_countries(rows):
+ buttons=[[b(f"🌍 {r['name']}",f"councilto:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ شورای جهان","council")]);return InlineKeyboardMarkup(buttons)
+
+def council_actions(target):
+ return InlineKeyboardMarkup([
+  [b("🟣 دوستی رسمی",f"councilmake:{target}:friend","primary"),b("🟡 شریک تجاری",f"councilmake:{target}:trade_partner")],
+  [b("🔵 پیمان دفاعی",f"councilmake:{target}:defensive_ally"),b("🌾 کمک غذایی",f"councilmake:{target}:aid_food")],
+  [b("⚡ کمک انرژی",f"councilmake:{target}:aid_energy"),b("💰 کمک مالی",f"councilmake:{target}:aid_irt")],
+  [b("↩️ انتخاب گروه","councilnew")],
+ ])
+
+def council_vote(proposal_id,can_vote=True):
+ rows=[]
+ if can_vote:rows.append([b("🟣 موافقم",f"councilvote:{proposal_id}:yes","primary"),b("🟡 مخالفم",f"councilvote:{proposal_id}:no","danger")])
+ rows.append([b("🔵 تازه‌سازی",f"councilview:{proposal_id}"),b("↩️ شورا","council")]);return InlineKeyboardMarkup(rows)
+
 # ---------- جامعه کشور ----------
 def society_home(pending=(), competitions=(), married=False):
  rows=[[b("🎁 هدیه منبع به دوست","resourcegift","success"),b("🏛 اهدای منبع به کشور","resourcedonate","success")],

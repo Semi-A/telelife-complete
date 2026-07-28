@@ -190,7 +190,7 @@ async def _do_mission_claim(
             title=claimed.title,
             reward=fmt.toman(claimed.reward_toman),
             xp=fmt.number(claimed.reward_xp),
-        ).replace("<b>", "").replace("</b>", "").replace("\n", " "),
+        ).replace("", "").replace("", "").replace("\n", " "),
         show_alert=True,
     )
     await _render_missions(ctx, context, edit=True)

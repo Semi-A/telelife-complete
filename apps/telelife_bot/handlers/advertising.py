@@ -15,13 +15,13 @@ def channels(package):
  return keyboard([[InlineKeyboardButton(label+f" · {commerce.ad_price(package,code)} ⭐",callback_data=f"ad:channel:{package}:{code}")] for code,label in CHANNEL.items()]+[[InlineKeyboardButton("بازگشت",callback_data="ad:new")]])
 async def begin(update:Update,context:ContextTypes.DEFAULT_TYPE):
  q=update.callback_query
- if q:await q.answer();await q.edit_message_text("📣 <b>درخواست تبلیغ</b>\n\nبسته را انتخاب کن. تبلیغ پیش از پرداخت کامل در پنل مدیریت بررسی می‌شود.",reply_markup=menu())
+ if q:await q.answer();await q.edit_message_text("📣 درخواست تبلیغ\n\nبسته را انتخاب کن. تبلیغ پیش از پرداخت کامل در پنل مدیریت بررسی می‌شود.",reply_markup=menu())
 async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
  q=update.callback_query;action=(q.data or "").split(":")
  if action[1]=="cancel":context.user_data.pop(FLOW,None);await q.answer();await q.edit_message_text("درخواست لغو شد.");return
  if action[1]=="mine":
   p=await player_repo.get_by_telegram_id(q.from_user.id);rows=await commerce.player_ads(p.id) if p else []
-  buttons=[];lines=["📂 <b>درخواست‌های من</b>"]
+  buttons=[];lines=["📂 درخواست‌های من"]
   for row in rows:
    lines.append(f"#{row['id']} · {row['title']} · {row['status']}"+(f"\nیادداشت: {row['admin_note']}" if row['admin_note'] else ""))
    if row['status']=='changes_requested':buttons.append([InlineKeyboardButton(f"✏️ اصلاح #{row['id']}",callback_data=f"ad:revise:{row['id']}")])

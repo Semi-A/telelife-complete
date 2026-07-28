@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 281
+تعداد کل فایل‌ها: 305
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -105,7 +105,10 @@ telelife_complete/
 │   ├── 0020_admin_operations_10.sql
 │   ├── 0021_multi_admin_hardening.sql
 │   ├── 0022_ui_panel_expiry.sql
-│   └── 0023_country_social_life.sql
+│   ├── 0023_country_social_life.sql
+│   ├── 0024_work_salary_resource_social.sql
+│   ├── 0025_intergroup_council.sql
+│   └── 0026_referral_growth.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -134,6 +137,7 @@ telelife_complete/
 │   │   │   │   ├── news.yaml
 │   │   │   │   ├── phase3.yaml
 │   │   │   │   ├── progression.yaml
+│   │   │   │   ├── resource_economy.yaml
 │   │   │   │   ├── unlocks.yaml
 │   │   │   │   └── xp.yaml
 │   │   │   ├── __init__.py
@@ -184,6 +188,7 @@ telelife_complete/
 │   │   │   ├── elections.py
 │   │   │   ├── engagement.py
 │   │   │   ├── governance.py
+│   │   │   ├── intergroup_council.py
 │   │   │   ├── life_progression.py
 │   │   │   ├── live_market.py
 │   │   │   ├── maintenance.py
@@ -195,6 +200,8 @@ telelife_complete/
 │   │   │   ├── personal_economy.py
 │   │   │   ├── production.py
 │   │   │   ├── progression.py
+│   │   │   ├── referrals.py
+│   │   │   ├── resource_economy.py
 │   │   │   ├── scheduler_ops.py
 │   │   │   ├── social.py
 │   │   │   ├── unlocks.py
@@ -209,7 +216,9 @@ telelife_complete/
 │   │   ├── utils/
 │   │   │   ├── __init__.py
 │   │   │   ├── clock.py
-│   │   │   └── fmt.py
+│   │   │   ├── fa_labels.py
+│   │   │   ├── fmt.py
+│   │   │   └── message_text.py
 │   │   ├── __init__.py
 │   │   ├── logging.py
 │   │   ├── monitor.py
@@ -224,6 +233,7 @@ telelife_complete/
 │   ├── test_admin_operations_10.py
 │   ├── test_admin_ui_health_market_regressions.py
 │   ├── test_all_keyboard_states.py
+│   ├── test_beginner_value_ux_2026_07_28.py
 │   ├── test_callbacks.py
 │   ├── test_clock.py
 │   ├── test_commerce.py
@@ -236,12 +246,14 @@ telelife_complete/
 │   ├── test_country_trade_release_c.py
 │   ├── test_daily.py
 │   ├── test_deep_audit_regressions.py
+│   ├── test_fa_ux_hotfix_2026_07_28.py
 │   ├── test_fmt.py
 │   ├── test_free_tier_hardening.py
 │   ├── test_glass_buttons.py
 │   ├── test_governance.py
 │   ├── test_hardening_contracts.py
 │   ├── test_hotfix_2026_07_27.py
+│   ├── test_intergroup_council_2026.py
 │   ├── test_interval_bindings.py
 │   ├── test_ledger_owner_regressions.py
 │   ├── test_life_progression_system.py
@@ -258,10 +270,12 @@ telelife_complete/
 │   ├── test_persian_button_contracts.py
 │   ├── test_phase3_phase4_contracts.py
 │   ├── test_phase5_config.py
+│   ├── test_plain_message_text_2026_07_28.py
 │   ├── test_production_security.py
 │   ├── test_progression.py
 │   ├── test_project_integrity.py
 │   ├── test_purposeful_work_release.py
+│   ├── test_referral_growth_2026.py
 │   ├── test_release_rebuild_regressions.py
 │   ├── test_scaling_migration.py
 │   ├── test_subscription_release_d.py
@@ -270,6 +284,8 @@ telelife_complete/
 │   ├── test_teleworld_start.py
 │   ├── test_token_isolation.py
 │   ├── test_unlocks.py
+│   ├── test_ux_economy_social_hotfix_2026_07_28.py
+│   ├── test_work_salary_resource_social_2026.py
 │   ├── test_world_access_contracts.py
 │   └── test_xp.py
 ├── tools/
@@ -292,8 +308,12 @@ telelife_complete/
 ├── Dockerfile
 ├── dump.py
 ├── HOTFIX_2026-07-27_FA.md
+├── HOTFIX_DEEP_AUDIT_FA_2026-07-28.md
+├── HOTFIX_FA_2026-07-28.md
 ├── HOTFIX_LEDGER_OWNER_FA_2026-07-27.md
 ├── HOTFIX_MIGRATOR_0021_0022_FA.md
+├── HOTFIX_PLAIN_MESSAGES_FA_2026-07-28.md
+├── HOTFIX_UX_ECONOMY_SOCIAL_FA_2026-07-28.md
 ├── LIFE_PROGRESSION_RELEASE_FA.md
 ├── MANIFEST.sha256
 ├── pyproject.toml
@@ -308,21 +328,25 @@ telelife_complete/
 ├── RELEASE_COMMERCE_FA.md
 ├── RELEASE_COUNTRY_SOCIAL_FA.md
 ├── RELEASE_HARDENING_FA.md
+├── RELEASE_INTERGROUP_COUNCIL_FA_2026-07-28.md
 ├── RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md
 ├── RELEASE_NOTES_FA.md
 ├── RELEASE_PURPOSEFUL_WORK_FA.md
 ├── RELEASE_REBUILD_2026-07-27_FA.md
+├── RELEASE_REFERRAL_GROWTH_FA_2026-07-28.md
 ├── RELEASE_SCALING_MIGRATION_FA.md
 ├── RELEASE_UX_COMPLETE_FA.md
 ├── RELEASE_UX_GLASS_2026_FA.md
 ├── RELEASE_V2_FA.md
+├── RELEASE_WORK_SOCIAL_ECONOMY_FA_2026-07-28.md
 ├── render.yaml
 ├── requirements.txt
 ├── run.py
 ├── telelife_complete_dump.md
 ├── TeleLife_Master_Plan.md
 ├── TEST_RESULTS_FA_2026-07-27.md
-└── UI_REDESIGN_FA.md
+├── UI_REDESIGN_FA.md
+└── UX_BEGINNER_REDESIGN_FA_2026-07-28.md
 ```
 
 ## محتوای فایل‌ها
@@ -359,7 +383,8 @@ MEMORY_WARNING_MB=450
 AD_REVIEW_NOTIFICATION_CHAT_ID=
 
 # Live USDT/IRT source (validated server-side; last good value is retained on failure).
-USDT_RATE_URL=https://api.zipodo.ir/usdt/
+USDT_RATE_URL=https://api.zipodo.ir/usdt/# Public username without @, used for referral deep links.
+TELELIFE_BOT_USERNAME=
 ```
 
 ### `.gitattributes`
@@ -1035,6 +1060,7 @@ body:before{content:"";position:fixed;inset:0;pointer-events:none;background-ima
 ### `apps\admin\static\admin.js`
 
 ```javascript
+const governmentFa={republic:'جمهوری',presidential:'جمهوری ریاستی',parliamentary:'نظام پارلمانی',semi_presidential:'نظام نیمه‌ریاستی',monarchy:'پادشاهی مطلقه',constitutional_monarchy:'پادشاهی مشروطه',dictatorship:'دیکتاتوری',federal:'نظام فدرال',council:'نظام شورایی',direct_democracy:'دموکراسی مستقیم',theocracy:'حکومت دینی',military_junta:'شورای نظامی',oligarchy:'الیگارشی'};
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const fa=new Intl.NumberFormat("fa-IR"), money=n=>`${fa.format(Number(n||0))} تومان`;
@@ -1072,7 +1098,7 @@ async function overview(){
   const cc=results[0].value,h=results[1].status==='fulfilled'?results[1].value:{services:{},ok:false};
   state.lastHealth=h;
   const o=cc.overview||{};$$('[data-stat]').forEach(el=>el.textContent=fa.format(o[el.dataset.stat]||0));
-  const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'بات زندگی',teleworld:'بات جهان'};
+  const names={admin:'پنل مدیریت',scheduler:'زمان‌بند',telelife:'تله‌لایف',teleworld:'تله‌ورلد'};
   const labels={online:'برخط',starting:'در حال شروع',recovering:'در حال بازیابی',offline:'خاموش',degraded:'اتصال ناپایدار',healthy:'برخط',restarting:'در حال بازیابی'};
   $("#service-radar").innerHTML=Object.entries(h.services||{}).map(([k,v])=>{
     const display=v.display_status||v.status||'unknown',severity=v.severity||(display==='online'||display==='healthy'?'ok':display==='starting'?'info':'warning');
@@ -1118,7 +1144,7 @@ async function players(){const q=encodeURIComponent($("#player-search").value.tr
 function xpDialog(id){openDialog(`اعطای XP به #${id}`,"پیشرفت بازیکن",'<label>مقدار XP<input id="f-xp" type="number" min="1" max="1000000" value="1000"></label>',async()=>{try{const r=await api(`/api/admin/users/${id}/xp`,{method:'POST',body:JSON.stringify({amount:Number($("#f-xp").value)})});$("#action-dialog").close();toast(`${fa.format(r.granted)} XP اعمال شد`);players()}catch(e){toast(e.message,true)}})}
 function banDialog(id,banned){openDialog(banned?`رفع مسدودی #${id}`:`مسدود کردن #${id}`,"کنترل دسترسی",banned?'': '<label>دلیل مسدودی<input id="f-reason" maxlength="500" placeholder="دلیل روشن و قابل پیگیری"></label>',async()=>{try{await api(`/api/admin/users/${id}/ban`,{method:'POST',body:JSON.stringify({enabled:!banned,reason:$("#f-reason")?.value||null})});$("#action-dialog").close();toast(banned?'دسترسی باز شد':'بازیکن مسدود شد');players()}catch(e){toast(e.message,true)}})}
 const assetFa={IRT:'خزانه',oil:'نفت',food:'غذا',minerals:'معدن',energy:'انرژی',technology:'فناوری'};
-async function countries(){const rows=await api('/api/admin/countries?limit=100');$("#country-grid").innerHTML=rows.map(x=>`<article class="country-card"><div class="country-top"><div><p class="eyebrow">${esc(x.government_type)}</p><h3>${esc(x.name)}</h3></div><span class="badge">${fa.format(x.citizens)} شهروند</span></div><div class="treasury">${money(x.treasury_toman)}</div><p>رئیس‌جمهور: ${esc(x.president_name||'تعیین نشده')} ${x.president_player_id?`(#${x.president_player_id})`:''}</p><div class="resource-row">${Object.entries(x.resources||{}).map(([k,v])=>`<span>${assetFa[k]||esc(k)}: ${fa.format(v)}</span>`).join('')}</div><div class="country-actions"><button class="small-btn" data-country-asset="${x.id}">تنظیم دارایی</button><button class="small-btn" data-president="${x.id}">تعیین رئیس‌جمهور</button></div></article>`).join('')||'<div class="empty">هنوز کشوری ساخته نشده است</div>';$$('[data-country-asset]').forEach(b=>b.onclick=()=>assetDialog(Number(b.dataset.countryAsset)));$$('[data-president]').forEach(b=>b.onclick=()=>presidentDialog(Number(b.dataset.president)))}
+async function countries(){const rows=await api('/api/admin/countries?limit=100');$("#country-grid").innerHTML=rows.map(x=>`<article class="country-card"><div class="country-top"><div><p class="eyebrow">${esc(governmentFa[x.government_type]||'نوع حکومت نامشخص')}</p><h3>${esc(x.name)}</h3></div><span class="badge">${fa.format(x.citizens)} شهروند</span></div><div class="treasury">${money(x.treasury_toman)}</div><p>رئیس‌جمهور: ${esc(x.president_name||'تعیین نشده')} ${x.president_player_id?`(#${x.president_player_id})`:''}</p><div class="resource-row">${Object.entries(x.resources||{}).map(([k,v])=>`<span>${assetFa[k]||esc(k)}: ${fa.format(v)}</span>`).join('')}</div><div class="country-actions"><button class="small-btn" data-country-asset="${x.id}">تنظیم دارایی</button><button class="small-btn" data-president="${x.id}">تعیین رئیس‌جمهور</button></div></article>`).join('')||'<div class="empty">هنوز کشوری ساخته نشده است</div>';$$('[data-country-asset]').forEach(b=>b.onclick=()=>assetDialog(Number(b.dataset.countryAsset)));$$('[data-president]').forEach(b=>b.onclick=()=>presidentDialog(Number(b.dataset.president)))}
 function assetDialog(id){openDialog(`دارایی کشور #${id}`,"تنظیم حسابرسی‌شده",`<label>نوع دارایی<select id="f-asset">${Object.entries(assetFa).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label><label>مقدار تغییر (منفی برای کاهش)<input id="f-delta" type="number" value="1000"></label>`,async()=>{try{await api(`/api/admin/countries/${id}/asset`,{method:'POST',body:JSON.stringify({asset:$("#f-asset").value,delta:Number($("#f-delta").value)})});$("#action-dialog").close();toast("دارایی کشور اصلاح شد");countries()}catch(e){toast(e.message,true)}})}
 function presidentDialog(id){openDialog(`ریاست کشور #${id}`,"مدیریت حاکمیت",'<label>شناسه داخلی بازیکن<input id="f-president" type="number" min="1" placeholder="مثلاً 42"></label><small>برای خالی‌کردن سمت، فیلد را خالی بگذارید. بازیکن انتخابی باید شهروند همین کشور باشد.</small>',async()=>{try{const v=$("#f-president").value;await api(`/api/admin/countries/${id}/president`,{method:'POST',body:JSON.stringify({player_id:v?Number(v):null})});$("#action-dialog").close();toast("ریاست‌جمهوری به‌روزرسانی شد");countries()}catch(e){toast(e.message,true)}})}
 async function news(){const rows=await api('/api/admin/news?limit=100');$("#news-list").innerHTML=rows.map(x=>`<div class="news-item"><div><p>${esc(x.payload?.text||x.payload?.event_code||x.event_type)}</p><small>${esc(x.event_type)} · ${date(x.created_at)}</small></div><span class="badge ${x.last_error_code?'danger':''}">${x.published_at?'منتشر شد':x.last_error_code?'خطا':'در صف'}</span></div>`).join('')||'<div class="empty">صف خبر خالی است</div>'}
@@ -1365,6 +1391,7 @@ __all__ = ["country_jobs", "daily_reset"]
 ```python
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
+from html import escape
 from telegram import Bot
 from packages.core.services import country_economy,elections,news,commerce,country_identity
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
@@ -1382,7 +1409,7 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
     protected=await db.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
     if protected:
      await db.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
-   text=f"📣 <b>{ad['title']}</b>\n\n{ad['description']}\n\n🔗 {ad['target_url']}"
+   text=f"📣 <b>{escape(str(ad['title']))}</b>\n\n{escape(str(ad['description']))}\n\n🔗 {escape(str(ad['target_url']))}"
    if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+str(ad['target_url'])[:45]
    sender_bot=life_bot if payload.get("destination_type")=="life" and life_bot is not None else bot
    if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
@@ -1391,7 +1418,10 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
    await db.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
    await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
    return
-  text=str(payload.get('text') or payload.get('event_code') or payload.get('mission_key') or event_type)
+  if event_type == 'daily_event':
+   text=str(payload.get('text') or news.daily_event_text(payload.get('event_code')))
+  else:
+   text=str(payload.get('text') or payload.get('mission_key') or '📢 یک خبر تازه منتشر شد.')
   destination=await country_identity.destination(chat_id)
   if destination:
    if not destination['country_id']:
@@ -1502,7 +1532,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance, social
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance, social, intergroup_council
 
 logger = logging.getLogger(__name__)
 
@@ -1540,6 +1570,7 @@ class SchedulerService:
                     ("commerce", country_jobs.run_commerce),
                     ("country_trade_expiry", country_trade.expire_due),
                     ("country_relation_expiry", country_trade.expire_relations),
+                    ("council_expiry", intergroup_council.expire_due),
                     ("country_social_resolution", social.resolve_due),
                     ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
                     ("telegram_actions", lambda: action_outbox.deliver_batch(life_bot, bot)),
@@ -1630,13 +1661,13 @@ def channels(package):
  return keyboard([[InlineKeyboardButton(label+f" · {commerce.ad_price(package,code)} ⭐",callback_data=f"ad:channel:{package}:{code}")] for code,label in CHANNEL.items()]+[[InlineKeyboardButton("بازگشت",callback_data="ad:new")]])
 async def begin(update:Update,context:ContextTypes.DEFAULT_TYPE):
  q=update.callback_query
- if q:await q.answer();await q.edit_message_text("📣 <b>درخواست تبلیغ</b>\n\nبسته را انتخاب کن. تبلیغ پیش از پرداخت کامل در پنل مدیریت بررسی می‌شود.",reply_markup=menu())
+ if q:await q.answer();await q.edit_message_text("📣 درخواست تبلیغ\n\nبسته را انتخاب کن. تبلیغ پیش از پرداخت کامل در پنل مدیریت بررسی می‌شود.",reply_markup=menu())
 async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
  q=update.callback_query;action=(q.data or "").split(":")
  if action[1]=="cancel":context.user_data.pop(FLOW,None);await q.answer();await q.edit_message_text("درخواست لغو شد.");return
  if action[1]=="mine":
   p=await player_repo.get_by_telegram_id(q.from_user.id);rows=await commerce.player_ads(p.id) if p else []
-  buttons=[];lines=["📂 <b>درخواست‌های من</b>"]
+  buttons=[];lines=["📂 درخواست‌های من"]
   for row in rows:
    lines.append(f"#{row['id']} · {row['title']} · {row['status']}"+(f"\nیادداشت: {row['admin_note']}" if row['admin_note'] else ""))
    if row['status']=='changes_requested':buttons.append([InlineKeyboardButton(f"✏️ اصلاح #{row['id']}",callback_data=f"ad:revise:{row['id']}")])
@@ -1834,13 +1865,13 @@ async def economy_panel(ctx,context):
  await send_panel(context,ctx.message,text,kb.economy_panel(ctx.telegram_id),"profile",edit=True)
 async def savings(ctx,context):
  v=await personal_economy.view(ctx.player.id)
- await send_panel(context,ctx.message,f"🏦 <b>پس‌انداز امن</b>\n\nکیف پول: <b>{fmt.toman(v.wallet)}</b>\nپس‌انداز: <b>{fmt.toman(v.savings)}</b>\n\nمبلغ را انتخاب کن.",kb.savings_panel(ctx.telegram_id),"profile",edit=True)
+ await send_panel(context,ctx.message,f"🏦 پس‌انداز امن\n\nکیف پول: {fmt.toman(v.wallet)}\nپس‌انداز: {fmt.toman(v.savings)}\n\nمبلغ را انتخاب کن.",kb.savings_panel(ctx.telegram_id),"profile",edit=True)
 async def housing(ctx,context):
- await send_panel(context,ctx.message,"🏠 <b>خانه و زندگی</b>\n\nخانه بهتر هزینه زندگی بیشتری دارد، اما مسیر رشد شخصیتت را کامل می‌کند. اجاره هفت‌روزه است؛ خرید دائمی.",kb.housing_panel(ctx.telegram_id),"profile",edit=True)
+ await send_panel(context,ctx.message,"🏠 خانه و زندگی\n\nخانه بهتر هزینه زندگی بیشتری دارد، اما مسیر رشد شخصیتت را کامل می‌کند. اجاره هفت‌روزه است؛ خرید دائمی.",kb.housing_panel(ctx.telegram_id),"profile",edit=True)
 async def jobs(ctx,context):
  row=await production_repo.get(ctx.player.id)
  if row:
-  a=production.accrue(row,__import__('datetime').datetime.now(__import__('datetime').UTC)); body=f"شغل: <b>{row['job_code']}</b>\nتولید ذخیره‌شده: <b>{fmt.number(a.stored)} / {fmt.number(a.capacity)}</b>\nنرخ: <b>{a.rate:.1f}</b> در ساعت\nسطح تولید: <b>{fmt.number(row['production_level'])}</b> · انبار: <b>{fmt.number(row['storage_level'])}</b>"
+  a=production.accrue(row,__import__('datetime').datetime.now(__import__('datetime').UTC)); body=f"شغل: {row['job_code']}\nتولید ذخیره‌شده: {fmt.number(a.stored)} / {fmt.number(a.capacity)}\nنرخ: {a.rate:.1f} در ساعت\nسطح تولید: {fmt.number(row['production_level'])} · انبار: {fmt.number(row['storage_level'])}"
  else: body="هنوز شغلی نداری. از بین گزینه‌ها خودت شغلی را انتخاب کن که به سبک بازیت می‌خورد."
  await send_panel(context,ctx.message,fa.JOBS_PANEL.format(body=body),kb.jobs_panel(ctx.telegram_id,bool(row)),"profile",edit=True)
 async def market(ctx,context):
@@ -1902,14 +1933,15 @@ from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.bot.start_limit import allow_start
 from packages.core.repositories import country_repo,player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,life_progression,migration,missions,personal_economy,production,progression,unlocks,usd_market,xp
+from packages.core.services import daily,life_progression,migration,missions,personal_economy,production,progression,resource_economy,unlocks,usd_market,xp,referrals
 from packages.core.utils import fmt
+from packages.core.utils.fa_labels import government_name
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
 SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
 SKILL_FA={"agriculture":"کشاورزی","extraction":"استخراج","commerce":"تجارت","media":"رسانه","medicine":"پزشکی","software":"نرم‌افزار","engineering":"مهندسی"}
-ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری.","migration_not_available":"این مقصد برای مهاجرت در دسترس نیست.","migration_cooldown":"تا پایان دوره ۳۰روزه امکان مهاجرت دوباره نداری.","migration_pending":"یک درخواست مهاجرت در انتظار داری.","leader_must_transfer_power":"رهبر باید ابتدا قدرت را واگذار کند.","migration_expired":"مهلت این درخواست تمام شده است."}
+ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری.","migration_not_available":"این مقصد برای مهاجرت در دسترس نیست.","migration_cooldown":"تا پایان دوره ۳۰روزه امکان مهاجرت دوباره نداری.","migration_pending":"یک درخواست مهاجرت در انتظار داری.","leader_must_transfer_power":"رهبر باید ابتدا قدرت را واگذار کند.","migration_expired":"مهلت این درخواست تمام شده است.","resource_sell_daily_limit":"سقف فروش امروزت پر شده؛ فردا دوباره می‌توانی بفروشی.","invalid_amount":"این مقدار قابل فروش نیست.","insufficient_resource":"از این منبع به‌اندازه کافی نداری."}
 def why(e):
  return ERR.get(str(e),"فعلاً نشد انجامش بدیم. یک‌بار صفحه را تازه کن و دوباره امتحان کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
@@ -1921,23 +1953,48 @@ async def panel(ctx,c,text,mark,*,force_new=False):
 async def fresh(ctx):return await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
 async def home(ctx,c,*,force_new=False):
  p=await fresh(ctx);st=await ui_state_repo.ensure_life(p.id);_,_,last=await daily.state(p.id);cur,need=progression.level_progress(p.level,p.xp);left=max(0,need-cur)
- step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "شغل بگیر، شیفت انجام بده و به رشد کشورت کمک کن")
- hint="🚀 مسیر شروع آماده ادامه است." if step<4 else "🎯 کارهای امروز بهترین راه رشد هستند."
- text=fa.HOME.format(name=escape(p.first_name),level=fmt.number(p.level),bar=fmt.progress_bar(cur,need,width=10),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
+ step=int(st['onboarding_step'])
+ if step<4:
+  goals=("زندگی مجازی‌ات را فعال کن","سرمایه شروع را بگیر","اولین کار روزانه را ببین","یک شغل انتخاب کن تا درآمدت خودکار جمع شود")
+  goal=goals[step];hint=f"🚀 مسیر شروع: {fmt.number(step)} از ۴ قدم کامل"
+ else:
+  goal="صفحه «امروز من» را باز کن؛ بازی بهترین کار آماده را نشانت می‌دهد"
+  hint="☀️ معمولاً ۲ تا ۵ دقیقه برای پیشرفت روزانه کافی است."
+ text=fa.HOME.format(name=escape(p.first_name),level=fmt.number(p.level),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
  await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step),force_new=force_new)
 async def journey(ctx,c):
- st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
- await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
+ st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step'])
+ titles=("زندگی مجازی‌ات را فعال کن","سرمایه شروع را بگیر","اولین کار روزانه‌ات را باز کن","شغلت را انتخاب کن")
+ bodies=("از اینجا شخصیتت رشد می‌کند، پول درمی‌آوری و روی کشور گروهت اثر می‌گذاری.","با سرمایه شروع می‌توانی وارد چرخه کار، پس‌انداز و خرید دارایی شوی.","کارهای کوتاه روزانه به تو پول و تجربه می‌دهند و امکانات تازه باز می‌کنند.","درآمد شغل با گذشت زمان جمع می‌شود؛ نتیجه شیفت را می‌گیری و مهارتت هم بالا می‌رود.")
+ benefits=("بازشدن مسیر رشد و نخستین تجربه","پول اولیه برای آغاز تصمیم‌های اقتصادی","پاداش روزانه و رشد سریع‌تر سطح","درآمد مداوم، مهارت و اثر اقتصادی روی کشور")
+ if step>=4:
+  await today_page(ctx,c);return
+ await panel(ctx,c,fa.JOURNEY.format(current=fmt.number(step+1),title=titles[step],body=bodies[step],benefit=benefits[step],bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
 async def today_page(ctx,c):
  p=await fresh(ctx);view=await ux.today_view(p)
  await panel(ctx,c,view.text,kb.today(ctx.telegram_id,view.actions))
+async def why_page(ctx,c):
+ await panel(ctx,c,fa.WHY_PLAY,kb.learn(ctx.telegram_id))
+async def guide_page(ctx,c):
+ await panel(ctx,c,fa.HOW_TO_PLAY,kb.learn(ctx.telegram_id))
+
+async def referrals_page(ctx,c):
+ p=await fresh(ctx);view=await referrals.overview(p.id);settings=__import__('packages.core.settings',fromlist=['get_settings']).get_settings();username=str(settings.telelife_bot_username or '').lstrip('@')
+ invite_url=f"https://t.me/{username}?start={referrals.start_payload(p.id)}" if username else ""
+ next_reward=referrals.MILESTONES.get(view['next'],0)
+ text=(f"🎁 دعوت دوست\n\nدوست فعال: {fmt.number(view['qualified'])} نفر\n"
+       f"در حال فعال‌شدن: {fmt.number(view['pending'])} نفر\n\n"
+       f"هدف بعدی: {fmt.number(view['next'])} دوست فعال\nجایزه: {fmt.toman(next_reward)}\n\n"
+       "جایزه فقط وقتی باز می‌شود که دوستت مسیر شروع را کامل کند و در دو روز جدا بازی کند؛ پس عضو فیک حساب نمی‌شود."
+       +( "\n\nنام کاربری بات در تنظیمات ثبت نشده؛ TELELIFE_BOT_USERNAME را تنظیم کن." if not invite_url else ""))
+ await panel(ctx,c,text,kb.referrals(ctx.telegram_id,invite_url,bool(view['claimable'])))
 
 async def profile(ctx,c):
  p=await fresh(ctx);cur,need=progression.level_progress(p.level,p.xp);rank=await progression_repo.rank_by_level(p.id);streak,_,_=await daily.state(p.id)
  text=fa.PROFILE.format(name=escape(p.first_name),level=fmt.number(p.level),rank=fmt.number(rank),bar=fmt.progress_bar(cur,need),xp=fmt.number(cur),need=fmt.number(need),wallet=fmt.toman(p.wallet_toman),savings=fmt.toman(p.savings_toman),usd=fmt.usd(p.usd_cents),happy=fmt.number(p.happiness),rep=fmt.number(p.reputation),streak=fmt.number(streak))
  from packages.core import db
  mig=await db.fetchrow("SELECT migrant_until,political_hold_until FROM citizenships WHERE player_id=$1 AND is_active",p.id)
- if mig and mig["migrant_until"] and mig["migrant_until"]>datetime.now(UTC):text+="\n\n🧳 <b>وضعیت: مهاجر</b>"
+ if mig and mig["migrant_until"] and mig["migrant_until"]>datetime.now(UTC):text+="\n\n🧳 وضعیت: مهاجر"
  if mig and mig["political_hold_until"] and mig["political_hold_until"]>datetime.now(UTC):text+="\nمحدودیت فعالیت سیاسی تا: "+mig["political_hold_until"].strftime('%Y-%m-%d')
  await panel(ctx,c,text,kb.back(ctx.telegram_id))
 async def daily_page(ctx,c):
@@ -1951,27 +2008,41 @@ async def missions_page(ctx,c):
 async def economy(ctx,c):
  v=await personal_economy.view(ctx.player.id);house="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,fa.ECONOMY.format(wallet=fmt.toman(v.wallet),savings=fmt.toman(v.savings),house=house,due=fmt.toman(v.living_due)),kb.economy(ctx.telegram_id))
 async def savings_page(ctx,c):
- v=await personal_economy.view(ctx.player.id);await panel(ctx,c,f"🏦 <b>مدیریت پس‌انداز</b>\n\nکیف پول: <b>{fmt.toman(v.wallet)}</b>\nپس‌انداز: <b>{fmt.toman(v.savings)}</b>\n\nواریز، پول را از کیف پول به پس‌انداز منتقل می‌کند؛ برداشت برعکس آن است. مبلغ را انتخاب کن.",kb.savings(ctx.telegram_id))
+ v=await personal_economy.view(ctx.player.id);await panel(ctx,c,f"🏦 مدیریت پس‌انداز\n\nکیف پول: {fmt.toman(v.wallet)}\nپس‌انداز: {fmt.toman(v.savings)}\n\nواریز، پول را از کیف پول به پس‌انداز منتقل می‌کند؛ برداشت برعکس آن است. مبلغ را انتخاب کن.",kb.savings(ctx.telegram_id))
 async def housing_page(ctx,c):
- p=await fresh(ctx);v=await personal_economy.view(p.id);current="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,f"🏠 <b>خانه و زندگی</b>\n\nخانه فعلی: <b>{current}</b>\n\nاتاق از سطح ۳، آپارتمان از سطح ۸ و ویلا از سطح ۲۰ باز می‌شود. اجاره هفت‌روزه است و خرید دائمی. خانه بهتر هزینه روزانه بیشتری دارد؛ پیش از انتخاب، موجودی و سطح خودت را بررسی کن.",kb.housing(ctx.telegram_id))
+ p=await fresh(ctx);v=await personal_economy.view(p.id);current="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,f"🏠 خانه و زندگی\n\nخانه فعلی: {current}\n\nاتاق از سطح ۳، آپارتمان از سطح ۸ و ویلا از سطح ۲۰ باز می‌شود. اجاره هفت‌روزه است و خرید دائمی. خانه بهتر هزینه روزانه بیشتری دارد؛ پیش از انتخاب، موجودی و سطح خودت را بررسی کن.",kb.housing(ctx.telegram_id))
 async def jobs(ctx,c):
  p=await fresh(ctx);row=await production_repo.get(p.id)
  if row:
   a=production.accrue(row,datetime.now(UTC));job=JOB_FA.get(str(row['job_code']),'شغل');asset=ASSET_FA.get(str(row['output_asset_code']),'درآمد');mode=SHIFT_FA.get(str(row.get('shift_mode') or 'balanced'),'متعادل')
-  body=f"شغل: <b>{job}</b>\nشیفت فعلی: <b>{mode}</b>\nدرآمد آماده: <b>{fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}</b>\nسرعت کار: <b>{fmt.number(round(a.rate,1))} {asset} در ساعت</b>\n\nهر دریافت، سهم شخصی، مالیات و اثر ملی را شفاف ثبت می‌کند."
+  if str(row['output_asset_code'])=='IRT':
+   wage=f"حدود {fmt.toman(round(a.rate))} در ساعت"
+  else:
+   unit=get_config().int_(f"resource_economy.assets.{row['output_asset_code']}.wage_toman_per_unit")
+   wage=f"حدود {fmt.toman(round(a.rate*unit*0.8))} در ساعت + منبع"
+  body=f"شغل: {job}\nشیفت فعلی: {mode}\n💵 حقوق نقدی: {wage}\n📦 محصول آماده: {fmt.number(a.stored)} از {fmt.number(a.capacity)} {asset}\nسرعت کار: {fmt.number(round(a.rate,1))} {asset} در ساعت\n\nبا دریافت نتیجه شیفت، حقوق نقدی مستقیم به کیف پول می‌رسد و منابع سهم تو هم ذخیره می‌شوند؛ منابع را می‌توانی بفروشی یا در تله‌ورلد اهدا کنی."
  else:body="از همین حالا یک شغل انتخاب کن؛ هر شیفت برای تو درآمد دارد و برای کشورت منبع می‌سازد."
  await panel(ctx,c,fa.JOBS.format(body=body),kb.jobs(ctx.telegram_id,bool(row),True))
+
+async def resources_page(ctx,c):
+ rows=await resource_economy.inventory(ctx.player.id)
+ lines=[]
+ for item in rows:
+  value=int(item['quantity'])*int(item['sell_price'])
+  lines.append(f"• {item['title']}: {fmt.number(item['quantity'])} واحد · ارزش فروش {fmt.toman(value)}")
+ text="📦 منابع من\n\n"+("\n".join(lines) if lines else "هنوز منبعی نداری؛ یک شیفت کاری را کامل کن.")+"\n\nاول نوع منبع را انتخاب کن. ۵٪ کارمزد کم می‌شود و درآمد مستقیم به کیف پولت می‌آید."
+ await panel(ctx,c,text,kb.resources(ctx.telegram_id,rows))
 
 async def market(ctx,c):
  v=await usd_market.view();p=await fresh(ctx)
  status="⛔ متوقف" if v.frozen else "✅ عادی" if v.health>=75 else "⚠️ پرنوسان"
  access="\n\n🔒 خریدوفروش از سطح ۱۰ باز می‌شود؛ تا آن موقع می‌توانی قیمت‌ها را دنبال کنی." if p.level<10 else "\n\nقیمت را دیدی؟ پایین همین صفحه می‌توانی خرید یا فروش انجام بدهی."
- text=("💱 <b>بازار دلار</b>\n\n"
-       f"🟢 قیمت خرید: <b>{fmt.toman(v.buy_price)}</b>\n"
-       f"🔴 قیمت فروش: <b>{fmt.toman(v.sell_price)}</b>\n"
-       f"💵 موجودی شما: <b>{fmt.usd(p.usd_cents)}</b>\n\n"
-       f"وضعیت بازار: <b>{status}</b>\n"
-       f"شاخص سلامت: <b>{fmt.number(v.health)} از ۱۰۰</b>"
+ text=("💱 بازار دلار\n\n"
+       f"🟢 قیمت خرید: {fmt.toman(v.buy_price)}\n"
+       f"🔴 قیمت فروش: {fmt.toman(v.sell_price)}\n"
+       f"💵 موجودی شما: {fmt.usd(p.usd_cents)}\n\n"
+       f"وضعیت بازار: {status}\n"
+       f"شاخص سلامت: {fmt.number(v.health)} از ۱۰۰"
        +access)
  await panel(ctx,c,text,kb.market(ctx.telegram_id,p.level>=10))
 
@@ -1985,7 +2056,7 @@ async def progress_center(ctx,c):
  locked=next((a for a in assets if not a.owned),None)
  target=(f"خرید {next_asset.title} با {fmt.toman(next_asset.cost)}" if next_asset else f"بازکردن {locked.title}: {locked.reason}" if locked else "همه دارایی‌های فعلی را ساخته‌ای")
  owned=sum(1 for a in assets if a.owned)
- text=(f"🧭 <b>مرکز پیشرفت واقعی</b>\n\n<b>سطح زندگی {fmt.number(p.level)}</b>\n{fmt.progress_bar(cur,need,width=10)} {fmt.number(cur)}/{fmt.number(need)} XP\n\n🛠 <b>مهارت اصلی</b>\n{skill_line}\n\n🏠 <b>دارایی‌های کاربردی</b>\n{fmt.number(owned)} از {fmt.number(len(assets))} دارایی\n\n🎯 <b>هدف بعدی</b>\n{target}\n\nکار واقعی مهارت می‌سازد؛ سطح زندگی قابلیت باز می‌کند؛ دارایی مناسب بازده، فرصت و هزینه نگهداری واقعی دارد.")
+ text=(f"🧭 مرکز پیشرفت واقعی\n\nسطح زندگی {fmt.number(p.level)}\n{fmt.progress_bar(cur,need,width=10)} {fmt.number(cur)}/{fmt.number(need)} XP\n\n🛠 مهارت اصلی\n{skill_line}\n\n🏠 دارایی‌های کاربردی\n{fmt.number(owned)} از {fmt.number(len(assets))} دارایی\n\n🎯 هدف بعدی\n{target}\n\nکار واقعی مهارت می‌سازد؛ سطح زندگی قابلیت باز می‌کند؛ دارایی مناسب بازده، فرصت و هزینه نگهداری واقعی دارد.")
  await panel(ctx,c,text,kb.progress(ctx.telegram_id))
 
 async def assets_page(ctx,c):
@@ -1993,8 +2064,8 @@ async def assets_page(ctx,c):
  for a in rows:
   icon="✅" if a.owned else "🟢" if a.available else "🔒"
   upkeep=f" · نگهداری روزانه {fmt.toman(a.maintenance)}" if a.maintenance else ""
-  lines.append(f"{icon} <b>{a.title}</b> — {a.reason}\n{fmt.toman(a.cost)}{upkeep}\n{a.opportunity}")
- await panel(ctx,c,"🚗 <b>دارایی‌های کاربردی</b>\n\n"+"\n\n".join(lines),kb.assets(ctx.telegram_id,rows))
+  lines.append(f"{icon} {a.title} — {a.reason}\n{fmt.toman(a.cost)}{upkeep}\n{a.opportunity}")
+ await panel(ctx,c,"🚗 دارایی‌های کاربردی\n\n"+"\n\n".join(lines),kb.assets(ctx.telegram_id,rows))
 
 def _group_url(telegram_id:int)->str | None:
  # Public usernames are not stored in the legacy schema. Telegram's private
@@ -2011,13 +2082,13 @@ async def country_page(ctx,c):
   FROM citizenships cs JOIN countries c ON c.id=cs.country_id JOIN groups g ON g.id=c.group_id
   WHERE cs.player_id=$1 AND cs.is_active""",ctx.player.id)
  if not current:
-  text="🌐 <b>کشور من</b>\n\nهنوز شهروند هیچ کشوری نیستی. وارد گروه یک کشور شو و از بات World درخواست شهروندی بده؛ بعد کشور و مسیر مهاجرتت همین‌جا نمایش داده می‌شود."
+  text="🌐 کشور من\n\nهنوز شهروند هیچ کشوری نیستی. وارد گروه یک کشور شو و از تله‌ورلد درخواست شهروندی بده؛ بعد کشور و مسیر مهاجرتت همین‌جا نمایش داده می‌شود."
   await panel(ctx,c,text,kb.country(ctx.telegram_id,None,[]));return
  pending=await db.fetchrow("""SELECT r.id,r.status,d.name destination_name,r.expires_at FROM migration_requests r JOIN countries d ON d.id=r.destination_country_id WHERE r.player_id=$1 AND r.status='pending' AND r.expires_at>now() ORDER BY r.created_at DESC LIMIT 1""",ctx.player.id)
  destinations=await db.fetch("""SELECT c.id,c.name,g.telegram_id,(SELECT count(*) FROM citizenships x WHERE x.country_id=c.id AND x.is_active) citizens FROM countries c JOIN groups g ON g.id=c.group_id WHERE c.id<>$1 AND c.status<>'forming' ORDER BY citizens DESC,c.name LIMIT 8""",current['country_id'])
- status=(f"\n\n⏳ درخواست مهاجرت به <b>{escape(str(pending['destination_name']))}</b> در انتظار بررسی است." if pending else "")
- text=(f"🌍 <b>کشور من</b>\n\n🏳 <b>{escape(str(current['name']))}</b>\n"
-       f"🏛 نوع حکومت: {escape(str(current['government_type']))}\n"
+ status=(f"\n\n⏳ درخواست مهاجرت به {escape(str(pending['destination_name']))} در انتظار بررسی است." if pending else "")
+ text=(f"🌍 کشور من\n\n🏳 {escape(str(current['name']))}\n"
+       f"🏛 نوع حکومت: {government_name(current['government_type'])}\n"
        f"👥 شهروندان: {fmt.number(current['citizens'])}{status}\n\n"
        "برای دیدن گروه، دکمه کشور را بزن. برای مهاجرت، مقصد را انتخاب کن؛ قبل از ثبت نهایی هزینه و محدودیت‌ها را می‌بینی.")
  rows=[(int(x['id']),str(x['name']),int(x['citizens'])) for x in destinations]
@@ -2027,8 +2098,8 @@ async def migration_preview(ctx,c,destination_id:int):
  row=await migration.quote(ctx.player.id,destination_id)
  if not row:raise ValueError('migration_not_available')
  fee=migration.exit_fee(int(row['wallet_toman'])+int(row['savings_toman']))
- text=(f"🧳 <b>تأیید مهاجرت</b>\n\nاز <b>{escape(str(row['origin_name']))}</b> به <b>{escape(str(row['destination_name']))}</b>\n"
-       f"💳 هزینه خروج: <b>{fmt.toman(fee)}</b>\n⏱ مهلت بررسی: ۷ روز\n"
+ text=(f"🧳 تأیید مهاجرت\n\nاز {escape(str(row['origin_name']))} به {escape(str(row['destination_name']))}\n"
+       f"💳 هزینه خروج: {fmt.toman(fee)}\n⏱ مهلت بررسی: ۷ روز\n"
        "🗳 پس از مهاجرت، فعالیت سیاسی ۱۴ روز محدود می‌شود و تا ۳۰ روز امکان مهاجرت دوباره نداری.\n\n"
        "هزینه فقط هنگام تأیید و تکمیل مهاجرت کم می‌شود.")
  await panel(ctx,c,text,kb.confirm(ctx.telegram_id,'migration','migconfirm',str(destination_id),'country'))
@@ -2045,6 +2116,9 @@ async def start(update,c):
   return
  ctx=await resolve(update)
  if ctx:
+  payload=c.args[0] if getattr(c,'args',None) else None
+  if payload:await referrals.register(ctx.player.id,payload)
+  await referrals.qualify_for_player(ctx.player.id)
   await home(ctx,c,force_new=True)
 async def text_start(update,c):
  if c.user_data.get('ad_request_flow'):return
@@ -2064,18 +2138,24 @@ async def callback(update,c):
   if q.message:await retire_message(q.message)
   return
  a=parsed.action
+ await referrals.qualify_for_player(ctx.player.id)
  if a=='advertise':
   from apps.telelife_bot.handlers.advertising import begin
   await begin(update,c);return
  try:
-  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets','country'}:
-   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page,'country':country_page}[a];await fn(ctx,c);return
+  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets','country','why','guide','resources','referrals'}:
+   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page,'country':country_page,'why':why_page,'guide':guide_page,'resources':resources_page,'referrals':referrals_page}[a];await fn(ctx,c);return
+  if a=='refclaim':
+   await referrals.qualify_for_player(ctx.player.id);result=await referrals.claim(ctx.player.id)
+   await answer(q,f"🎁 {fmt.toman(result['paid'])} جایزه گرفتی." if result['paid'] else "هنوز جایزه تازه‌ای آماده نیست.",show_alert=True);await referrals_page(ctx,c);return
   if a=='jstep':
    step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
    if step!=expected:await answer(q,'این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
-   result=await xp.grant(ctx.player.id,'onboarding_step',idempotency_key=f'onboarding:{ctx.player.id}:{step}',amount=35 if step<3 else 80);await ui_state_repo.set_step(ctx.player.id,min(4,step+1));await answer(q,f"+{fmt.number(result.granted)} تجربه؛ قدم بعد باز شد.",show_alert=True)
-   if step==1:await missions_page(ctx,c)
-   elif step==3:await home(ctx,c)
+   result=await xp.grant(ctx.player.id,'onboarding_step',idempotency_key=f'onboarding:{ctx.player.id}:{step}',amount=35 if step<3 else 80)
+   await ui_state_repo.set_step(ctx.player.id,min(4,step+1))
+   await answer(q,f"+{fmt.number(result.granted)} تجربه؛ قدم بعد باز شد.",show_alert=True)
+   # Keep the player in the guided four-step flow; the last step opens jobs.
+   if step==3:await jobs(ctx,c)
    else:await journey(ctx,c)
    return
   if a=='claim':
@@ -2100,7 +2180,7 @@ async def callback(update,c):
    r=await production.collect_purposeful(ctx.player.id,ik(a,ctx.player.id))
    if not r.amount:msg="هنوز چیزی برای دریافت آماده نیست؛ کمی زمان بده و دوباره سر بزن."
    else:
-    personal=f"💵 سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"📦 سهم شما: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}"
+    personal=(f"💵 حقوق و سهم شما: {fmt.toman(r.amount)}" if r.asset=='IRT' else f"💵 حقوق نقدی: {fmt.toman(r.salary_toman)}\n📦 منبع ذخیره‌شده: {fmt.number(r.amount)} {ASSET_FA.get(r.asset,r.asset)}")
     national=(f"\n🏛 مالیات خزانه: {fmt.toman(r.tax_toman)}" if r.tax_toman else "")+(f"\n🌍 تولید برای {r.country_name}: {fmt.number(r.country_amount)} {ASSET_FA.get(r.country_asset or '',r.country_asset or '')}" if r.country_amount else "\n🌐 برای اثر ملی کامل، شهروند یک کشور شو.")
     msg=f"✅ نتیجه شیفت {SHIFT_FA.get(r.shift_mode,r.shift_mode)}\n\n{personal}{national}\n⭐ تجربه زندگی: +{fmt.number(r.xp)}\n🛠 مهارت {SKILL_FA.get(r.skill_code or '',r.skill_code or 'شغلی')}: سطح {fmt.number(r.skill_level)} · {fmt.number(r.skill_xp)}/{fmt.number(r.skill_needed)}"
    await answer(q,msg,show_alert=True);await jobs(ctx,c);return
@@ -2113,12 +2193,19 @@ async def callback(update,c):
   if a in {'mbuy','msell'}:
    p=await fresh(ctx);side='buy' if a=='mbuy' else 'sell';await answer(q,)
    await panel(ctx,c,await ux.market_preview(p,side,int(parsed.arg)),kb.confirm(ctx.telegram_id,'market','mconfirm',f"{side},{parsed.arg}",'market'));return
+  if a=='rpick':
+   rows=await resource_economy.inventory(ctx.player.id);item=next((x for x in rows if str(x['asset'])==parsed.arg and int(x['quantity'])>0),None)
+   if not item:raise ValueError('insufficient_resource')
+   await answer(q);await panel(ctx,c,f"📦 {item['title']}\n\nموجودی: {fmt.number(item['quantity'])} واحد\nقیمت هر واحد: {fmt.toman(item['sell_price'])}\n\nچقدر می‌خواهی بفروشی؟",kb.resource_amounts(ctx.telegram_id,item));return
+  if a=='rsell':
+   asset,amount=parsed.arg.split(',',1);r=await resource_economy.sell(ctx.player.id,asset,int(amount),ik(a,ctx.player.id))
+   await answer(q,f"✅ فروش انجام شد؛ {fmt.toman(r.net)} به کیف پولت اضافه شد. (کارمزد: {fmt.toman(r.fee)})",show_alert=True);await resources_page(ctx,c);return
   if a=='migrate':
    await answer(q,);await migration_preview(ctx,c,int(parsed.arg));return
   if a=='migconfirm':
    result=await migration.request(ctx.player.id,int(parsed.arg));await answer(q,'درخواست مهاجرت ثبت شد.' if str(result['status'])=='pending' else 'مهاجرت با موفقیت انجام شد.',show_alert=True);await country_page(ctx,c);return
   if a=='mconfirm':
-   side,cents=parsed.arg.split(',',1);r=await usd_market.trade(ctx.player.id,side,int(cents),ik(a,ctx.player.id));await answer(q,f"✅ معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}. موجودی تازه در همین صفحه نمایش داده می‌شود.",show_alert=True);await market(ctx,c);return
+   side,cents=parsed.arg.split(',',1);r=await usd_market.trade(ctx.player.id,side,int(cents),ik(a,ctx.player.id));await answer(q,f"✅ معامله انجام شد. موجودی دلارت به‌روز شد و {fmt.toman(r.fee)} کارمزد کم شد.",show_alert=True);await market(ctx,c);return
   await answer(q,)
  except (ValueError,PermissionError) as e:
   code=str(e);await answer(q,why(e),show_alert=True)
@@ -2138,6 +2225,7 @@ panel and retires the previous keyboard first, so stale controls cannot mutate
 state or clutter the conversation.
 """
 from __future__ import annotations
+from packages.core.utils.message_text import plain_text
 
 import logging
 from telegram import Message
@@ -2157,9 +2245,10 @@ async def _retire_remembered(context: ContextTypes.DEFAULT_TYPE, state, fallback
     if not state or not state["life_message_id"]:
         return
     try:
-        await context.bot.edit_message_reply_markup(
+        await context.bot.edit_message_text(
             chat_id=int(state["life_chat_id"] or fallback_chat_id),
             message_id=int(state["life_message_id"]),
+            text="🔒 بسته شد",
             reply_markup=None,
         )
     except (BadRequest, Forbidden) as exc:
@@ -2184,6 +2273,7 @@ async def show(
     message: Message | None = None,
     force_new: bool = False,
 ):
+    text = plain_text(text)
     state = await ui_state_repo.ensure_life(player_id)
     target: Message | None = None
 
@@ -2480,7 +2570,7 @@ async def _do_mission_claim(
             title=claimed.title,
             reward=fmt.toman(claimed.reward_toman),
             xp=fmt.number(claimed.reward_xp),
-        ).replace("<b>", "").replace("</b>", "").replace("\n", " "),
+        ).replace("", "").replace("", "").replace("\n", " "),
         show_alert=True,
     )
     await _render_missions(ctx, context, edit=True)
@@ -2580,7 +2670,7 @@ class TodayView:
 
 
 async def today_view(player: Any) -> TodayView:
-    """Prioritise ready rewards, urgent costs and the next useful action."""
+    """Show one clear next action, then compact supporting status."""
     streak, _, last_claim = await daily.state(player.id)
     ready_daily = daily.claimable(last_claim)
     items = await missions.ensure_today(player.id, max(1, player.level))
@@ -2590,43 +2680,38 @@ async def today_view(player: Any) -> TodayView:
     job = await production_repo.get(player.id)
     accrual = production.accrue(job, datetime.now(UTC)) if job else None
 
-    rows = ["☀️ <b>امروز من</b>", ""]
-    actions: list[str] = []
     if ready_daily:
-        rows.append("🟢 هدیه روزانه آماده دریافت است.")
-        actions.append("daily")
-    else:
-        rows.append(f"✅ هدیه روزانه دریافت شده · زنجیره {fmt.number(streak)} روز")
-    rows.append(f"{'🟢' if claimable else '🟡'} مأموریت‌ها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""))
-    if claimable:
-        actions.append("missions")
-    if accrual and accrual.stored > 0:
-        ratio = round((accrual.stored / accrual.capacity) * 100) if accrual.capacity else 0
-        rows.append(f"🟢 درآمد شغل: {fmt.number(accrual.stored)} واحد آماده · انبار {fmt.number(ratio)}٪")
-        actions.append("jobs")
-    elif job:
-        rows.append("▫️ درآمد شغل در حال جمع‌شدن است.")
-    else:
-        rows.append("🟡 هنوز شغلی انتخاب نکرده‌ای.")
-        actions.append("jobs")
-    if economy.living_due:
-        icon = "⚠️" if economy.wallet < economy.living_due else "🟡"
-        rows.append(f"{icon} هزینه زندگی: {fmt.toman(economy.living_due)}")
-        actions.append("economy")
-    else:
-        rows.append("✅ هزینه زندگی تسویه است.")
-    rows.extend(("", "🎯 <b>پیشنهاد بعدی</b>"))
-    if ready_daily:
-        rows.append("هدیه را بگیر و سپس مأموریت‌های امروز را ادامه بده.")
+        next_action, next_label = "daily", "🎁 هدیه آماده‌ات را بگیر"
+        why = "پول و تجربه می‌گیری و زنجیره حضورت حفظ می‌شود."
     elif claimable:
-        rows.append("پاداش مأموریت کامل‌شده را دریافت کن.")
-    elif accrual and accrual.stored:
-        rows.append("نتیجه شیفت را بگیر تا درآمد و تجربه ثبت شود.")
+        next_action, next_label = "missions", "🎯 پاداش کار کامل‌شده را بگیر"
+        why = "پاداش آماده است؛ دریافتش سطحت را جلو می‌برد."
+    elif not job:
+        next_action, next_label = "jobs", "💼 یک شغل انتخاب کن"
+        why = "درآمد شغل با گذشت زمان جمع می‌شود و مهارت می‌سازد."
+    elif accrual and accrual.stored > 0:
+        next_action, next_label = "jobs", "💰 نتیجه شیفت را دریافت کن"
+        why = "درآمد، تجربه و اثر کارت روی کشور ثبت می‌شود."
     elif economy.living_due:
-        rows.append("هزینه زندگی را بررسی کن تا بدهی روی هم جمع نشود.")
+        next_action, next_label = "economy", "🧾 هزینه زندگی را بررسی کن"
+        why = "پرداخت منظم از جمع‌شدن بدهی جلوگیری می‌کند."
     else:
-        rows.append("یک مأموریت یا شیفت شغلی را جلو ببر.")
-    return TodayView("\n".join(rows), tuple(dict.fromkeys(actions))[:3])
+        next_action, next_label = "missions", "🎯 یکی از کارهای امروز را جلو ببر"
+        why = "سریع‌ترین راه دریافت تجربه و بازکردن امکانات تازه است."
+
+    job_status = "شغل نداری" if not job else (f"{fmt.number(accrual.stored)} واحد درآمد آماده" if accrual and accrual.stored else "درآمد در حال جمع‌شدن")
+    rows = [
+        "☀️ امروز من", "",
+        "🎯 بهترین کار الان", next_label, why, "",
+        "وضعیت کوتاه",
+        f"🎁 هدیه: {'آماده' if ready_daily else 'گرفته شده'} · زنجیره {fmt.number(streak)} روز",
+        f"🎯 کارها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""),
+        f"💼 شغل: {job_status}",
+        f"🧾 هزینه زندگی: {fmt.toman(economy.living_due) if economy.living_due else 'تسویه'}",
+        "", "روزانه چند دقیقه کافی است؛ اول دکمه رنگی را بزن.",
+    ]
+    extras = [a for a in ("daily" if ready_daily else None, "missions" if claimable else None, "jobs" if job else None, "economy" if economy.living_due else None) if a and a != next_action]
+    return TodayView("\n".join(rows), tuple([next_action, *extras[:2]]))
 
 
 def upgrade_preview(row: Any, kind: str, wallet: int) -> str:
@@ -2639,9 +2724,9 @@ def upgrade_preview(row: Any, kind: str, wallet: int) -> str:
     cost = cfg.int_(f"{section}.{target}")
     title = "ظرفیت انبار" if kind == "storage" else "بازده تولید"
     extra = "ساعت بیشتری پیش از پرشدن انبار فرصت داری." if kind == "storage" else "سرعت درآمد شغل افزایش می‌یابد."
-    return (f"⚙️ <b>پیش‌نمایش ارتقای {title}</b>\n\n"
-            f"سطح فعلی: <b>{fmt.number(current)}</b>\nسطح جدید: <b>{fmt.number(target)}</b>\n"
-            f"هزینه: <b>{fmt.toman(cost)}</b>\nموجودی پس از ارتقا: <b>{fmt.toman(wallet-cost)}</b>\n\n{extra}")
+    return (f"⚙️ پیش‌نمایش ارتقای {title}\n\n"
+            f"سطح فعلی: {fmt.number(current)}\nسطح جدید: {fmt.number(target)}\n"
+            f"هزینه: {fmt.toman(cost)}\nموجودی پس از ارتقا: {fmt.toman(wallet-cost)}\n\n{extra}")
 
 
 def housing_preview(player: Any, code: str, tenure: str) -> str:
@@ -2651,10 +2736,10 @@ def housing_preview(player: Any, code: str, tenure: str) -> str:
     cost = int(spec["weekly_rent_toman"] if tenure == "rent" else spec["purchase_toman"])
     title = escape(str(spec.get("title") or HOUSING_FA.get(code, code)))
     mode = "اجاره هفت‌روزه" if tenure == "rent" else "خرید دائمی"
-    return (f"🏠 <b>پیش‌نمایش {mode} {title}</b>\n\nهزینه: <b>{fmt.toman(cost)}</b>\n"
-            f"هزینه زندگی روزانه: <b>{fmt.toman(int(spec.get('daily_living_toman',0)))}</b>\n"
-            f"حداقل سطح: <b>{fmt.number(spec['min_level'])}</b>\n"
-            f"موجودی پس از پرداخت: <b>{fmt.toman(player.wallet_toman-cost)}</b>\n\n"
+    return (f"🏠 پیش‌نمایش {mode} {title}\n\nهزینه: {fmt.toman(cost)}\n"
+            f"هزینه زندگی روزانه: {fmt.toman(int(spec.get('daily_living_toman',0)))}\n"
+            f"حداقل سطح: {fmt.number(spec['min_level'])}\n"
+            f"موجودی پس از پرداخت: {fmt.toman(player.wallet_toman-cost)}\n\n"
             "با تأیید، خانه فعلی جایگزین می‌شود و اثر شادی آن اعمال خواهد شد.")
 
 
@@ -2668,21 +2753,21 @@ async def market_preview(player: Any, side: str, cents: int) -> str:
     after_wallet = player.wallet_toman - total if side == "buy" else player.wallet_toman + total
     after_usd = player.usd_cents + cents if side == "buy" else player.usd_cents - cents
     verb = "خرید" if side == "buy" else "فروش"
-    return (f"💵 <b>پیش‌نمایش {verb} {fmt.usd(cents)}</b>\n\nنرخ محاسبه: <b>{fmt.toman(unit)}</b>\n"
-            f"ارزش معامله: <b>{fmt.toman(toman)}</b>\nکارمزد: <b>{fmt.toman(fee)}</b>\n"
-            f"دریافت/پرداخت نهایی: <b>{fmt.toman(total)}</b>\n\n"
-            f"کیف پول پس از معامله: <b>{fmt.toman(after_wallet)}</b>\nدلار پس از معامله: <b>{fmt.usd(after_usd)}</b>")
+    return (f"💵 پیش‌نمایش {verb} {fmt.usd(cents)}\n\nنرخ محاسبه: {fmt.toman(unit)}\n"
+            f"ارزش معامله: {fmt.toman(toman)}\nکارمزد: {fmt.toman(fee)}\n"
+            f"دریافت/پرداخت نهایی: {fmt.toman(total)}\n\n"
+            f"کیف پول پس از معامله: {fmt.toman(after_wallet)}\nدلار پس از معامله: {fmt.usd(after_usd)}")
 
 
 def actionable_error(code: str, *, player: Any | None = None) -> str:
     messages = {
-        "insufficient_balance": "❌ <b>موجودی کافی نیست</b>\n\nمبلغ لازم بیشتر از کیف پول فعلی است. درآمد شغل را دریافت کن، مبلغ کمتری انتخاب کن یا از پس‌انداز برداشت کن.",
-        "insufficient_player_balance": "❌ <b>موجودی کافی نیست</b>\n\nابتدا درآمد آماده را دریافت کن یا موجودی کیف پول را افزایش بده.",
-        "housing_locked": "🔒 <b>این خانه هنوز باز نشده است</b>\n\nدر صفحه مرکز پیشرفت، سطح لازم و بهترین مسیر رسیدن به آن را ببین.",
-        "market_locked": "🔒 <b>بازار ارز از سطح ۱۰ باز می‌شود</b>\n\nمأموریت‌ها و نتیجه شیفت‌ها سریع‌ترین مسیر دریافت تجربه‌اند.",
-        "job_not_found": "💼 <b>هنوز شغلی نداری</b>\n\nابتدا یک شغل انتخاب کن تا درآمد با گذشت زمان جمع شود.",
-        "max_level_reached": "✅ <b>این بخش در بالاترین سطح است</b>\n\nنیازی به ارتقای بیشتر نیست؛ روی دارایی یا هدف بعدی تمرکز کن.",
-        "market_frozen": "⏸ <b>بازار موقتاً متوقف است</b>\n\nقیمت‌ها قابل مشاهده‌اند، اما معامله تا بازشدن بازار انجام نمی‌شود.",
+        "insufficient_balance": "❌ موجودی کافی نیست\n\nمبلغ لازم بیشتر از کیف پول فعلی است. درآمد شغل را دریافت کن، مبلغ کمتری انتخاب کن یا از پس‌انداز برداشت کن.",
+        "insufficient_player_balance": "❌ موجودی کافی نیست\n\nابتدا درآمد آماده را دریافت کن یا موجودی کیف پول را افزایش بده.",
+        "housing_locked": "🔒 این خانه هنوز باز نشده است\n\nدر صفحه مرکز پیشرفت، سطح لازم و بهترین مسیر رسیدن به آن را ببین.",
+        "market_locked": "🔒 بازار ارز از سطح ۱۰ باز می‌شود\n\nمأموریت‌ها و نتیجه شیفت‌ها سریع‌ترین مسیر دریافت تجربه‌اند.",
+        "job_not_found": "💼 هنوز شغلی نداری\n\nابتدا یک شغل انتخاب کن تا درآمد با گذشت زمان جمع شود.",
+        "max_level_reached": "✅ این بخش در بالاترین سطح است\n\nنیازی به ارتقای بیشتر نیست؛ روی دارایی یا هدف بعدی تمرکز کن.",
+        "market_frozen": "⏸ بازار موقتاً متوقف است\n\nقیمت‌ها قابل مشاهده‌اند، اما معامله تا بازشدن بازار انجام نمی‌شود.",
     }
     return messages.get(code, "❌ عملیات کامل نشد. صفحه را تازه کن و شرایط نمایش‌داده‌شده را دوباره بررسی کن.")
 ```
@@ -2710,22 +2795,27 @@ def B(text, action, owner, arg="", style=Style.GLASS):
 def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMarkup:
     k = Keyboard()
     if onboarding < 4:
-        k.row(B("🚀 ادامه مسیر شروع", "journey", owner, style=Style.PRIMARY))
+        k.row(B("▶️ قدم بعدی من", "journey", owner, style=Style.PRIMARY))
     else:
-        k.row(B("☀️ امروز من", "today", owner, style=Style.PRIMARY),
-              B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
-    if onboarding < 4:
-        k.row(B("☀️ امروز من", "today", owner),
-              B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
-    k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
-    k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
-    k.row(B("🪪 شخصیت من", "profile", owner), B("🌍 کشور من", "country", owner))
-    k.row(B("🧭 مرکز پیشرفت", "progress", owner))
+        k.row(B("▶️ قدم بعدی من", "today", owner, style=Style.PRIMARY))
+    k.row(B("💼 کار و درآمد", "jobs", owner, style=Style.SUCCESS),
+          B("🎯 کارهای امروز", "missions", owner, style=Style.SUCCESS))
+    k.row(B("💳 پول و دارایی", "economy", owner), B("🌍 کشور من", "country", owner))
+    k.row(B("🪪 وضعیت من", "profile", owner), B("🧭 مسیر پیشرفت", "progress", owner))
+    k.row(B("❓ چرا بازی کنم؟", "why", owner), B("📘 راهنمای یک‌دقیقه‌ای", "guide", owner))
+    k.row(B("🎁 دعوت دوست و جایزه", "referrals", owner, style=Style.SUCCESS))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
+def referrals(owner, invite_url="", claimable=False):
+    k=Keyboard()
+    if invite_url:k.row(url_button("📨 فرستادن لینک دعوت",f"https://t.me/share/url?url={invite_url}",style=Style.PRIMARY))
+    if claimable:k.row(B("🎁 دریافت جایزه آماده","refclaim",owner,style=Style.SUCCESS))
+    k.row(B("🔵 تازه‌سازی","referrals",owner),B("🏠 خانه","home",owner))
+    return k.build()
+
 def journey(owner, step):
-    labels = {0:"✨ تعیین هدف نخست", 1:"🎁 دریافت سرمایه آغازین", 2:"🎯 بازکردن نخستین کار روزانه", 3:"🏁 ورود به زندگی اصلی"}
+    labels = {0:"✨ شروع زندگی من", 1:"🎁 گرفتن سرمایه شروع", 2:"🎯 دیدن اولین کار", 3:"💼 انتخاب شغل و شروع درآمد"}
     k = Keyboard()
     if 0 <= step < 4:
         k.row(B(labels[step], "jstep", owner, str(step), Style.PRIMARY))
@@ -2750,8 +2840,10 @@ def missions(owner, keys):
     return k.build()
 
 def economy(owner):
-    return (Keyboard().row(B("🏦 مدیریت پس‌انداز", "savings", owner, style=Style.PRIMARY), B("🧾 پرداخت هزینه زندگی", "living", owner, style=Style.SUCCESS))
-            .row(B("🏠 انتخاب خانه", "housing", owner), B("🏠 منوی اصلی", "home", owner)).build())
+    return (Keyboard()
+            .row(B("🔵 مدیریت پس‌انداز", "savings", owner, style=Style.PRIMARY), B("🟡 پرداخت هزینه زندگی", "living", owner, style=Style.SUCCESS))
+            .row(B("🏠 انتخاب خانه", "housing", owner), B("🟣 بازار دلار", "market", owner))
+            .row(B("📦 منابع و فروش", "resources", owner), B("🏠 خانه", "home", owner)).build())
 
 def savings(owner):
     return (Keyboard().row(B("واریز ۵۰ هزار", "deposit", owner, "50000", Style.PRIMARY), B("برداشت ۵۰ هزار", "withdraw", owner, "50000"))
@@ -2777,16 +2869,32 @@ def jobs(owner, has_job, unlocked=True):
         k.row(B("💻 برنامه‌نویس", "jchoose", owner, "programmer"), B("📈 بازرگان", "jchoose", owner, "trader"))
         k.row(B("⚡ مهندس", "jchoose", owner, "engineer"), B("🩺 پزشک", "jchoose", owner, "doctor"))
         k.row(B("📰 روزنامه‌نگار", "jchoose", owner, "journalist"))
-    k.row(B("🏠 منوی اصلی", "home", owner))
+    k.row(B("📦 منابع و فروش", "resources", owner, style=Style.SUCCESS), B("🏠 منوی اصلی", "home", owner))
+    return k.build()
+
+def resources(owner, rows):
+    """Show resource categories first, then amounts, to keep the panel compact."""
+    k=Keyboard();owned=[item for item in rows if int(item["quantity"])>0]
+    for item in owned:
+        k.row(B(f"🟣 {item['title']} · {item['quantity']} واحد","rpick",owner,str(item["asset"])))
+    if not owned:k.row(B("💼 رفتن به کار و تولید","jobs",owner,style=Style.SUCCESS))
+    k.row(B("🔵 تازه‌سازی","resources",owner,style=Style.PRIMARY),B("🏠 خانه","home",owner))
+    return k.build()
+
+def resource_amounts(owner,item):
+    k=Keyboard();quantity=int(item["quantity"]);asset=str(item["asset"])
+    amounts=[x for x in (10,50,100,500) if x<=quantity]
+    for i in range(0,len(amounts),2):
+        k.row(*[B(f"🟡 فروش {x} واحد","rsell",owner,f"{asset},{x}",Style.PRIMARY if x==amounts[-1] else Style.GLASS) for x in amounts[i:i+2]])
+    k.row(B("↩️ منابع","resources",owner))
     return k.build()
 
 def market(owner, unlocked=True):
-    k = Keyboard()
-    if not unlocked:
-        return k.row(B("🎯 رفتن به کارهای امروز", "missions", owner, style=Style.PRIMARY)).row(B("🏠 خانه", "home", owner)).build()
-    return (k.row(B("خرید ۱۰ دلار", "mbuy", owner, "1000", Style.PRIMARY), B("فروش ۱۰ دلار", "msell", owner, "1000"))
-            .row(B("خرید ۵۰ دلار", "mbuy", owner, "5000"), B("فروش ۵۰ دلار", "msell", owner, "5000"))
-            .row(B("🔄 تازه‌سازی", "market", owner), B("🏠 خانه", "home", owner)).build())
+    k=Keyboard()
+    if not unlocked:return k.row(B("🎯 رفتن به کارهای امروز","missions",owner,style=Style.PRIMARY)).row(B("🏠 خانه","home",owner)).build()
+    return (k.row(B("🟣 خرید ۱۰ دلار","mbuy",owner,"1000",Style.PRIMARY),B("🟡 فروش ۱۰ دلار","msell",owner,"1000"))
+            .row(B("🟣 خرید ۵۰ دلار","mbuy",owner,"5000"),B("🟡 فروش ۵۰ دلار","msell",owner,"5000",Style.SUCCESS))
+            .row(B("🔵 تازه‌سازی","market",owner),B("🏠 خانه","home",owner)).build())
 
 
 def progress(owner):
@@ -2795,18 +2903,28 @@ def progress(owner):
 
 def assets(owner, rows):
     k=Keyboard()
+    emphasized=False
     for item in rows:
         if item.available and not item.owned:
-            k.row(B(f"خرید {item.title}", "abuy", owner, item.code, Style.PRIMARY))
+            style=Style.PRIMARY if not emphasized else Style.SUCCESS
+            emphasized=True
+            k.row(B(f"خرید {item.title}", "abuy", owner, item.code, style))
     k.row(B("🧭 مرکز پیشرفت", "progress", owner), B("🏠 خانه", "home", owner))
     return k.build()
 
 def today(owner, actions):
-    labels={"daily":"🎁 دریافت هدیه","missions":"🎯 دریافت پاداش مأموریت","jobs":"💼 رفتن به شغل","economy":"💳 بررسی هزینه زندگی"}
-    styles={"daily":Style.SUCCESS,"missions":Style.SUCCESS,"jobs":Style.PRIMARY,"economy":Style.PRIMARY}
+    labels={"daily":"🎁 گرفتن هدیه آماده","missions":"🎯 ادامه کارهای امروز","jobs":"💼 کار و دریافت درآمد","economy":"🧾 بررسی هزینه زندگی"}
     k=Keyboard()
+    primary_used=False
     for action in actions:
-        k.row(B(labels.get(action,"ادامه"),action,owner,style=styles.get(action,Style.GLASS)))
+        if action in {"daily", "missions"}:
+            style=Style.SUCCESS
+        elif not primary_used:
+            style=Style.PRIMARY
+            primary_used=True
+        else:
+            style=Style.SUCCESS
+        k.row(B(labels.get(action,"ادامه"),action,owner,style=style))
     k.row(B("🔄 تازه‌سازی امروز", "today", owner),B("🏠 خانه", "home", owner))
     return k.build()
 
@@ -2823,6 +2941,12 @@ def country(owner:int,group_url:str|None,destinations:list[tuple[int,str,int]],*
             k.row(B(f"🧳 {name} · {citizens} شهروند","migrate",owner,str(country_id)))
     k.row(B("🔄 تازه‌سازی", "country", owner),B("🏠 خانه", "home", owner))
     return k.build()
+
+def learn(owner):
+    return (Keyboard().row(B("▶️ قدم بعدی من", "today", owner, style=Style.PRIMARY))
+            .row(B("💼 دیدن شغل‌ها", "jobs", owner, style=Style.SUCCESS),
+                 B("🌍 کشور من", "country", owner))
+            .row(B("🏠 خانه", "home", owner)).build())
 ```
 
 ### `apps\telelife_bot\main.py`
@@ -2854,44 +2978,67 @@ if __name__=='__main__':main()
 ```python
 BANNED="دسترسی حساب محدود شده است. دلیل: {reason}";NO_REASON="ثبت نشده";FROZEN="حساب موقتاً متوقف است."
 PANEL_EXPIRED="این صفحه قدیمی شده است؛ پیام «خانه» را بفرست.";NOT_YOUR_PANEL="این صفحه برای بازیکن دیگری است.";ERROR="مشکلی پیش آمد؛ دوباره امتحان کن."
-HOME="""🌆 <b>زندگیِ {name}</b>
+HOME="""🌆 زندگیِ {name}  ·  سطح {level}
 
-🎚 سطح <b>{level}</b>  ·  {bar}
-✨ تا سطح بعد: <b>{left} تجربه</b>
-👛 پول نقد: <b>{wallet}</b>
-😊 حال شخصیت: <b>{happy}٪</b>
+اینجا چه کار می‌کنی؟
+شغل انتخاب می‌کنی، درآمد می‌گیری، خانه و دارایی می‌خری و همراه کشورت رشد می‌کنی. تصمیم‌هایت شخصیت و اقتصاد بازی را تغییر می‌دهند.
 
-🎯 <b>هدف بعدی:</b> {goal}
+🎯 الان فقط این کار: {goal}
 {hint}
 
-از دکمه‌ها انتخاب کن؛ لازم نیست هیچ فرمانی حفظ کنی."""
-JOURNEY="""🚀 <b>شروع زندگی تازه</b>
+👛 {wallet}  ·  😊 {happy}٪  ·  تا سطح بعد {left} تجربه
 
+دکمه رنگی، بهترین قدم بعدی توست؛ لازم نیست چیزی حفظ کنی."""
+JOURNEY="""🚀 شروع سریع — قدم {current} از ۴
+
+{title}
 {body}
 
-پیشرفت شروع: <b>{done} از ۴</b>
+🎁 فایده این قدم: {benefit}
 {bar}
 
-هر قدم تو را مستقیم به فعالیت بعدی می‌برد تا بعد از نخستین پاداش، بازی رها نشود."""
-PROFILE="""🪪 <b>شخصیت من</b>
+فقط دکمه رنگی را بزن؛ قدم بعد خودش نمایش داده می‌شود."""
+WHY_PLAY="""🎮 تله‌لایف چه بازی‌ای است؟
 
-نام: <b>{name}</b>
-سطح: <b>{level}</b> · رتبه: <b>{rank}</b>
-تجربه: {bar}  <b>{xp}/{need}</b>
+یک زندگی مجازی که با انتخاب‌های تو جلو می‌رود:
 
-👛 کیف پول: <b>{wallet}</b>
-🏦 پس‌انداز: <b>{savings}</b>
-💵 دلار: <b>{usd}</b>
-😊 شادی: <b>{happy}٪</b> · ⭐ شهرت: <b>{rep}</b>
-🔥 حضور پیوسته: <b>{streak} روز</b>"""
-DAILY_READY="🎁 <b>هدیه امروز آماده است</b>\n\n🔥 حضور پیوسته: {streak} روز\n💰 هدیه امروز: <b>{amount}</b>\n\nبعد از دریافت، دکمه «ادامه با کارهای امروز» تو را وارد چرخه اصلی بازی می‌کند."
-DAILY_DONE="✅ <b>هدیه امروز دریافت شد</b>\n\n💰 +{amount}\n✨ +{xp} تجربه\n🔥 حضور پیوسته: {streak} روز\n\nاین آغاز امروز توست؛ حالا یکی از کارهای امروز را کامل کن."
-DAILY_WAIT="⏳ هدیه امروز را گرفته‌ای.\n\n🔥 حضور پیوسته: {streak} روز\nهدیه فردا: <b>{amount}</b>\n\nتا فردا می‌توانی کارهای روزانه، شغل، بانک و خانه را ادامه بدهی."
-MISSIONS="🎯 <b>کارهای امروز</b>\n\n{rows}\n\n▫️ یعنی در حال انجام، 🎁 یعنی آماده دریافت و ✅ یعنی کامل‌شده. کارها هر روز تازه می‌شوند."
-ECONOMY="💳 <b>دارایی و بانک</b>\n\n👛 کیف پول: <b>{wallet}</b>\n🏦 پس‌انداز: <b>{savings}</b>\n🏠 خانه: <b>{house}</b>\n🧾 هزینه زندگی: <b>{due}</b>\n\nپس‌انداز پولت را جدا نگه می‌دارد؛ هزینه زندگی و خانه نیز بر وضعیت شخصیت اثر می‌گذارند."
-JOBS="💼 <b>کار و دریافت درآمد</b>\n\n{body}\n\nشغل شخصی فقط در همین بات مدیریت می‌شود. از همان سطح ۱ شغلت را خودت انتخاب کن. درآمد با گذشت زمان جمع می‌شود و هر وقت آماده بود، نتیجهٔ شیفت را بگیر."
-MARKET="💵 <b>بازار ارز</b>\n\nقیمت خرید: <b>{buy}</b>\nقیمت فروش: <b>{sell}</b>\nسلامت بازار: <b>{health}٪</b> · {status}\nدارایی دلاری تو: <b>{usd}</b>\n\nاختلاف خرید و فروش و کارمزد را پیش از معامله در نظر بگیر."
-UNLOCKS="🗺 <b>مسیر پیشرفت</b>\n\n{rows}\n\nبخش‌های قفل‌شده با رشد سطح باز می‌شوند؛ کارهای امروز مطمئن‌ترین مسیر پیشرفت‌اند."
+💼 شغل می‌گیری و حتی وقتی نیستی درآمد جمع می‌شود.
+📈 با مأموریت و کار، سطح و مهارتت بالا می‌رود.
+🏠 خانه، دارایی و پس‌انداز می‌سازی و مسیر شخصیتت را شکل می‌دهی.
+🌍 عضو یک کشور می‌شوی؛ کارت روی خزانه، منابع، انتخابات و پروژه‌های گروه اثر می‌گذارد.
+🏆 با بازیکنان دیگر در رتبه، ثروت، مهارت و نفوذ رقابت می‌کنی.
+
+چرخه ساده بازی: کار کن ← پاداش بگیر ← قوی‌تر شو ← امکانات تازه باز کن ← روی کشورت اثر بگذار
+
+روزانه چند دقیقه کافی است. برای شروع، «قدم بعدی من» را بزن."""
+HOW_TO_PLAY="""🧭 راهنمای یک‌دقیقه‌ای
+
+۱) «امروز من» می‌گوید الان چه چیزی آماده است.
+۲) شغل، درآمد خودکار و تجربه می‌دهد.
+۳) کارهای امروز، سریع‌ترین راه رشد سطح‌اند.
+۴) پول را برای خانه، دارایی، پس‌انداز و بازار خرج می‌کنی.
+۵) در تله‌ورلد شهروند می‌شوی و روی کشور گروه اثر می‌گذاری.
+
+هرجا سردرگم شدی، فقط «قدم بعدی من» را بزن."""
+PROFILE="""🪪 شخصیت من
+
+نام: {name}
+سطح: {level} · رتبه: {rank}
+تجربه: {bar}  {xp}/{need}
+
+👛 کیف پول: {wallet}
+🏦 پس‌انداز: {savings}
+💵 دلار: {usd}
+😊 شادی: {happy}٪ · ⭐ شهرت: {rep}
+🔥 حضور پیوسته: {streak} روز"""
+DAILY_READY="🎁 هدیه امروز آماده است\n\n🔥 حضور پیوسته: {streak} روز\n💰 هدیه امروز: {amount}\n\nبعد از دریافت، دکمه «ادامه با کارهای امروز» تو را وارد چرخه اصلی بازی می‌کند."
+DAILY_DONE="✅ هدیه امروز دریافت شد\n\n💰 +{amount}\n✨ +{xp} تجربه\n🔥 حضور پیوسته: {streak} روز\n\nاین آغاز امروز توست؛ حالا یکی از کارهای امروز را کامل کن."
+DAILY_WAIT="⏳ هدیه امروز را گرفته‌ای.\n\n🔥 حضور پیوسته: {streak} روز\nهدیه فردا: {amount}\n\nتا فردا می‌توانی کارهای روزانه، شغل، بانک و خانه را ادامه بدهی."
+MISSIONS="🎯 کارهای امروز\n\n{rows}\n\n▫️ یعنی در حال انجام، 🎁 یعنی آماده دریافت و ✅ یعنی کامل‌شده. کارها هر روز تازه می‌شوند."
+ECONOMY="💳 دارایی و بانک\n\n👛 کیف پول: {wallet}\n🏦 پس‌انداز: {savings}\n🏠 خانه: {house}\n🧾 هزینه زندگی: {due}\n\nپس‌انداز پولت را جدا نگه می‌دارد؛ هزینه زندگی و خانه نیز بر وضعیت شخصیت اثر می‌گذارند."
+JOBS="💼 کار و دریافت درآمد\n\n{body}\n\nشغل شخصی فقط در همین بات مدیریت می‌شود. از همان سطح ۱ شغلت را خودت انتخاب کن. درآمد با گذشت زمان جمع می‌شود و هر وقت آماده بود، نتیجهٔ شیفت را بگیر."
+MARKET="💵 بازار ارز\n\nقیمت خرید: {buy}\nقیمت فروش: {sell}\nسلامت بازار: {health}٪ · {status}\nدارایی دلاری تو: {usd}\n\nاختلاف خرید و فروش و کارمزد را پیش از معامله در نظر بگیر."
+UNLOCKS="🗺 مسیر پیشرفت\n\n{rows}\n\nبخش‌های قفل‌شده با رشد سطح باز می‌شوند؛ کارهای امروز مطمئن‌ترین مسیر پیشرفت‌اند."
 ```
 
 ### `apps\telelife_bot\views\__init__.py`
@@ -3116,7 +3263,7 @@ async def lifecycle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if old_status in INACTIVE and await world_access_repo.claim_welcome(chat.id):
         state = "✅ دسترسی لازم کامل است." if access.ready else f"⚠️ دسترسی ناقص: {access.missing_fa()}"
         text = (
-            f"🌍 <b>به {escape(chat.title or 'این گروه')} خوش آمدم</b>\n\n"
+            f"🌍 به {escape(chat.title or 'این گروه')} خوش آمدم\n\n"
             "اینجا می‌توانید کشور، شهروندی، اقتصاد عمومی، انتخابات و پروژه ملی بسازید.\n\n"
             f"{state}"
         )
@@ -3153,6 +3300,7 @@ from packages.core.models import Player
 from packages.core.repositories import country_repo, player_repo
 from packages.core.services import country as country_service
 from packages.core.services import country_missions, economy
+from packages.core.utils.fa_labels import government_name
 
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
@@ -3229,7 +3377,7 @@ async def show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         fa.COUNTRY_STATUS.format(
             name=row["name"],
             description=row["description"],
-            government=row["government_type"],
+            government=government_name(row["government_type"]),
             treasury=row["treasury_toman"],
         )
     )
@@ -3295,6 +3443,7 @@ from packages.core.services import country as country_service
 from packages.core.services import economy, elections, production
 from packages.core.repositories import production_repo
 from packages.core.utils import fmt
+from packages.core.utils.fa_labels import government_name
 from uuid import uuid4
 
 _GROUPS={ChatType.GROUP,ChatType.SUPERGROUP}
@@ -3358,7 +3507,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
  if action=="country":
   row=await country_repo.by_chat(q.message.chat.id)
   await q.answer()
-  if row:await q.edit_message_text(fa.COUNTRY_STATUS.format(name=row['name'],description=row['description'],government=fa.GOVERNMENT_NAMES.get(row['government_type'],row['government_type']),treasury=row['treasury_toman']),reply_markup=kb.country_actions())
+  if row:await q.edit_message_text(fa.COUNTRY_STATUS.format(name=row['name'],description=row['description'],government=government_name(row['government_type']),treasury=row['treasury_toman']),reply_markup=kb.country_actions())
   return
  if action=="jobs":
   user=q.from_user;player=await player_repo.get_or_create(user.id,username=user.username,first_name=user.first_name or "شهروند",language_code=user.language_code or "fa")
@@ -3408,7 +3557,7 @@ async def wizard_text(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
 def register(app)->None:
  app.add_handler(CommandHandler("start",start),group=0)
  app.add_handler(ChatMemberHandler(welcomed,ChatMemberHandler.MY_CHAT_MEMBER),group=0)
- app.add_handler(CallbackQueryHandler(callback,pattern=r"^tw:"),group=0)
+ app.add_handler(CallbackQueryHandler(callback,pattern=r"^tw:(?:start|new|create|government:|confirm|cancel)",group=0))
  app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,wizard_text),group=1)
 ```
 
@@ -3563,7 +3712,7 @@ def register(application) -> None:
 ### `apps\teleworld_bot\handlers\status.py`
 
 ```python
-"""TeleWorld onboarding, group activation and status commands."""
+"""تله‌ورلد onboarding, group activation and status commands."""
 
 from __future__ import annotations
 
@@ -3597,7 +3746,7 @@ async def _sync(update: Update) -> tuple[int, str] | None:
 def _private_menu(bot_username: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "➕ افزودن TeleWorld به گروه",
+            "➕ افزودن تله‌ورلد به گروه",
             url=f"https://t.me/{bot_username}?startgroup=true",
             style="primary",
         )],
@@ -3700,9 +3849,10 @@ from packages.core import db
 from packages.core.bot.start_limit import allow_start
 from packages.core.ui import schedule_cleanup
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade, social
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade, resource_economy, social, intergroup_council
 from packages.core.services import world_access
 from packages.core.utils import fmt
+from packages.core.utils.message_text import plain_text
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
 FLOW = "world_creation"
@@ -3722,11 +3872,16 @@ ERRORS = {
     "same_country_required":"این تعامل فقط بین شهروندان همین کشور ممکن است.", "self_interaction":"نمی‌توانی خودت را انتخاب کنی.",
     "relationship_exists":"این رابطه یا درخواست از قبل وجود دارد.", "marriage_unavailable":"یکی از طرفین ازدواج یا پیشنهاد فعال دارد.",
     "request_not_found":"این درخواست دیگر فعال نیست.", "request_target_required":"فقط دریافت‌کننده درخواست می‌تواند پاسخ دهد.",
-    "help_daily_limit":"سقف سه کمک در امروز پر شده است.", "competition_exists":"بین شما یک رقابت باز وجود دارد.",
+    "help_daily_limit":"سقف سه کمک در امروز پر شده است.", "resource_gift_daily_limit":"سقف هدیه منابع امروز پر شده است.", "resource_donation_daily_limit":"سقف اهدای منابع امروز پر شده است.", "invalid_amount":"این مقدار معتبر نیست.", "competition_exists":"بین شما یک رقابت باز وجود دارد.",
     "competition_not_found":"این رقابت پایان یافته یا در دسترس نیست.", "not_your_turn":"الان نوبت طرف مقابل است.",
     "report_rate_limit":"برای همین فرد در ۲۴ ساعت گذشته گزارش ثبت کرده‌ای.", "case_rate_limit":"سقف دو شکایت در هفته پر شده است.",
     "case_party_cannot_vote":"طرفین پرونده نمی‌توانند رأی بدهند.", "already_voted":"رأی تو قبلاً ثبت شده است.",
     "case_not_found":"پرونده برای رأی‌گیری در دسترس نیست.", "marriage_not_found":"ازدواج فعالی ثبت نشده است.",
+    "proposal_exists":"چنین پیشنهاد بازی از قبل وجود دارد.", "proposal_not_found":"این پیشنهاد پیدا نشد.",
+    "proposal_closed":"رأی‌گیری این پیشنهاد تمام شده است.", "already_voted":"رأی تو قبلاً ثبت شده است.",
+    "wrong_country_vote":"این رأی‌گیری مربوط به گروه تو نیست.", "same_country":"گروه مقصد باید متفاوت باشد.",
+    "invalid_council_action":"این پیشنهاد معتبر نیست.", "source_official_required":"برای اجرای تصمیم، کشور پیشنهاددهنده باید رهبر یا مسئول مرتبط داشته باشد.",
+    "target_official_required":"برای اجرای پیمان، گروه مقصد باید رهبر یا وزیر خارجه داشته باشد.",
 }
 
 async def answer(query, text=None, show_alert=False):
@@ -3744,6 +3899,7 @@ async def player(update):
     return await player_repo.get_or_create(user.id, username=user.username, first_name=user.first_name or "شهروند", language_code=user.language_code or "fa")
 
 async def show(update, context, text, markup):
+    text = plain_text(text)
     chat = update.effective_chat
     query = update.callback_query
     state = await ui_state_repo.world(chat.id)
@@ -3779,14 +3935,14 @@ async def facts(chat_id):
 MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve", "offices", "tradenew", "aid"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:", "shelp:", "socprop:", "socaccept:", "socreject:", "compnew:", "compaccept:", "compreject:", "compplay:", "reportcat:", "casecat:", "casevote:", "divorceok"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:", "shelp:", "rgift:", "rdonate:", "socpeople:", "socperson:", "rgiftpick:", "rdonatepick:", "socprop:", "socaccept:", "socreject:", "compnew:", "compaccept:", "compreject:", "compplay:", "reportcat:", "casecat:", "casevote:", "divorceok", "resourcegift", "resourcedonate", "socmarriage", "councilmake:", "councilvote:"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
     if access.ready:
-        await show(update, context, "✅ <b>دسترسی کامل است</b>\n\nبات مدیر است و اجازه حذف پیام‌های مرحله‌ای را دارد. جهان آماده استفاده است.", kb.access(True))
+        await show(update, context, "✅ دسترسی کامل است\n\nتله‌ورلد مدیر است و اجازه حذف پیام‌های مرحله‌ای را دارد. جهان آماده استفاده است.", kb.access(True))
     else:
-        await show(update, context, "🔒 <b>جهان در حالت محدود است</b>\n\nکمبود: " + access.missing_fa() + "\n\nاز تنظیمات گروه، بات را مدیر کنید و اجازه «حذف پیام‌ها» را فعال کنید. اجازه افزودن مدیر یا تغییر اطلاعات گروه لازم نیست.", kb.access(False))
+        await show(update, context, "🔒 جهان در حالت محدود است\n\nکمبود: " + access.missing_fa() + "\n\nاز تنظیمات گروه، تله‌ورلد را مدیر کنید و اجازه «حذف پیام‌ها» را فعال کنید. اجازه افزودن مدیر یا تغییر اطلاعات گروه لازم نیست.", kb.access(False))
     return access
 
 async def health_page(update, context):
@@ -3796,14 +3952,14 @@ async def health_page(update, context):
     election = await election_repo.open_for_country(country["id"]) if country else None
     project = await project_repo.active(country["id"]) if country else None
     lines = [
-        f"• دسترسی بات: {'کامل' if access.ready else 'ناقص — ' + access.missing_fa()}",
+        f"• دسترسی تله‌ورلد: {'کامل' if access.ready else 'ناقص — ' + access.missing_fa()}",
         f"• اتصال کشور: {'سالم' if country else 'هنوز کشوری ساخته نشده'}",
         f"• صفحه اصلی: {'ثبت شده' if panel else 'با نخستین نمایش ساخته می‌شود'}",
         f"• انتخابات فعال: {'بله' if election else 'خیر'}",
         f"• پروژه فعال: {'بله' if project else 'خیر'}",
         f"• قابلیت‌های اصلی: {'آماده' if access.ready else 'قفل ایمن'}",
     ]
-    await show(update, context, "🩺 <b>بررسی وضعیت جهان</b>\n\n" + "\n".join(lines), kb.access(access.ready))
+    await show(update, context, "🩺 بررسی وضعیت جهان\n\n" + "\n".join(lines), kb.access(access.ready))
 
 async def home(update, context):
     chat = update.effective_chat
@@ -3867,20 +4023,20 @@ async def economy_b_page(update,context):
     if not row:raise ValueError("country_not_found")
     p=await player(update);v=await country_economy_b.view(int(row["id"]))
     if not v:
-        await show(update,context,"📊 <b>اقتصاد روزانه کشور</b>\n\nپس از اجرای نخستین چرخه روزانه، گزارش اینجا نمایش داده می‌شود.",kb.country_economy_b(False,False));return
+        await show(update,context,"📊 اقتصاد روزانه کشور\n\nپس از اجرای نخستین چرخه روزانه، گزارش اینجا نمایش داده می‌شود.",kb.country_economy_b(False,False));return
     roles=await db.fetch("SELECT o.role_code,p.first_name FROM country_offices o JOIN players p ON p.id=o.player_id WHERE o.country_id=$1 ORDER BY o.role_code",row["id"])
     role_names={"economy_minister":"وزیر اقتصاد","industry_minister":"وزیر صنعت","foreign_minister":"وزیر خارجه","army_commander":"فرمانده ارتش","intelligence_chief":"رئیس اطلاعات"}
     cabinet="، ".join(f"{role_names.get(str(x['role_code']),'مقام')}: {escape(str(x['first_name']))}" for x in roles) or "هنوز کسی منصوب نشده"
     crisis="بحران فعالی نیست ✅" if int(v["active_crises"] or 0)==0 else f"{fmt.number(v['active_crises'])} بحران فعال ⚠️"
     sat=int(v["satisfaction"] or 70);modifier=int(v["production_modifier_bp"] or 10000)
-    text=(f"📊 <b>بودجه و وضعیت {escape(str(row['name']))}</b>\n\n"
-          f"🙂 رضایت عمومی: <b>{fmt.number(sat)} از ۱۰۰</b>\n"
-          f"🍞 کمبود غذا: <b>{int(v['food_shortage_bp'] or 0)/100:.1f}٪</b>\n"
-          f"⚡ کمبود انرژی: <b>{int(v['energy_shortage_bp'] or 0)/100:.1f}٪</b>\n"
-          f"🏭 ضریب تولید: <b>{modifier/100:.1f}٪</b>\n"
-          f"🫶 رفاه: <b>{fmt.number(v['welfare_level'] or 0)}</b> · 🛡 آمادگی: <b>{fmt.number(v['defense_readiness'] or 0)}</b>\n"
+    text=(f"📊 بودجه و وضعیت {escape(str(row['name']))}\n\n"
+          f"🙂 رضایت عمومی: {fmt.number(sat)} از ۱۰۰\n"
+          f"🍞 کمبود غذا: {int(v['food_shortage_bp'] or 0)/100:.1f}٪\n"
+          f"⚡ کمبود انرژی: {int(v['energy_shortage_bp'] or 0)/100:.1f}٪\n"
+          f"🏭 ضریب تولید: {modifier/100:.1f}٪\n"
+          f"🫶 رفاه: {fmt.number(v['welfare_level'] or 0)} · 🛡 آمادگی: {fmt.number(v['defense_readiness'] or 0)}\n"
           f"🚨 {crisis}\n\n"
-          f"<b>تقسیم بودجه</b>\nرفاه {int(v['welfare_bp'])/100:.0f}٪ · تولید {int(v['production_bp'])/100:.0f}٪ · فناوری {int(v['technology_bp'])/100:.0f}٪\n"
+          f"تقسیم بودجه\nرفاه {int(v['welfare_bp'])/100:.0f}٪ · تولید {int(v['production_bp'])/100:.0f}٪ · فناوری {int(v['technology_bp'])/100:.0f}٪\n"
           f"دفاع {int(v['defense_bp'])/100:.0f}٪ · اطلاعات {int(v['intelligence_bp'])/100:.0f}٪ · دیپلماسی {int(v['diplomacy_bp'])/100:.0f}٪ · اضطراری {int(v['emergency_bp'])/100:.0f}٪\n\n"
           f"👔 کابینه: {cabinet}\n\nبودجه از چرخه بعدی روی مصرف، رضایت و تولید واقعی اثر می‌گذارد.")
     can_manage=int(row["president_player_id"] or 0)==p.id or bool(await db.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code='economy_minister'",row["id"],p.id))
@@ -3891,14 +4047,14 @@ async def offices_page(update,context):
     if not row or int(row["president_player_id"] or 0)!=p.id:raise PermissionError("president_required")
     people=await db.fetch("SELECT p.id player_id,p.first_name FROM citizenships c JOIN players p ON p.id=c.player_id WHERE c.country_id=$1 AND c.is_active AND p.id<>$2 ORDER BY c.joined_at LIMIT 5",row["id"],p.id)
     if not people:await answer(update.callback_query,"برای تشکیل کابینه، دست‌کم یک شهروند دیگر لازم است.",show_alert=True);return
-    await show(update,context,"👔 <b>کابینه اولیه</b>\n\nروی نام و سمت موردنظر بزن. هر شهروند فقط یک سمت می‌گیرد و تغییرها در گزارش حسابرسی ثبت می‌شوند.",kb.offices(people))
+    await show(update,context,"👔 کابینه اولیه\n\nروی نام و سمت موردنظر بزن. هر شهروند فقط یک سمت می‌گیرد و تغییرها در گزارش حسابرسی ثبت می‌شوند.",kb.offices(people))
 
 async def central_bank_page(update,context):
     row,_,_=await facts(update.effective_chat.id)
     if not row:raise ValueError("country_not_found")
     v=await country_realism.policy_view(row["id"]);p=await player(update);president=row["president_player_id"]==p.id
-    indicators=("هنوز گزارش روزانه محاسبه نشده است." if not v["indicator_date"] else f"تورم: <b>{int(v['inflation_bp'])/100:.1f}٪</b> · بیکاری: <b>{int(v['unemployment_bp'])/100:.1f}٪</b>\nرشد: <b>{int(v['growth_bp'])/100:+.1f}٪</b> · رضایت: <b>{v['satisfaction']}/۱۰۰</b>")
-    text=f"🏦 <b>بانک مرکزی {escape(str(row['name']))}</b>\n\nنرخ بهره: <b>{int(v['interest_rate_bp'])/100:.1f}٪</b>\nهدف تورم: <b>{int(v['inflation_target_bp'])/100:.1f}٪</b>\nذخیره ارزی: <b>{fmt.usd(int(v['fx_reserve_cents']))}</b>\n\n{indicators}\n\nافزایش بهره معمولاً تورم را مهار می‌کند اما رشد را کندتر می‌کند. تصمیم امروز در گزارش فردا اثر می‌گذارد."
+    indicators=("هنوز گزارش روزانه محاسبه نشده است." if not v["indicator_date"] else f"تورم: {int(v['inflation_bp'])/100:.1f}٪ · بیکاری: {int(v['unemployment_bp'])/100:.1f}٪\nرشد: {int(v['growth_bp'])/100:+.1f}٪ · رضایت: {v['satisfaction']}/۱۰۰")
+    text=f"🏦 بانک مرکزی {escape(str(row['name']))}\n\nنرخ بهره: {int(v['interest_rate_bp'])/100:.1f}٪\nهدف تورم: {int(v['inflation_target_bp'])/100:.1f}٪\nذخیره ارزی: {fmt.usd(int(v['fx_reserve_cents']))}\n\n{indicators}\n\nافزایش بهره معمولاً تورم را مهار می‌کند اما رشد را کندتر می‌کند. تصمیم امروز در گزارش فردا اثر می‌گذارد."
     await show(update,context,text,kb.central_bank(president))
 
 async def citizens_page(update, context):
@@ -3932,7 +4088,7 @@ async def project_page(update, context):
     daily=f"\n\n🎯 هدف کاری امروز کشور: {fmt.number(objective.progress)} از {fmt.number(objective.target)} شیفت · {fmt.number(objective.contributors)} مشارکت‌کننده"+(" ✅" if objective.complete else "")
     available=await national_project.available(row["id"])
     markup=kb.project(True) if project else kb.project(False,available)
-    await show(update, context, "🏗 <b>پروژه‌ها و هدف ملی</b>\n\n" + body + daily + "\n\nپروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.", markup)
+    await show(update, context, "🏗 پروژه‌ها و هدف ملی\n\n" + body + daily + "\n\nپروژه تکمیل‌شده بازده شغل مرتبط را واقعاً افزایش می‌دهد.", markup)
 
 async def trade_page(update,context):
  row,_,_=await facts(update.effective_chat.id)
@@ -3942,12 +4098,12 @@ async def trade_page(update,context):
   from packages.core import db
   await db.execute("INSERT INTO country_international_reputation(country_id) VALUES($1) ON CONFLICT DO NOTHING",row["id"]);v=await country_trade.overview(int(row["id"]))
  can_manage=int(row["president_player_id"] or 0)==p.id or bool(await db.fetchval("SELECT 1 FROM country_offices WHERE country_id=$1 AND player_id=$2 AND role_code=ANY($3::text[])",row["id"],p.id,["economy_minister","foreign_minister"]))
- text=(f"🌐 <b>تجارت و دیپلماسی {escape(str(row['name']))}</b>\n\n"
-       f"⭐ اعتبار بین‌المللی: <b>{fmt.number(v['score'])} از ۱۰۰</b>\n"
-       f"📦 قراردادهای باز: <b>{fmt.number(v['open_contracts'])}</b>\n"
-       f"✅ قراردادهای موفق: <b>{fmt.number(v['fulfilled_contracts'])}</b>\n"
-       f"🤝 روابط رسمی: <b>{fmt.number(v['active_relations'])}</b>\n"
-       f"⛔ تحریم‌های مرتبط: <b>{fmt.number(v['sanctions'])}</b>\n\n"
+ text=(f"🌐 تجارت و دیپلماسی {escape(str(row['name']))}\n\n"
+       f"⭐ اعتبار بین‌المللی: {fmt.number(v['score'])} از ۱۰۰\n"
+       f"📦 قراردادهای باز: {fmt.number(v['open_contracts'])}\n"
+       f"✅ قراردادهای موفق: {fmt.number(v['fulfilled_contracts'])}\n"
+       f"🤝 روابط رسمی: {fmt.number(v['active_relations'])}\n"
+       f"⛔ تحریم‌های مرتبط: {fmt.number(v['sanctions'])}\n\n"
        "منابع پیشنهاددهنده هنگام ساخت قرارداد وارد Escrow می‌شوند. پذیرش، هر دو دارایی را در یک تراکنش جابه‌جا می‌کند؛ انقضا هم دارایی را خودکار پس می‌دهد.")
  await show(update,context,text,kb.trade_home(can_manage))
 
@@ -3957,11 +4113,20 @@ async def society_page(update,context):
  citizenship=await country_repo.citizenship(p.id)
  if not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
  view=await social.dashboard(int(row["id"]),p.id)
- marriage=view["marriage"];partner=(f"💍 همسر: <b>{escape(str(marriage['partner_name']))}</b>" if marriage else "💍 هنوز ازدواج فعالی نداری.")
- text=(f"🏘 <b>جامعه {escape(str(row['name']))}</b>\n\n{partner}\n"
-       f"🫂 دوستی‌های فعال: <b>{fmt.number(view['friends'])}</b>\n"
-       f"⚖️ پرونده‌های باز: <b>{fmt.number(view['cases'])}</b>\n\n"
-       "کمک و رابطه فقط با رضایت انجام می‌شود. رقابت ضرر مالی ندارد و گزارش‌ها نام فرد را در گروه منتشر نمی‌کنند.")
+ marriage=view["marriage"];partner=(f"💍 همسر: {escape(str(marriage['partner_name']))}" if marriage else "💍 هنوز ازدواج فعالی نداری.")
+ inventory=await resource_economy.inventory(p.id)
+ resources=" · ".join(f"{ASSET.get(x['asset'],'منبع')} {fmt.number(x['quantity'])}" for x in inventory if int(x['quantity'])>0) or "منبعی نداری؛ ابتدا نتیجه شیفت را در تله‌لایف بگیر"
+ activity=[]
+ for event in view["resource_activity"]:
+  asset_name=ASSET.get(str(event['asset_code']),'منبع');actor=escape(str(event['actor_name']))
+  if event['transfer_type']=='gift':activity.append(f"🎁 {actor} به {escape(str(event['recipient_name']))}، {fmt.number(event['amount'])} {asset_name} هدیه داد")
+  else:activity.append(f"🏛 {actor}، {fmt.number(event['amount'])} {asset_name} به کشور اهدا کرد")
+ feed="\n".join(activity) or "هنوز انتقال عمومی ثبت نشده است."
+ text=(f"🏘 مردم و جامعه {escape(str(row['name']))}\n\n{partner}\n"
+       f"🫂 دوستی‌های فعال: {fmt.number(view['friends'])} · ⚖️ پرونده‌های باز: {fmt.number(view['cases'])}\n\n"
+       f"📦 منابع قابل تعامل تو: {resources}\n\n"
+       f"آخرین همکاری‌های کشور\n{feed}\n\n"
+       "اینجا می‌توانی منبع به دوستت هدیه بدهی یا مستقیم به کشور کمک کنی. انتقال‌ها قطعی، ثبت‌شده و محدود به شهروندان همین کشورند.")
  await show(update,context,text,kb.society_home(view["pending"],view["competitions"],bool(marriage)))
 
 async def social_people_page(update,context,mode):
@@ -3969,22 +4134,49 @@ async def social_people_page(update,context,mode):
  citizenship=await country_repo.citizenship(p.id)
  if not row or not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
  rows=await social.citizens(int(row["id"]),p.id)
- await show(update,context,"👥 <b>یک شهروند را انتخاب کن</b>\n\nنام‌ها فقط از شهروندان فعال همین کشور هستند.",kb.social_people(rows,mode))
+ await show(update,context,"👥 با چه کسی؟\n\nیک شهروند را انتخاب کن؛ مرحله بعد دقیقاً می‌گوید چه اتفاقی می‌افتد.",kb.social_people(rows,mode))
 
 async def cases_page(update,context):
  row,_,_=await facts(update.effective_chat.id);p=await player(update)
  if not row or not await db.fetchval("SELECT 1 FROM citizenships WHERE player_id=$1 AND country_id=$2 AND is_active",p.id,row["id"]):raise PermissionError("citizen_required")
  rows=await social.cases(int(row["id"]))
- await show(update,context,"⚖️ <b>دادگاه شهروندی</b>\n\nرأی‌گیری ۲۴ ساعت باز است. طرفین حق رأی ندارند و هر شهروند فقط یک رأی دارد. رأی عمومی جای گزارش فوری به مدیران تلگرام را نمی‌گیرد.",kb.court_cases(rows))
+ await show(update,context,"⚖️ دادگاه شهروندی\n\nرأی‌گیری ۲۴ ساعت باز است. طرفین حق رأی ندارند و هر شهروند فقط یک رأی دارد. رأی عمومی جای گزارش فوری به مدیران تلگرام را نمی‌گیرد.",kb.court_cases(rows))
 
 async def competition_page(update,context,cid):
  p=await player(update);row=await db.fetchrow("""SELECT c.*,a.first_name challenger_name,b.first_name opponent_name FROM social_competitions c JOIN players a ON a.id=c.challenger_id JOIN players b ON b.id=c.opponent_id WHERE c.id=$1 AND $2 IN(c.challenger_id,c.opponent_id)""",cid,p.id)
  if not row:raise ValueError("competition_not_found")
  turn=int(row["turn_player_id"] or 0)==p.id
- text=(f"🏆 <b>رقابت دوستانه</b>\n\n{escape(str(row['challenger_name']))}: <b>{fmt.number(row['challenger_score'])}</b>\n"
-       f"{escape(str(row['opponent_name']))}: <b>{fmt.number(row['opponent_score'])}</b>\nدور: {fmt.number(row['round_no'])}/۳\n\n"
+ text=(f"🏆 رقابت دوستانه\n\n{escape(str(row['challenger_name']))}: {fmt.number(row['challenger_score'])}\n"
+       f"{escape(str(row['opponent_name']))}: {fmt.number(row['opponent_score'])}\nدور: {fmt.number(row['round_no'])}/۳\n\n"
        +("🎯 نوبت توست." if turn else "⏳ نوبت طرف مقابل است."))
  await show(update,context,text,kb.competition(cid,turn and row["status"]=="active"))
+
+async def council_page(update,context):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ if not row:raise ValueError("country_not_found")
+ citizen=await country_repo.citizenship(p.id)
+ if not citizen or int(citizen["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
+ items=[]
+ for item in await intergroup_council.dashboard(int(row["id"])):
+  d=dict(item);d["is_local"]=int(item["proposer_country_id"])==int(row["id"]);d["action_title"]=intergroup_council.ACTIONS.get(str(item["action_code"]),"پیشنهاد");items.append(d)
+ text=("🌍 شورای جهان\n\nاینجا اعضای گروه با هم تصمیم می‌گیرند و بعد پیشنهاد برای گروه مقابل می‌رود. "
+       "هیچ پیمان یا کمکی بدون رأی هر دو گروه اجرا نمی‌شود.\n\nیک پیشنهاد تازه بساز یا رأی‌گیری‌های باز را ببین.")
+ await show(update,context,text,kb.council_home(items))
+
+async def council_detail_page(update,context,proposal_id:int):
+ row=await intergroup_council.detail(proposal_id);p=await player(update);country,_,_=await facts(update.effective_chat.id)
+ if not row or not country or int(country["id"]) not in {int(row["proposer_country_id"]),int(row["target_country_id"])}:raise ValueError("proposal_not_found")
+ side="local" if int(country["id"])==int(row["proposer_country_id"]) else "remote"
+ active=(row["status"]=="local_voting" and side=="local") or (row["status"]=="remote_voting" and side=="remote")
+ yes=int(row[f"{side}_yes"]);no=int(row[f"{side}_no"]);needed=intergroup_council.threshold(int(await db.fetchval("SELECT count(*) FROM citizenships WHERE country_id=$1 AND is_active",country["id"]) or 0))
+ voted=await intergroup_council.has_voted(proposal_id,p.id)
+ status="رأی‌گیری گروه ما" if active else "منتظر تصمیم گروه مقابل"
+ text=(f"🌍 پیشنهاد بین دو گروه\n\nاز {row['proposer_name']} به {row['target_name']}\n"
+       f"موضوع: {intergroup_council.ACTIONS.get(str(row['action_code']),'پیشنهاد')}\n\n"
+       f"وضعیت: {status}\nموافق: {fmt.number(yes)} · مخالف: {fmt.number(no)}\n"
+       f"برای تصمیم: {fmt.number(needed)} رأی هم‌نظر لازم است.\n\n"
+       +( "رأیت را ساده و روشن ثبت کن." if active and not voted else "رأی تو ثبت شده؛ نتیجه را همین‌جا دنبال کن." if voted else "وقتی گروه مقابل تصمیم بگیرد، نتیجه اجرا می‌شود."))
+ await show(update,context,text,kb.council_vote(proposal_id,active and not voted))
 
 async def callback(update, context):
     query = update.callback_query
@@ -3993,7 +4185,7 @@ async def callback(update, context):
     try:
         if action == "access:why":
             await answer(query)
-            await show(update, context, "📘 <b>چرا مدیر؟</b>\n\nفقط برای حذف پیام‌های مرحله‌ای باید بات مدیر باشد. ویرایش پیام‌های خود بات نیاز به مجوز جداگانه ندارد.\n\nمسیر: اطلاعات گروه ← ویرایش ← مدیران ← افزودن مدیر ← فعال‌کردن «حذف پیام‌ها».\n\nتلگرام پیوند قابل‌اتکایی برای بازکردن مستقیم صفحه ارتقای مدیر ارائه نمی‌کند؛ بنابراین دکمه جعلی نمایش داده نمی‌شود.", kb.access(False))
+            await show(update, context, "📘 چرا مدیر؟\n\nفقط برای حذف پیام‌های مرحله‌ای باید بات مدیر باشد. ویرایش پیام‌های خود بات نیاز به مجوز جداگانه ندارد.\n\nمسیر: اطلاعات گروه ← ویرایش ← مدیران ← افزودن مدیر ← فعال‌کردن «حذف پیام‌ها».\n\nتلگرام پیوند قابل‌اتکایی برای بازکردن مستقیم صفحه ارتقای مدیر ارائه نمی‌کند؛ بنابراین دکمه جعلی نمایش داده نمی‌شود.", kb.access(False))
             return
         if action == "access:check":
             await answer(query)
@@ -4011,21 +4203,55 @@ async def callback(update, context):
                 await answer(query, "عملیات قفل است: " + access.missing_fa(), show_alert=True)
                 await access_page(update, context)
                 return
+        if action=="grow_country":
+            await answer(query);username=(await context.bot.get_me()).username or ""
+            await show(update,context,"📣 بزرگ‌کردن کشور\n\nدو راه ساده دارید:\n۱) دوستانتان را به همین گروه بیاورید.\n۲) تله‌ورلد را به یک گروه تازه اضافه کنید و آن گروه را به شورای جهان دعوت کنید.\n\nهر گروه تازه می‌تواند متحد، شریک تجاری یا رقیب شما شود.",kb.grow_country(username));return
+        if action=="council":await answer(query);await council_page(update,context);return
+        if action=="councilnew":
+            await answer(query);row,_,_=await facts(update.effective_chat.id)
+            if not row:raise ValueError("country_not_found")
+            await show(update,context,"🌍 با کدام گروه می‌خواهید وارد تعامل شوید؟\n\nاول مقصد را انتخاب کن؛ بعد موضوع پیشنهاد را می‌بینی.",kb.council_countries(await intergroup_council.countries_except(int(row["id"]))));return
+        if action.startswith("councilto:"):
+            target=int(action.split(":")[1]);await answer(query)
+            await show(update,context,"یک تصمیم انتخاب کن\n\nاین پیشنهاد ابتدا داخل گروه خودتان رأی می‌گیرد و فقط بعد از تأیید، برای گروه مقابل می‌رود.",kb.council_actions(target));return
+        if action.startswith("councilmake:"):
+            _,target,kind=action.split(":");row,_,_=await facts(update.effective_chat.id);p=await player(update)
+            result=await intergroup_council.create(int(row["id"]),int(target),p.id,kind,f"council:{row['id']}:{target}:{kind}:{query.id}")
+            await answer(query,"پیشنهاد ثبت شد و رأی تو هم موافق حساب شد.",show_alert=True);await council_detail_page(update,context,int(result["id"]));return
+        if action.startswith("councilview:"):
+            await answer(query);await council_detail_page(update,context,int(action.split(":")[1]));return
+        if action.startswith("councilvote:"):
+            _,proposal_id,choice=action.split(":");p=await player(update);result=await intergroup_council.vote(int(proposal_id),p.id,choice)
+            messages={"local_voting":"رأیت ثبت شد.","remote_voting":"رأی این گروه کامل شد؛ حالا نوبت گروه مقابل است.","approved":"هر دو گروه موافقت کردند؛ تصمیم اجرا شد.","rejected":"پیشنهاد رأی نیاورد.","failed":"رأی‌ها کامل شد، اما برای اجرا مسئول یا دارایی لازم موجود نبود."}
+            await answer(query,messages.get(str(result["status"]),"نتیجه ثبت شد."),show_alert=True);await council_detail_page(update,context,int(proposal_id));return
         if action == "society": await answer(query); await society_page(update,context); return
+        if action=="resourcegift":await answer(query);await social_people_page(update,context,"resourcegift");return
+        if action=="resourcedonate":await answer(query);await show(update,context,"🏛 اهدای منبع به کشور\n\nمنبع مستقیم از موجودی تو به ذخایر کشور می‌رود و در اقتصاد روزانه کشور مصرف می‌شود.",kb.resource_assets("rdonatepick"));return
         if action.startswith("socpeople:"):
             await answer(query);await social_people_page(update,context,action.split(":",1)[1]);return
         if action.startswith("socperson:"):
             _,mode,target=action.split(":",2);target=int(target);await answer(query)
-            if mode=="help":await show(update,context,"🤝 <b>کمک امن</b>\n\nمبلغ از کیف پول تو مستقیم به شهروند منتقل می‌شود. فقط دو کمک اول روز اعتبار می‌دهد و سقف روزانه سه کمک است.",kb.help_amount(target))
+            if mode=="help":await show(update,context,"🤝 کمک امن\n\nمبلغ از کیف پول تو مستقیم به شهروند منتقل می‌شود. فقط دو کمک اول روز اعتبار می‌دهد و سقف روزانه سه کمک است.",kb.help_amount(target))
+            elif mode=="resourcegift":await show(update,context,"🎁 هدیه منبع\n\nمنبع و مقدار را انتخاب کن؛ انتقال مستقیم و برگشت‌ناپذیر است.",kb.resource_assets("rgiftpick",target))
             elif mode=="friend":
-                p=await player(update);await social.propose("friendship",p.id,target);await answer(query,"پیشنهاد دوستی ثبت شد.",show_alert=True);await society_page(update,context)
+                p=await player(update);await social.propose("friendship",p.id,target);await answer(query,"درخواست دوستی فرستاده شد؛ با پذیرش طرف مقابل فعال می‌شود.",show_alert=True);await society_page(update,context)
             elif mode=="marry":
-                p=await player(update);await social.propose("marriage",p.id,target);await answer(query,"پیشنهاد ازدواج ثبت شد؛ فقط با قبول طرف مقابل فعال می‌شود.",show_alert=True);await society_page(update,context)
+                p=await player(update);await social.propose("marriage",p.id,target);await answer(query,"پیشنهاد ازدواج فرستاده شد؛ تا طرف مقابل قبول نکند چیزی تغییر نمی‌کند.",show_alert=True);await society_page(update,context)
             elif mode=="compete":
                 p=await player(update);await social.challenge(p.id,target);await answer(query,"دعوت رقابت دوستانه ثبت شد.",show_alert=True);await society_page(update,context)
-            elif mode in {"report","case"}:await show(update,context,"دسته‌بندی را انتخاب کن. جزئیات حساس را در گروه عمومی ننویس.",kb.social_categories(target,"reportcat" if mode=="report" else "casecat"))
+            elif mode in {"report","case"}:await show(update,context,"موضوع را انتخاب کن؛ اطلاعات شخصی یا حساس را در گروه ننویس.",kb.social_categories(target,"reportcat" if mode=="report" else "casecat"))
             return
         if action=="socmarriage":await answer(query);await social_people_page(update,context,"marry");return
+        if action.startswith("rgiftpick:"):
+            _,asset,target=action.split(":");await answer(query);await show(update,context,"🎁 مقدار هدیه را انتخاب کن\n\nانتقال پس از انتخاب مقدار فوراً ثبت می‌شود.",kb.resource_amount("rgift",asset,int(target)));return
+        if action.startswith("rgift:"):
+            _,asset,amount,target=action.split(":");p=await player(update);r=await resource_economy.transfer(p.id,asset,int(amount),f"rgift:{p.id}:{query.id}",recipient=int(target))
+            await answer(query,f"🎁 {fmt.number(r.amount)} واحد {ASSET.get(r.asset,'منبع')} هدیه شد؛ +{r.reputation} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
+        if action.startswith("rdonatepick:"):
+            _,asset=action.split(":");await answer(query);await show(update,context,"🏛 مقدار کمک به کشور\n\nاین منبع وارد ذخایر عمومی کشور می‌شود.",kb.resource_amount("rdonate",asset));return
+        if action.startswith("rdonate:"):
+            _,asset,amount=action.split(":");p=await player(update);r=await resource_economy.transfer(p.id,asset,int(amount),f"rdonate:{p.id}:{query.id}")
+            await answer(query,f"🏛 {fmt.number(r.amount)} واحد {ASSET.get(r.asset,'منبع')} به کشور اهدا شد؛ +{r.reputation} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
         if action.startswith("shelp:"):
             _,target,amount=action.split(":");p=await player(update);r=await social.help(p.id,int(target),int(amount),f"help:{p.id}:{query.id}")
             await answer(query,f"کمک انجام شد؛ +{r['reputation_awarded']} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
@@ -4044,15 +4270,15 @@ async def callback(update, context):
             await answer(query,"گزارش محرمانه ثبت شد و برای بررسی مدیریتی محفوظ است.",show_alert=True);await society_page(update,context);return
         if action.startswith("casecat:"):
             _,target,category=action.split(":");p=await player(update);context.chat_data[SOCIAL_FLOW]={"owner":update.effective_user.id,"player_id":p.id,"target":int(target),"category":category,"panel":query.message.message_id}
-            await answer(query);await show(update,context,"✍️ <b>شرح پرونده را بفرست</b>\n\nبین ۱۰ تا ۵۰۰ نویسه، بدون توهین و بدون اطلاعات خصوصی. پیام پس از دریافت حذف می‌شود.",kb.back("soccases"));return
+            await answer(query);await show(update,context,"✍️ شرح پرونده را بفرست\n\nبین ۱۰ تا ۵۰۰ نویسه، بدون توهین و بدون اطلاعات خصوصی. پیام پس از دریافت حذف می‌شود.",kb.back("soccases"));return
         if action=="soccases":await answer(query);await cases_page(update,context);return
         if action.startswith("caseview:"):
             cid=int(action.split(":")[1]);row=await db.fetchrow("""SELECT c.*,a.first_name plaintiff_name,b.first_name defendant_name FROM citizen_cases c JOIN players a ON a.id=c.plaintiff_id JOIN players b ON b.id=c.defendant_id WHERE c.id=$1""",cid)
             if not row:raise ValueError("case_not_found")
-            await answer(query);await show(update,context,f"⚖️ <b>پرونده #{cid}</b>\n\nشاکی: {escape(str(row['plaintiff_name']))}\nطرف شکایت: {escape(str(row['defendant_name']))}\nموضوع: {escape(str(row['summary']))}\n\nرأی تخلف: {fmt.number(row['guilty_votes'])}\nرأی اثبات‌نشده: {fmt.number(row['not_guilty_votes'])}",kb.court_vote(cid));return
+            await answer(query);await show(update,context,f"⚖️ پرونده #{cid}\n\nشاکی: {escape(str(row['plaintiff_name']))}\nطرف شکایت: {escape(str(row['defendant_name']))}\nموضوع: {escape(str(row['summary']))}\n\nرأی تخلف: {fmt.number(row['guilty_votes'])}\nرأی اثبات‌نشده: {fmt.number(row['not_guilty_votes'])}",kb.court_vote(cid));return
         if action.startswith("casevote:"):
             _,cid,vote=action.split(":");p=await player(update);await social.vote(int(cid),p.id,vote);await answer(query,"رأی محرمانه و یک‌باره ثبت شد.",show_alert=True);await cases_page(update,context);return
-        if action=="divorceask":await answer(query);await show(update,context,"💔 <b>تأیید جدایی</b>\n\nازدواج پایان می‌یابد و یک دوره انتظار ۷روزه ثبت می‌شود. دارایی شخصی هیچ‌کدام تغییر نمی‌کند.",kb.divorce_confirm());return
+        if action=="divorceask":await answer(query);await show(update,context,"💔 تأیید جدایی\n\nازدواج پایان می‌یابد و یک دوره انتظار ۷روزه ثبت می‌شود. دارایی شخصی هیچ‌کدام تغییر نمی‌کند.",kb.divorce_confirm());return
         if action=="divorceok":p=await player(update);await social.divorce(p.id);await answer(query,"جدایی ثبت شد.",show_alert=True);await society_page(update,context);return
         if action == "home":
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
@@ -4063,11 +4289,11 @@ async def callback(update, context):
             if not row:raise ValueError("country_not_found")
             project=await project_repo.active(row["id"]);election=await election_repo.open_for_country(row["id"])
             crisis=bool(await db.fetchval("SELECT 1 FROM country_crises WHERE country_id=$1 AND status='active'",row["id"]))
-            text=(f"☀️ <b>امروز {escape(str(row['name']))}</b>\n\n"
+            text=(f"☀️ امروز {escape(str(row['name']))}\n\n"
                   f"{'⚠️ بحران فعال نیازمند رسیدگی است.' if crisis else '✅ بحران فعالی ثبت نشده است.'}\n"
                   f"{'🟢 پروژه ملی فعال است.' if project else '▫️ پروژه ملی فعالی وجود ندارد.'}\n"
                   f"{'🗳 انتخابات در جریان است.' if election else '▫️ انتخابات بازی وجود ندارد.'}\n"
-                  f"👥 جمعیت: <b>{fmt.number(count)}</b> · خزانه: <b>{fmt.toman(row['treasury_toman'])}</b>\n\n"
+                  f"👥 جمعیت: {fmt.number(count)} · خزانه: {fmt.toman(row['treasury_toman'])}\n\n"
                   "بهترین اقدام را از دکمه‌های مرتبط همین صفحه انتخاب کن.")
             await show(update,context,text,kb.home(True,await is_admin(update,context),True));return
         elif action == "country": await answer(query, ); await country_page(update, context)
@@ -4100,10 +4326,10 @@ async def callback(update, context):
         elif action == "trade": await answer(query); await trade_page(update,context)
         elif action == "tradenew":
             row,_,_=await facts(update.effective_chat.id);rows=await country_trade.countries_except(int(row["id"]));await answer(query)
-            await show(update,context,"➕ <b>قرارداد تجاری تازه</b>\n\nکشور مقصد را انتخاب کن. در قدم بعد یکی از پیشنهادهای متعادل و محدود را می‌بینی.",kb.trade_countries(rows))
+            await show(update,context,"➕ قرارداد تجاری تازه\n\nکشور مقصد را انتخاب کن. در قدم بعد یکی از پیشنهادهای متعادل و محدود را می‌بینی.",kb.trade_countries(rows))
         elif action.startswith("tradeto:"):
             target=int(action.split(":")[1]);presets=get_config().section("country_trade.contracts.presets");await answer(query)
-            await show(update,context,"📦 <b>نوع قرارداد</b>\n\nمنبع پیشنهادی همان لحظه از کشور شما کم و تا پذیرش یا انقضا در Escrow نگه داشته می‌شود.",kb.trade_presets(target,presets))
+            await show(update,context,"📦 نوع قرارداد\n\nمنبع پیشنهادی همان لحظه از کشور شما کم و تا پذیرش یا انقضا در Escrow نگه داشته می‌شود.",kb.trade_presets(target,presets))
         elif action.startswith("tradepreset:"):
             _,target,preset=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
             contract=await country_trade.create_contract(int(row["id"]),int(target),p.id,preset,f"trade-create:{row['id']}:{uuid4().hex}")
@@ -4111,11 +4337,11 @@ async def callback(update, context):
         elif action == "tradein":
             row,_,_=await facts(update.effective_chat.id);rows=await country_trade.incoming(int(row["id"]));await answer(query)
             body="پیشنهادی در انتظار نیست." if not rows else "هر پذیرش، منابع دو کشور را اتمیک جابه‌جا می‌کند."
-            await show(update,context,"📥 <b>پیشنهادهای دریافتی</b>\n\n"+body,kb.incoming_trade(rows))
+            await show(update,context,"📥 پیشنهادهای دریافتی\n\n"+body,kb.incoming_trade(rows))
         elif action == "tradeout":
             row,_,_=await facts(update.effective_chat.id);rows=await country_trade.outgoing(int(row["id"]));await answer(query)
             body="قرارداد بازی نداری." if not rows else "لغو، دارایی نگه‌داری‌شده را از Escrow پس می‌دهد و کمی از اعتبار کم می‌کند."
-            await show(update,context,"📤 <b>پیشنهادهای من</b>\n\n"+body,kb.outgoing_trade(rows))
+            await show(update,context,"📤 پیشنهادهای من\n\n"+body,kb.outgoing_trade(rows))
         elif action.startswith("tradecancel:"):
             cid=int(action.split(":")[1]);p=await player(update);ok=await country_trade.cancel_contract(cid,p.id,f"trade-cancel:{cid}:{uuid4().hex}")
             await answer(query,"قرارداد لغو و دارایی Escrow پس داده شد." if ok else "این قرارداد دیگر قابل لغو نیست.",show_alert=True);await trade_page(update,context)
@@ -4123,18 +4349,18 @@ async def callback(update, context):
             rows=await country_trade.recent_reference();await answer(query)
             labels={"IRT":"تومان","food":"غذا","energy":"انرژی","oil":"نفت","minerals":"معدن","technology":"فناوری"}
             lines=[f"• {labels.get(str(r['offered_asset']),r['offered_asset'])} ← {labels.get(str(r['requested_asset']),r['requested_asset'])}: نسبت میانگین {r['average_ratio']} · {r['trades']} معامله" for r in rows]
-            await show(update,context,"📈 <b>نرخ‌های مرجع بازار کشورها</b>\n\n"+("هنوز معامله تکمیل‌شده‌ای برای نرخ مرجع نداریم." if not lines else "\n".join(lines))+"\n\nاین اعداد فقط تاریخچه واقعی بازی‌اند و قیمت تضمینی نیستند.",kb.back("trade"))
+            await show(update,context,"📈 نرخ‌های مرجع بازار کشورها\n\n"+("هنوز معامله تکمیل‌شده‌ای برای نرخ مرجع نداریم." if not lines else "\n".join(lines))+"\n\nاین اعداد فقط تاریخچه واقعی بازی‌اند و قیمت تضمینی نیستند.",kb.back("trade"))
         elif action.startswith("tradeaccept:"):
             cid=int(action.split(":")[1]);p=await player(update);result=await country_trade.accept_contract(cid,p.id,f"trade-accept:{cid}:{uuid4().hex}")
             await answer(query,f"قرارداد انجام شد؛ تعرفه {result['tariff_bp']/100:.1f}٪ بود.",show_alert=True);await trade_page(update,context)
         elif action == "relations":
             row,_,_=await facts(update.effective_chat.id);pending=await country_trade.pending_relations(int(row["id"]));rows=await country_trade.countries_except(int(row["id"]));await answer(query)
             if pending:
-                await show(update,context,"🤝 <b>پیشنهادهای دیپلماتیک دریافتی</b>\n\nپیشنهادها ۲۴ ساعت اعتبار دارند. پذیرش، تعرفه تجارت بعدی را تغییر می‌دهد.",kb.pending_relations(pending))
+                await show(update,context,"🤝 پیشنهادهای دیپلماتیک دریافتی\n\nپیشنهادها ۲۴ ساعت اعتبار دارند. پذیرش، تعرفه تجارت بعدی را تغییر می‌دهد.",kb.pending_relations(pending))
             else:
-                await show(update,context,"🤝 <b>روابط خارجی</b>\n\nدوستی، شراکت تجاری و اتحاد به پذیرش کشور مقابل نیاز دارند و تعرفه تجارت را کاهش می‌دهند.",kb.relations_countries(rows))
+                await show(update,context,"🤝 روابط خارجی\n\nدوستی، شراکت تجاری و اتحاد به پذیرش کشور مقابل نیاز دارند و تعرفه تجارت را کاهش می‌دهند.",kb.relations_countries(rows))
         elif action.startswith("relmenu:"):
-            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🤝 <b>اقدام دیپلماتیک</b>\n\nهمکاری با پذیرش دوطرفه فعال می‌شود. تحریم، تجارت مستقیم را می‌بندد و از اعتبار کشور تحریم‌کننده هم کم می‌کند.",kb.relation_actions(target))
+            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🤝 اقدام دیپلماتیک\n\nهمکاری با پذیرش دوطرفه فعال می‌شود. تحریم، تجارت مستقیم را می‌بندد و از اعتبار کشور تحریم‌کننده هم کم می‌کند.",kb.relation_actions(target))
         elif action.startswith("relprop:"):
             _,target,status=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
             await country_trade.propose_relation(int(row["id"]),int(target),p.id,status,f"relation-propose:{row['id']}:{target}:{uuid4().hex}")
@@ -4153,9 +4379,9 @@ async def callback(update, context):
             await answer(query,"تحریم برداشته شد." if ok else "تحریم فعالی از طرف کشور شما وجود نداشت.",show_alert=True);await trade_page(update,context)
         elif action == "aid":
             row,_,_=await facts(update.effective_chat.id);rows=await db.fetch("""SELECT DISTINCT c.id,c.name FROM countries c JOIN country_crises x ON x.country_id=c.id AND x.status='active' WHERE c.id<>$1 ORDER BY c.name LIMIT 50""",row["id"]);await answer(query)
-            await show(update,context,"🆘 <b>کمک اضطراری</b>\n\nفقط کشورهایی که بحران فعال دارند نمایش داده می‌شوند. کمک مستقیماً و اتمیک منتقل می‌شود و اعتبار بین‌المللی می‌سازد.",kb.aid_countries(rows))
+            await show(update,context,"🆘 کمک اضطراری\n\nفقط کشورهایی که بحران فعال دارند نمایش داده می‌شوند. کمک مستقیماً و اتمیک منتقل می‌شود و اعتبار بین‌المللی می‌سازد.",kb.aid_countries(rows))
         elif action.startswith("aidto:"):
-            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🆘 <b>نوع کمک</b>\n\nیکی از بسته‌های محدود را انتخاب کن.",kb.aid_assets(target))
+            target=int(action.split(":")[1]);await answer(query);await show(update,context,"🆘 نوع کمک\n\nیکی از بسته‌های محدود را انتخاب کن.",kb.aid_assets(target))
         elif action.startswith("aidsend:"):
             _,target,asset=action.split(":",2);row,_,_=await facts(update.effective_chat.id);p=await player(update)
             amount=await country_trade.send_aid(int(row["id"]),int(target),p.id,asset,f"aid:{row['id']}:{target}:{asset}:{uuid4().hex}")
@@ -4186,7 +4412,7 @@ async def callback(update, context):
             p=await player(update);current=await country_repo.citizenship(p.id)
             if not current:await answer(query,"ابتدا شهروند یک کشور شو.",show_alert=True);return
             rows=await db.fetch("SELECT id,name FROM countries ORDER BY name LIMIT 100");await answer(query)
-            await show(update,context,"✈️ <b>تغییر کشور</b>\n\nعوارض هنگام تکمیل مهاجرت: ۵٪ دارایی شخصی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان؛ مبلغ به خزانه کشور مبدأ می‌رود.\n\nمحدودیت تغییر: هر ۳۰ روز. اگر مقصد رهبر داشته باشد، درخواست ۷۲ ساعت برای تأیید اعتبار دارد. پس از مهاجرت، نشان مهاجر ۳۰ روز و محدودیت سیاسی ۱۴ روز فعال است.",kb.migration_countries(rows,current["country_id"]))
+            await show(update,context,"✈️ تغییر کشور\n\nعوارض هنگام تکمیل مهاجرت: ۵٪ دارایی شخصی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان؛ مبلغ به خزانه کشور مبدأ می‌رود.\n\nمحدودیت تغییر: هر ۳۰ روز. اگر مقصد رهبر داشته باشد، درخواست ۷۲ ساعت برای تأیید اعتبار دارد. پس از مهاجرت، نشان مهاجر ۳۰ روز و محدودیت سیاسی ۱۴ روز فعال است.",kb.migration_countries(rows,current["country_id"]))
         elif action.startswith("migrate:"):
             p=await player(update);dest=int(action.split(":")[1]);qte=await migration.quote(p.id,dest)
             if not qte:await answer(query,"مقصد معتبر نیست.",show_alert=True);return
@@ -4195,7 +4421,7 @@ async def callback(update, context):
         elif action == "migration_review":
             p=await player(update);row=await country_repo.by_chat(update.effective_chat.id)
             if not row or row["president_player_id"]!=p.id:await answer(query,"فقط رهبر مقصد دسترسی دارد.",show_alert=True);return
-            rows=await migration.pending_for_country(row["id"]);await answer(query);await show(update,context,"📥 <b>درخواست‌های مهاجرت</b>\n\n"+("درخواستی وجود ندارد." if not rows else "پذیرش، عوارض را به کشور مبدأ منتقل و مهاجر را وارد کشور می‌کند."),kb.migration_review(rows))
+            rows=await migration.pending_for_country(row["id"]);await answer(query);await show(update,context,"📥 درخواست‌های مهاجرت\n\n"+("درخواستی وجود ندارد." if not rows else "پذیرش، عوارض را به کشور مبدأ منتقل و مهاجر را وارد کشور می‌کند."),kb.migration_review(rows))
         elif action.startswith("migaccept:"):
             p=await player(update);await migration.approve(int(action.split(":")[1]),p.id);await answer(query,"مهاجر پذیرفته شد.",show_alert=True);await home(update,context)
         elif action.startswith("migreject:"):
@@ -4204,10 +4430,10 @@ async def callback(update, context):
             await answer(query); view=await commerce.subscription_view(update.effective_chat.id)
             if not view: raise ValueError("group_not_found")
             if view["ad_free_until"] and view["ad_free_until"]>datetime.now(UTC):
-                await show(update,context,f"🛡 <b>اشتراک رفاهی کشور فعال است</b>\n\nاعتبار تا: <b>{view['ad_free_until'].strftime('%Y-%m-%d %H:%M UTC')}</b>\n\n✅ تبلیغات عمومی گروه و بات حذف شده است.\n✅ گزارش‌های اقتصادی و سیاسی کامل در دسترس‌اند.\n✅ یادآوری‌های شیفت، پروژه و بحران فعال‌اند.\n\nاین اشتراک هیچ قدرت اقتصادی یا سیاسی اضافه نمی‌کند.",kb.back());return
+                await show(update,context,f"🛡 اشتراک رفاهی کشور فعال است\n\nاعتبار تا: {view['ad_free_until'].strftime('%Y-%m-%d %H:%M UTC')}\n\n✅ تبلیغات عمومی گروه و بات حذف شده است.\n✅ گزارش‌های اقتصادی و سیاسی کامل در دسترس‌اند.\n✅ یادآوری‌های شیفت، پروژه و بحران فعال‌اند.\n\nاین اشتراک هیچ قدرت اقتصادی یا سیاسی اضافه نمی‌کند.",kb.back());return
             rnd=await commerce.ensure_round(update.effective_chat.id);target=int(rnd["target_stars"]);remaining=target-int(rnd["collected_stars"])
             treasury=int(view["treasury_toman"] or 0);citizens=int(view["citizens"] or 0);price=commerce.treasury_price(treasury,citizens)
-            await show(update,context,f"🛡 <b>اشتراک رفاهی کشور — ۳۰ روز</b>\n\n<b>امکانات اشتراک</b>\n• حذف تبلیغات عمومی از گروه کشور و پیام‌های مرتبط بات\n• گزارش اقتصادی و سیاسی کامل‌تر با جزئیات بودجه، کمبود، رضایت و بحران\n• یادآوری هوشمند برای شیفت‌ها، پروژه ملی و بحران‌های فعال\n• بدون افزایش درآمد، منابع، قدرت سیاسی یا شانس برد؛ بازی برای همه منصفانه می‌ماند\n\nجمعیت: <b>{citizens}</b> شهروند · قیمت: <b>{target} ⭐</b>\nپیشرفت مشارکت: <b>{rnd['collected_stars']} از {target} ⭐</b>\nهر عضو می‌تواند بخشی از هزینه را بپردازد؛ پس از تکمیل هدف، اشتراک برای کل کشور فعال می‌شود.\n\nخرید از خزانه: <b>{fmt.toman(price)}</b> (۲۰٪ خزانه + یک میلیون برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد).",kb.subscription(int(rnd["id"]),remaining))
+            await show(update,context,f"🛡 اشتراک رفاهی کشور — ۳۰ روز\n\nامکانات اشتراک\n• حذف تبلیغات عمومی از گروه کشور و پیام‌های مرتبط بات\n• گزارش اقتصادی و سیاسی کامل‌تر با جزئیات بودجه، کمبود، رضایت و بحران\n• یادآوری هوشمند برای شیفت‌ها، پروژه ملی و بحران‌های فعال\n• بدون افزایش درآمد، منابع، قدرت سیاسی یا شانس برد؛ بازی برای همه منصفانه می‌ماند\n\nجمعیت: {citizens} شهروند · قیمت: {target} ⭐\nپیشرفت مشارکت: {rnd['collected_stars']} از {target} ⭐\nهر عضو می‌تواند بخشی از هزینه را بپردازد؛ پس از تکمیل هدف، اشتراک برای کل کشور فعال می‌شود.\n\nخرید از خزانه: {fmt.toman(price)} (۲۰٪ خزانه + یک میلیون برای هر شهروند، کف ۲۰ میلیون و سقف یک میلیارد).",kb.subscription(int(rnd["id"]),remaining))
         elif action.startswith("substar:"):
             _,rid,amount=action.split(":");payload,stars=await commerce.subscription_invoice(int(rid),query.from_user.id,int(amount));await answer(query)
             await context.bot.send_invoice(chat_id=update.effective_chat.id,title="مشارکت اشتراک بدون تبلیغ",description=f"{stars} استار برای اشتراک ۳۰روزه کل کشور: حذف تبلیغات، گزارش کامل و یادآوری هوشمند؛ بدون قدرت اقتصادی",payload=payload,currency="XTR",prices=[LabeledPrice("سهم اشتراک",stars)],provider_token="")
@@ -4220,16 +4446,16 @@ async def callback(update, context):
             except ValueError as exc:
                 if str(exc) == "migration_required":
                     await answer(query)
-                    await show(update, context, "🌐 <b>شهروند کشور دیگری هستی</b>\n\nبرای پیوستن به این کشور، یکی از مسیرهای قانونی را انتخاب کن: مهاجرت با عوارض و محدودیت سیاسی، یا لغو شهروندی فعلی در صورت گذشت حداقل ۷ روز. رهبر کشور و کاربر دارای درخواست مهاجرت باز نمی‌توانند لغو مستقیم انجام دهند.", kb.citizenship_elsewhere())
+                    await show(update, context, "🌐 شهروند کشور دیگری هستی\n\nبرای پیوستن به این کشور، یکی از مسیرهای قانونی را انتخاب کن: مهاجرت با عوارض و محدودیت سیاسی، یا لغو شهروندی فعلی در صورت گذشت حداقل ۷ روز. رهبر کشور و کاربر دارای درخواست مهاجرت باز نمی‌توانند لغو مستقیم انجام دهند.", kb.citizenship_elsewhere())
                     return
                 raise
             await answer(query, "شهروند شدی." if joined else "از قبل شهروند همین کشور هستی.", show_alert=True); await home(update, context)
         elif action == "migration_rules":
             await answer(query)
-            await show(update, context, "✈️ <b>قوانین مهاجرت</b>\n\n• فاصله دو مهاجرت: ۳۰ روز\n• عوارض خروج: ۵٪ دارایی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان\n• مهلت بررسی مقصد: ۷۲ ساعت\n• نشان مهاجر: ۳۰ روز\n• محدودیت فعالیت سیاسی: ۱۴ روز\n\nلغو مستقیم شهروندی فقط پس از ۷ روز، برای افراد غیررهبر و بدون درخواست مهاجرت باز ممکن است.", kb.citizenship_elsewhere())
+            await show(update, context, "✈️ قوانین مهاجرت\n\n• فاصله دو مهاجرت: ۳۰ روز\n• عوارض خروج: ۵٪ دارایی، حداقل ۵۰۰ هزار و حداکثر ۵۰ میلیون تومان\n• مهلت بررسی مقصد: ۷۲ ساعت\n• نشان مهاجر: ۳۰ روز\n• محدودیت فعالیت سیاسی: ۱۴ روز\n\nلغو مستقیم شهروندی فقط پس از ۷ روز، برای افراد غیررهبر و بدون درخواست مهاجرت باز ممکن است.", kb.citizenship_elsewhere())
         elif action == "citizenship_cancel_ask":
             await answer(query)
-            await show(update, context, "⚠️ <b>لغو شهروندی فعلی</b>\n\nبا تأیید، عضویت فعلی غیرفعال می‌شود. دارایی شخصی حفظ می‌شود، اما دسترسی‌های شهروندی کشور را از دست می‌دهی. این کار برای رهبر یا عضویت کمتر از ۷ روز مجاز نیست.", kb.citizenship_cancel_confirm())
+            await show(update, context, "⚠️ لغو شهروندی فعلی\n\nبا تأیید، عضویت فعلی غیرفعال می‌شود. دارایی شخصی حفظ می‌شود، اما دسترسی‌های شهروندی کشور را از دست می‌دهی. این کار برای رهبر یا عضویت کمتر از ۷ روز مجاز نیست.", kb.citizenship_cancel_confirm())
         elif action == "citizenship_cancel_confirm":
             p = await player(update); await countries.cancel_citizenship(p.id)
             await answer(query, "شهروندی فعلی لغو شد؛ اکنون می‌توانی به کشور مقصد بپیوندی.", show_alert=True); await home(update, context)
@@ -4241,7 +4467,7 @@ async def callback(update, context):
             citizenship = await country_repo.citizenship(p.id)
             if not citizenship or not citizenship["is_active"] or int(citizenship["country_id"]) != int(row["id"]): raise PermissionError("citizen_required")
             amount=int(action.split(":",1)[1]);await answer(query)
-            await show(update,context,f"💰 <b>پیش‌نمایش کمک به {escape(str(row['name']))}</b>\n\nمبلغ انتقال: <b>{fmt.toman(amount)}</b>\nکیف پول پس از کمک: <b>{fmt.toman(p.wallet_toman-amount)}</b>\nخزانه کشور پس از کمک: <b>{fmt.toman(int(row['treasury_toman'])+amount)}</b>\n\nاین انتقال در دفتر اقتصاد ثبت می‌شود.",kb.confirm_world(f"donateok:{amount}","country"));return
+            await show(update,context,f"💰 پیش‌نمایش کمک به {escape(str(row['name']))}\n\nمبلغ انتقال: {fmt.toman(amount)}\nکیف پول پس از کمک: {fmt.toman(p.wallet_toman-amount)}\nخزانه کشور پس از کمک: {fmt.toman(int(row['treasury_toman'])+amount)}\n\nاین انتقال در دفتر اقتصاد ثبت می‌شود.",kb.confirm_world(f"donateok:{amount}","country"));return
         elif action.startswith("donateok:"):
             p=await player(update);row,_,_=await facts(update.effective_chat.id);amount=int(action.split(":",1)[1])
             await economy.transfer(p.id,row["id"],"IRT",amount,reason="donation",idempotency_key=f"world-donate:{p.id}:{query.id}")
@@ -4264,7 +4490,7 @@ async def callback(update, context):
             if not election or election["status"] != "voting": await answer(query, "رأی‌گیری هنوز باز نشده است.", show_alert=True); return
             rows = await db.fetch("SELECT ec.player_id,p.first_name FROM election_candidates ec JOIN players p ON p.id=ec.player_id WHERE ec.election_id=$1 ORDER BY ec.created_at", election["id"])
             if not rows: await answer(query, "نامزدی برای رأی‌دادن وجود ندارد.", show_alert=True); return
-            await answer(query, ); await show(update, context, "🗳 <b>انتخاب رهبر</b>\n\nنامزد موردنظر را انتخاب کن. رأی فقط یک‌بار ثبت می‌شود.", kb.candidates(rows))
+            await answer(query, ); await show(update, context, "🗳 انتخاب رهبر\n\nنامزد موردنظر را انتخاب کن. رأی فقط یک‌بار ثبت می‌شود.", kb.candidates(rows))
         elif action.startswith("vote:"):
             p = await player(update); row, _, _ = await facts(update.effective_chat.id)
             if not row: raise ValueError("country_not_found")
@@ -4311,7 +4537,15 @@ async def text(update, context):
         context.chat_data.pop(SOCIAL_FLOW,None);await message.reply_text("✅ پرونده ثبت شد و رأی‌گیری ۲۴ساعته آغاز شد.");await cases_page(update,context);return
     flow = context.chat_data.get(FLOW)
     if not flow or update.effective_user.id != flow.get("owner"):
-        await home(update, context); return
+        trigger = " ".join((message.text or "").strip().casefold().split())
+        triggers = {"تله ورلد", "تله‌ورلد", "تل ورلد", "teleworld", "پنل جهان", "جهان"}
+        if trigger in triggers:
+            try:
+                await message.delete()
+            except (BadRequest, Forbidden):
+                pass
+            await home(update, context)
+        return
     value = (message.text or "").strip()
     access = await world_access.check(context.bot, chat.id)
     if not access.ready:
@@ -4358,8 +4592,9 @@ async def start(update, context):
     state = await ui_state_repo.world(chat.id)
     if state and state["message_id"]:
         try:
-            await context.bot.edit_message_reply_markup(
-                chat_id=chat.id, message_id=int(state["message_id"]), reply_markup=None
+            await context.bot.edit_message_text(
+                chat_id=chat.id, message_id=int(state["message_id"]),
+                text="🔒 بسته شد", reply_markup=None
             )
         except (BadRequest, Forbidden):
             pass
@@ -4412,24 +4647,32 @@ def home(country, admin, citizen=False, official_role=None):
                     [b("🏛 وضعیت کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
                     [b("📘 قوانین شهروندی", "migration_rules"), b("🔄 تازه‌سازی", "home")]]
             return InlineKeyboardMarkup(rows)
-        rows = [[b("☀️ وضعیت امروز کشور", "country_today", "primary")],
-                [b("🏘 جامعه کشور", "society"), b("👥 شهروندان", "citizens")],
-                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")],
-                [b("🏗 پروژه ملی", "project"), b("🌐 تجارت و دیپلماسی", "trade")],
-                [b("✈️ مهاجرت", "migration"), b("🏛 شناسنامه", "country")]]
+        rows = [[b("▶️ بهترین کار امروز کشور", "country_today", "primary")],
+                [b("👥 مردم و جامعه", "society"), b("🗳 رأی و سیاست", "politics")],
+                [b("💰 اقتصاد کشور", "economy"), b("🏗 همکاری در پروژه", "project")],
+                [b("🌍 شورای جهان", "council", "success"), b("🏛 اطلاعات کشور", "country")]]
         if official_role in {"president", "economy_minister", "industry_minister"}:
             rows.insert(2,[b("⚙️ مدیریت حوزه من", "economyb", "success")])
         if official_role in {"president", "foreign_minister"}:
             rows.insert(3,[b("🤝 عملیات دیپلماسی", "trade", "success")])
         if official_role == "president" or admin:
             rows.append([b("📥 درخواست‌های مهاجرت", "migration_review")])
-        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription"), b("🔄 تازه‌سازی", "home")])
+        rows.append([b("📣 بزرگ‌کردن کشور", "grow_country", "success"), b("🔄 تازه‌سازی", "home")])
+        rows.append([b("🛡 اشتراک بدون تبلیغ", "subscription")])
         return InlineKeyboardMarkup(rows)
     if admin:
         return InlineKeyboardMarkup([[b("🏗 ساخت کشور", "create", "primary")], [b("📘 راهنمای ساخت کشور", "guide")], [b("🔄 تازه‌سازی", "home")]])
     return InlineKeyboardMarkup([[b("📘 برای ساخت کشور چه کنیم؟", "guide", "primary")], [b("🔄 تازه‌سازی", "home")]])
 
 
+
+def grow_country(bot_username=""):
+ rows=[]
+ if bot_username:
+  add=f"https://t.me/{bot_username}?startgroup=true"
+  rows.append([InlineKeyboardButton("➕ افزودن تله‌ورلد به یک گروه",url=add,style="primary")])
+ rows.append([b("🌍 رفتن به شورای جهان","council","success")])
+ rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
 
 def confirm_world(confirm_action, back_action="home"):
  return InlineKeyboardMarkup([[b("✅ تأیید و اجرا",confirm_action,"success")],[b("↩️ انصراف",back_action,"primary")]])
@@ -4572,9 +4815,36 @@ def outgoing_trade(rows):
 def pending_relations(rows):
  buttons=[[b(f"✅ پذیرش {r['counterparty_name']}",f"relaccept:{r['counterparty_id']}","success")] for r in rows]
  buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)
+
+# ---------- شورای جهان: تصمیم ساده بین گروه‌ها ----------
+def council_home(items=()):
+ rows=[[b("🟣 پیشنهاد تازه","councilnew","primary"),b("🔵 تازه‌سازی","council")]]
+ for item in items:
+  side="پیشنهاد ما" if item.get("is_local") else "پیشنهاد دریافتی"
+  rows.append([b(f"{side}: {item['action_title']}",f"councilview:{item['id']}")])
+ rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
+
+def council_countries(rows):
+ buttons=[[b(f"🌍 {r['name']}",f"councilto:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ شورای جهان","council")]);return InlineKeyboardMarkup(buttons)
+
+def council_actions(target):
+ return InlineKeyboardMarkup([
+  [b("🟣 دوستی رسمی",f"councilmake:{target}:friend","primary"),b("🟡 شریک تجاری",f"councilmake:{target}:trade_partner")],
+  [b("🔵 پیمان دفاعی",f"councilmake:{target}:defensive_ally"),b("🌾 کمک غذایی",f"councilmake:{target}:aid_food")],
+  [b("⚡ کمک انرژی",f"councilmake:{target}:aid_energy"),b("💰 کمک مالی",f"councilmake:{target}:aid_irt")],
+  [b("↩️ انتخاب گروه","councilnew")],
+ ])
+
+def council_vote(proposal_id,can_vote=True):
+ rows=[]
+ if can_vote:rows.append([b("🟣 موافقم",f"councilvote:{proposal_id}:yes","primary"),b("🟡 مخالفم",f"councilvote:{proposal_id}:no","danger")])
+ rows.append([b("🔵 تازه‌سازی",f"councilview:{proposal_id}"),b("↩️ شورا","council")]);return InlineKeyboardMarkup(rows)
+
 # ---------- جامعه کشور ----------
 def society_home(pending=(), competitions=(), married=False):
- rows=[[b("🤝 کمک به شهروند","socpeople:help","success"),b("🫂 دوستی‌ها","socpeople:friend")],
+ rows=[[b("🎁 هدیه منبع به دوست","resourcegift","success"),b("🏛 اهدای منبع به کشور","resourcedonate","success")],
+       [b("💵 کمک نقدی به شهروند","socpeople:help"),b("🫂 دوستی‌ها","socpeople:friend")],
        [b("💍 ازدواج و خانواده","socmarriage","primary"),b("🏆 رقابت دوستانه","socpeople:compete")],
        [b("⚖️ دادگاه شهروندی","soccases"),b("🛡 گزارش امن","socpeople:report")]]
  for r in pending:
@@ -4587,9 +4857,25 @@ def society_home(pending=(), competitions=(), married=False):
  rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
 
 def social_people(rows,mode):
- labels={"help":"🤝 کمک به","friend":"🫂 دوستی با","marry":"💍 پیشنهاد به","compete":"🏆 رقابت با","report":"🛡 گزارش","case":"⚖️ شکایت از"}
+ labels={"help":"🤝 کمک به","resourcegift":"🎁 هدیه منبع به","friend":"🫂 دوستی با","marry":"💍 پیشنهاد به","compete":"🏆 رقابت با","report":"🛡 گزارش","case":"⚖️ شکایت از"}
  buttons=[[b(f"{labels.get(mode,'انتخاب')} {r['first_name']}",f"socperson:{mode}:{r['id']}")] for r in rows]
  buttons.append([b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(buttons)
+
+def resource_assets(action,target=None):
+ suffix=f":{target}" if target is not None else ""
+ return InlineKeyboardMarkup([
+  [b("🌾 محصول کشاورزی",f"{action}:food{suffix}","primary"),b("⛏ مواد معدنی",f"{action}:minerals{suffix}")],
+  [b("🔬 فناوری",f"{action}:technology{suffix}"),b("⚡ انرژی",f"{action}:energy{suffix}")],
+  [b("↩️ جامعه کشور","society")],
+ ])
+
+def resource_amount(action,asset,target=None):
+ suffix=f":{target}" if target is not None else ""
+ return InlineKeyboardMarkup([
+  [b("۱۰ واحد",f"{action}:{asset}:10{suffix}"),b("۵۰ واحد",f"{action}:{asset}:50{suffix}","success")],
+  [b("۱۰۰ واحد",f"{action}:{asset}:100{suffix}"),b("۵۰۰ واحد",f"{action}:{asset}:500{suffix}")],
+  [b("↩️ جامعه کشور","society")],
+ ])
 
 def help_amount(target):
  return InlineKeyboardMarkup([[b("۱۰ هزار",f"shelp:{target}:10000"),b("۵۰ هزار",f"shelp:{target}:50000","success")],
@@ -4646,18 +4932,18 @@ if __name__=='__main__':main()
 
 ```python
 ERROR='مشکلی پیش آمد؛ صفحه را تازه‌سازی کن و دوباره تلاش کن.'
-HOME_EMPTY='🌍 <b>جهان این گروه</b>\n\nاین گروه هنوز کشور ندارد. کشور یک بازی گروهی با شهروند، خزانه، منابع، انتخابات و پروژه ملی است.\n\nاگر مدیر گروه هستی، «ساخت کشور» را بزن. در غیر این صورت از مدیر بخواه این کار را آغاز کند. هیچ فرمانی لازم نیست.'
-HOME='🌍 <b>{name}</b>\n\nوضعیت: <b>{status}</b> · شهروندان: <b>{citizens}</b>\nرهبر: <b>{leader}</b>\nخزانه: <b>{treasury}</b>\n\n🎯 <b>هدف بعدی:</b> {goal}\n\nهمه کارهای عمومی کشور با دکمه‌های همین پیام انجام می‌شود. شغل و دارایی شخصی در بات زندگی قرار دارد.'
-GUIDE_EMPTY='📘 <b>راهنمای ساخت جهان</b>\n\n۱) مدیر گروه «ساخت کشور» را می‌زند.\n۲) نام را به‌صورت یک پیام معمولی می‌فرستد.\n۳) نوع حکومت را با دکمه انتخاب می‌کند.\n۴) معرفی کشور را به‌صورت پیام می‌فرستد.\n۵) اعضا با دکمه شهروند می‌شوند.\n\nپیام‌های نام و معرفی پس از دریافت پاک می‌شوند تا گروه شلوغ نشود.'
-GUIDE='📘 <b>راهنمای بازی گروهی</b>\n\n• عضوها با دکمه «شهروند می‌شوم» وارد کشور می‌شوند.\n• شهروندان می‌توانند کمک مالی کنند، نامزد شوند و رأی بدهند.\n• رهبر و جمعیت معتبر، کشور را به مرحله رسمی می‌رسانند.\n• پروژه ملی با همکاری شهروندان کامل می‌شود.\n• کار، حقوق، بانک، خانه و بازار شخصی فقط در بات زندگی انجام می‌شوند.\n\nهر بار یک دکمه را انتخاب کن؛ نتیجه و قدم بعدی روی همین پیام نشان داده می‌شود.'
-COUNTRY='🏛 <b>{name}</b>\n\nنوع حکومت: <b>{government}</b>\nوضعیت: <b>{status}</b>\nشهروندان: <b>{citizens}</b>\nرهبر: <b>{leader}</b>\nخزانه: <b>{treasury}</b>\n\n{description}\n\nکمک مالی از کیف پول شخصی کم و به خزانه کشور اضافه می‌شود.'
-ECONOMY='💰 <b>اقتصاد کشور</b>\n\nخزانه: <b>{treasury}</b>\nدرآمد روزانه: <b>{income}</b>\nهزینه روزانه: <b>{expense}</b>\n\n<b>منابع کشور</b>\n{resources}\n\nاین دارایی‌ها عمومی‌اند؛ دارایی شخصی هر بازیکن در بات زندگی مدیریت می‌شود.'
-CITIZENS='👥 <b>شهروندان کشور</b>\n\nجمعیت رسمی: <b>{count}</b>\n{members}\n\nرسمی‌شدن کشور بر اساس شهروندان ثبت‌شده است، نه تعداد خام اعضای گروه.'
-POLITICS='🗳 <b>سیاست و انتخابات</b>\n\n{state}\n\nفقط شهروند معتبر می‌تواند نامزد شود یا رأی بدهد. هر رأی یک‌بار ثبت می‌شود.'
-WIZARD_NAME='🏗 <b>ساخت کشور — گام ۱ از ۳</b>\n\nمدیر سازنده، نام کشور را همین حالا در گروه بفرستد.\n\nنام باید بین ۳ تا ۸۰ نویسه باشد. پیام پس از خواندن پاک می‌شود.'
-WIZARD_GOV='🏛 <b>ساخت کشور — گام ۲ از ۳</b>\n\nنوع حکومت را با یکی از دکمه‌ها انتخاب کن.'
-WIZARD_DESC='📝 <b>ساخت کشور — گام ۳ از ۳</b>\n\nیک معرفی روشن بین ۱۰ تا ۵۰۰ نویسه بفرست. پس از ساخت، صفحه اصلی کشور نمایش داده می‌شود.'
-PRIVATE='🌍 <b>جهان گروهی</b>\n\nاین بات برای بازی عمومی داخل گروه است. آن را به گروه اضافه کن؛ سپس در گروه یک پیام معمولی بفرست تا صفحه دکمه‌ای جهان باز شود.\n\nکار و دارایی شخصی در بات زندگی انجام می‌شوند.'
+HOME_EMPTY='🌍 کشور خودتان را بسازید\n\nتله‌ورلد گروه را به یک کشور زنده تبدیل می‌کند: اعضا شهروند می‌شوند، رأی می‌دهند، خزانه و منابع را رشد می‌دهند و با همکاری پروژه ملی می‌سازند.\n\n🎯 شروع: مدیر گروه «ساخت کشور» را بزند؛ کمتر از یک دقیقه طول می‌کشد و هیچ فرمانی لازم نیست.'
+HOME='🌍 {name} — کشور زنده گروه شما\n\nاینجا تصمیم‌های اعضا واقعی‌اند: رأی، کار، کمک و پروژه روی قدرت و اقتصاد کشور اثر می‌گذارند.\n\n👥 {citizens} شهروند · 👑 {leader}\n💰 خزانه: {treasury} · وضعیت: {status}\n\n🎯 ماموریت فعلی گروه: {goal}\n\nدکمه رنگی بهترین کار بعدی را نشان می‌دهد.'
+GUIDE_EMPTY='📘 راهنمای ساخت جهان\n\n۱) مدیر گروه «ساخت کشور» را می‌زند.\n۲) نام را به‌صورت یک پیام معمولی می‌فرستد.\n۳) نوع حکومت را با دکمه انتخاب می‌کند.\n۴) معرفی کشور را به‌صورت پیام می‌فرستد.\n۵) اعضا با دکمه شهروند می‌شوند.\n\nپیام‌های نام و معرفی پس از دریافت پاک می‌شوند تا گروه شلوغ نشود.'
+GUIDE='📘 چرا تله‌ورلد بازی کنیم؟\n\n• گروه شما از یک چت معمولی به کشور مشترک تبدیل می‌شود.\n• عضوها شهروند می‌شوند و تصمیم هر نفر روی نتیجه جمعی اثر می‌گذارد.\n• شهروندان می‌توانند کمک مالی کنند، نامزد شوند و رأی بدهند.\n• رهبر و جمعیت معتبر، کشور را به مرحله رسمی می‌رسانند.\n• پروژه ملی با همکاری شهروندان کامل می‌شود.\n• کار، حقوق، بانک، خانه و بازار شخصی فقط در تله‌لایف انجام می‌شوند.\n\nهر بار یک دکمه را انتخاب کن؛ نتیجه و قدم بعدی روی همین پیام نشان داده می‌شود.'
+COUNTRY='🏛 {name}\n\nنوع حکومت: {government}\nوضعیت: {status}\nشهروندان: {citizens}\nرهبر: {leader}\nخزانه: {treasury}\n\n{description}\n\nکمک مالی از کیف پول شخصی کم و به خزانه کشور اضافه می‌شود.'
+ECONOMY='💰 اقتصاد کشور\n\nخزانه: {treasury}\nدرآمد روزانه: {income}\nهزینه روزانه: {expense}\n\nمنابع کشور\n{resources}\n\nاین دارایی‌ها عمومی‌اند؛ دارایی شخصی هر بازیکن در تله‌لایف مدیریت می‌شود.'
+CITIZENS='👥 شهروندان کشور\n\nجمعیت رسمی: {count}\n{members}\n\nرسمی‌شدن کشور بر اساس شهروندان ثبت‌شده است، نه تعداد خام اعضای گروه.'
+POLITICS='🗳 سیاست و انتخابات\n\n{state}\n\nفقط شهروند معتبر می‌تواند نامزد شود یا رأی بدهد. هر رأی یک‌بار ثبت می‌شود.'
+WIZARD_NAME='🏗 ساخت کشور — گام ۱ از ۳\n\nمدیر سازنده، نام کشور را همین حالا در گروه بفرستد.\n\nنام باید بین ۳ تا ۸۰ نویسه باشد. پیام پس از خواندن پاک می‌شود.'
+WIZARD_GOV='🏛 ساخت کشور — گام ۲ از ۳\n\nنوع حکومت را با یکی از دکمه‌ها انتخاب کن.'
+WIZARD_DESC='📝 ساخت کشور — گام ۳ از ۳\n\nیک معرفی روشن بین ۱۰ تا ۵۰۰ نویسه بفرست. پس از ساخت، صفحه اصلی کشور نمایش داده می‌شود.'
+PRIVATE='🌍 جهان گروهی\n\nتله‌ورلد برای بازی عمومی داخل گروه است. آن را به گروه اضافه کن؛ سپس در گروه «تله ورلد» یا «پنل جهان» بنویس تا صفحه دکمه‌ای جهان باز شود.\n\nکار و دارایی شخصی در تله‌لایف انجام می‌شوند.'
 CONTENT_REJECTED='⚠️ این متن شامل واژه‌ای است که در نام یا معرفی کشور مجاز نیست. لطفاً متن محترمانه‌تری بنویس؛ فرصتت برای ادامه ساخت محفوظ است.'
 GOVERNMENT_DETAILS={
 'republic':('جمهوری','رهبر با رأی شهروندان و برای دوره محدود انتخاب می‌شود. نتیجه رأی قابل تغییر نیست.'),
@@ -4674,7 +4960,7 @@ GOVERNMENT_DETAILS={
 'military_junta':('شورای نظامی','شورای فرماندهان رهبر را تعیین می‌کند؛ انتخابات عمومی رهبر برگزار نمی‌شود.'),
 'oligarchy':('الیگارشی','شورای نخبگان محدود رهبر را انتخاب می‌کند؛ شهروندان رأی مستقیم ندارند.'),
 }
-GOV_CONFIRM='<b>{title}</b>\n\n{description}\n\nاین مدل فقط برچسب نیست و قواعد انتخابات و انتقال قدرت را در بازی تغییر می‌دهد. این نوع حکومت را تأیید می‌کنی؟'
+GOV_CONFIRM='{title}\n\n{description}\n\nاین مدل فقط برچسب نیست و قواعد انتخابات و انتقال قدرت را در بازی تغییر می‌دهد. این نوع حکومت را تأیید می‌کنی؟'
 ```
 
 ### `AUDIT_AND_DEPLOY_FA_2026-07-27.md`
@@ -5221,6 +5507,36 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 - اجرای کامل pytest در محیط تحویل ممکن نبود، چون وابستگی‌های runtime پروژه (`python-telegram-bot` و `pytest`) در sandbox نصب نبودند؛ پیش از استقرار در محیط پروژه اجرا شود: `python -m pytest -q`.
 ```
 
+### `HOTFIX_DEEP_AUDIT_FA_2026-07-28.md`
+
+```markdown
+# ممیزی عمیق دوم — ۲۸ ژوئیه ۲۰۲۶
+
+- بازار دلار و منابع به منوی مالی بازگردانده شدند.
+- فروش منابع دو مرحله‌ای و خلوت شد.
+- تمام مسیرهای انتخاب فرد در جامعه به هندلر واقعی متصل شدند.
+- گیت دسترسی تله‌ورلد اکنون انتخاب شخص، هدیه، اهدا و ازدواج را هم پوشش می‌دهد.
+- فروش و انتقال هم‌زمان منابع با قفل بازیکن سریالی شد تا سقف روزانه دور زده نشود.
+- متن‌های نتیجه و خطا کوتاه‌تر و انسانی‌تر شدند.
+- فایل کامل پروژه شامل packages، migrations، tests و tools بازسازی شد.
+```
+
+### `HOTFIX_FA_2026-07-28.md`
+
+```markdown
+# هات‌فیکس فارسی رابط کاربری — ۲۸ ژوئیهٔ ۲۰۲۶
+
+- دکمه «امروز من» از شکست ناشی از چند دکمه اصلی هم‌زمان محافظت شد.
+- رویدادهای خبر خودکار، از جمله `market_day`، با عنوان و توضیح کاملاً فارسی منتشر می‌شوند.
+- پیام‌های خودکار صف ارسال در برابر نمایش خام یا خراب تگ‌های HTML ایمن شدند.
+- نوع حکومت در تله‌لایف، تله‌ورلد، آداپتورهای قدیمی و پنل مدیریت فارسی‌سازی شد.
+- نام‌های نمایشی «تله‌لایف» و «تله‌ورلد» جایگزین نام‌های عمومی شدند.
+- با پایان اعتبار یا بازشدن پنل تازه، متن پنل قبلی به «🔒 بسته شد» تغییر می‌کند.
+- کاربران گروه می‌توانند بدون دستور و با نوشتن «تله ورلد»، «تله‌ورلد»، «تل ورلد»، `teleworld`، «پنل جهان» یا «جهان» پنل را باز کنند.
+- دکمه‌های مهم با رنگ‌های اصلی و موفق برجسته‌تر شدند، بدون شکستن محدودیت دکمه اصلی یکتا.
+- تست‌های رگرسیون برای فارسی‌سازی حکومت، خبر بازار، بسته‌شدن پنل، ورودی بدون اسلش و دکمه امروز اضافه شد.
+```
+
 ### `HOTFIX_LEDGER_OWNER_FA_2026-07-27.md`
 
 ```markdown
@@ -5256,6 +5572,35 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 - مرز سخت checksum از مهاجرت جدید 0023 آغاز می‌شود.
 - مهاجرت 0023 همچنان immutable است و تغییر بعد از اجرا خطا خواهد داد.
 - داده‌های موجود حذف یا بازنویسی نمی‌شوند.
+```
+
+### `HOTFIX_PLAIN_MESSAGES_FA_2026-07-28.md`
+
+```markdown
+# اصلاح نمایش پیام‌های بات — ۲۸ ژوئیه ۲۰۲۶
+
+- تمام تگ‌های قدیمی HTML از متن‌های TeleLife و TeleWorld حذف شدند.
+- پیام‌ها از این نسخه به بعد به‌صورت متن تمیز و خوانا ارسال می‌شوند.
+- در مسیر مرکزی نمایش پنل هر دو بات یک پاک‌ساز اضافه شد تا متن قدیمی دیتابیس نیز تگ خام نشان ندهد.
+- قالب‌های HTML پنل مدیریت دست‌نخورده باقی ماندند.
+```
+
+### `HOTFIX_UX_ECONOMY_SOCIAL_FA_2026-07-28.md`
+
+```markdown
+# هات‌فیکس اقتصاد و روابط اجتماعی — ۲۸ ژوئیه ۲۰۲۶
+
+- بازار دلار دوباره در بخش «پول و دارایی» قابل دسترسی است و پس از خرید/فروش، موجودی تازه نمایش داده می‌شود.
+- فروش منابع به دو مرحله ساده تبدیل شد: انتخاب منبع، سپس انتخاب مقدار؛ درآمد خالص مستقیم به کیف پول می‌رود.
+- هندلر قدیمی ورود دیگر همه دکمه‌های `tw:` را نمی‌بلعد؛ انتخاب شخص برای دوستی، ازدواج، کمک، هدیه، رقابت و گزارش به مسیر واقعی خود می‌رسد.
+- متن‌ها کوتاه‌تر، روشن‌تر و انسانی‌تر شدند.
+- دکمه‌های شیشه‌ای دسته‌بندی شدند و با تأکیدهای بنفش، طلایی و آبی (ایموجی رنگی + استایل‌های رسمی تلگرام) خواناتر شدند.
+
+## کنترل کیفیت
+
+- بازسازی ۲۸۹ فایل از دامپ انجام شد.
+- `compileall` برای کدهای `apps` و `packages` موفق بود.
+- تست‌های پروژه در این محیط اجرا نشدند چون ماژول `pytest` نصب نیست؛ نصب شبکه‌ای نیز مجاز نبود.
 ```
 
 ### `LIFE_PROGRESSION_RELEASE_FA.md`
@@ -6805,6 +7150,112 @@ CREATE TABLE IF NOT EXISTS citizen_reports (
 CREATE INDEX IF NOT EXISTS idx_reports_open ON citizen_reports(country_id,status,created_at DESC);
 ```
 
+### `migrations\0024_work_salary_resource_social.sql`
+
+```sql
+-- Cash wages for resource jobs and auditable citizen resource transfers.
+ALTER TABLE work_claims ADD COLUMN IF NOT EXISTS salary_gross_toman BIGINT NOT NULL DEFAULT 0 CHECK(salary_gross_toman>=0);
+ALTER TABLE work_claims ADD COLUMN IF NOT EXISTS salary_net_toman BIGINT NOT NULL DEFAULT 0 CHECK(salary_net_toman>=0);
+
+CREATE TABLE IF NOT EXISTS citizen_resource_transfers (
+ id BIGSERIAL PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ actor_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ recipient_id BIGINT REFERENCES players(id) ON DELETE RESTRICT,
+ transfer_type TEXT NOT NULL CHECK(transfer_type IN ('gift','country_donation')),
+ asset_code TEXT NOT NULL CHECK(asset_code IN ('food','minerals','technology','energy')),
+ amount BIGINT NOT NULL CHECK(amount>0),
+ reputation_awarded INT NOT NULL DEFAULT 0 CHECK(reputation_awarded BETWEEN 0 AND 3),
+ idempotency_key TEXT NOT NULL UNIQUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK((transfer_type='gift' AND recipient_id IS NOT NULL AND recipient_id<>actor_id)
+    OR (transfer_type='country_donation' AND recipient_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_resource_transfer_actor_day ON citizen_resource_transfers(actor_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_resource_transfer_country_time ON citizen_resource_transfers(country_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS player_resource_sales (
+ id BIGSERIAL PRIMARY KEY,
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE RESTRICT,
+ asset_code TEXT NOT NULL CHECK(asset_code IN ('food','minerals','technology','energy')),
+ amount BIGINT NOT NULL CHECK(amount>0),
+ unit_price_toman BIGINT NOT NULL CHECK(unit_price_toman>0),
+ gross_toman BIGINT NOT NULL CHECK(gross_toman>0),
+ fee_toman BIGINT NOT NULL CHECK(fee_toman>=0),
+ net_toman BIGINT NOT NULL CHECK(net_toman>0),
+ idempotency_key TEXT NOT NULL UNIQUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_resource_sales_player_day ON player_resource_sales(player_id,created_at DESC);
+```
+
+### `migrations\0025_intergroup_council.sql`
+
+```sql
+-- Group-to-group council: local vote first, counterparty approval second.
+CREATE TABLE IF NOT EXISTS country_council_proposals (
+ id BIGSERIAL PRIMARY KEY,
+ proposer_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ target_country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ created_by_player_id BIGINT NOT NULL REFERENCES players(id),
+ action_code TEXT NOT NULL CHECK(action_code IN ('friend','trade_partner','defensive_ally','aid_food','aid_energy','aid_irt')),
+ status TEXT NOT NULL DEFAULT 'local_voting' CHECK(status IN ('local_voting','remote_voting','approved','rejected','expired','failed')),
+ local_yes INTEGER NOT NULL DEFAULT 0,
+ local_no INTEGER NOT NULL DEFAULT 0,
+ remote_yes INTEGER NOT NULL DEFAULT 0,
+ remote_no INTEGER NOT NULL DEFAULT 0,
+ local_closes_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '24 hours',
+ remote_closes_at TIMESTAMPTZ,
+ executed_at TIMESTAMPTZ,
+ failure_code TEXT,
+ idempotency_key TEXT NOT NULL UNIQUE,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK(proposer_country_id<>target_country_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_country_council_one_open_pair_action
+ ON country_council_proposals(proposer_country_id,target_country_id,action_code)
+ WHERE status IN ('local_voting','remote_voting');
+CREATE INDEX IF NOT EXISTS ix_country_council_target_status ON country_council_proposals(target_country_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_country_council_proposer_status ON country_council_proposals(proposer_country_id,status,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS country_council_votes (
+ proposal_id BIGINT NOT NULL REFERENCES country_council_proposals(id) ON DELETE CASCADE,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+ vote TEXT NOT NULL CHECK(vote IN ('yes','no')),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(proposal_id,country_id,player_id)
+);
+```
+
+### `migrations\0026_referral_growth.sql`
+
+```sql
+-- Referral growth: reward activation, never raw sign-up.
+CREATE TABLE IF NOT EXISTS player_referrals (
+ id BIGSERIAL PRIMARY KEY,
+ inviter_player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+ invited_player_id BIGINT NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+ referral_code TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','qualified','rewarded','rejected')),
+ qualified_at TIMESTAMPTZ,
+ rewarded_at TIMESTAMPTZ,
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK(inviter_player_id<>invited_player_id)
+);
+CREATE INDEX IF NOT EXISTS ix_player_referrals_inviter ON player_referrals(inviter_player_id,status,created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_player_referral_pair ON player_referrals(inviter_player_id,invited_player_id);
+
+CREATE TABLE IF NOT EXISTS referral_milestone_rewards (
+ player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+ milestone INTEGER NOT NULL CHECK(milestone IN (1,3,5,10,20,50)),
+ reward_toman BIGINT NOT NULL CHECK(reward_toman>=0),
+ claimed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(player_id,milestone)
+);
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -7796,6 +8247,37 @@ starting_state:
 happiness:
   min: 0
   max: 100
+```
+
+### `packages\core\config\data\resource_economy.yaml`
+
+```yaml
+assets:
+  food:
+    title: "محصول کشاورزی"
+    wage_toman_per_unit: 1400
+    sell_toman_per_unit: 1100
+  minerals:
+    title: "مواد معدنی"
+    wage_toman_per_unit: 1800
+    sell_toman_per_unit: 1450
+  technology:
+    title: "فناوری"
+    wage_toman_per_unit: 3200
+    sell_toman_per_unit: 2600
+  energy:
+    title: "انرژی"
+    wage_toman_per_unit: 2100
+    sell_toman_per_unit: 1700
+market:
+  fee_percent: 5
+  allowed_amounts: [10, 50, 100, 500]
+  daily_sell_units: 5000
+social:
+  allowed_amounts: [10, 50, 100, 500]
+  daily_gift_units: 1000
+  daily_country_donation_units: 2000
+  reputation_first_transfers: 3
 ```
 
 ### `packages\core\config\data\unlocks.yaml`
@@ -10200,6 +10682,7 @@ __all__ = [
 ```python
 """Retry-safe delivery of Telegram actions without extra infrastructure."""
 from __future__ import annotations
+from html import escape
 import logging
 from typing import Any
 from uuid import uuid4
@@ -10224,7 +10707,7 @@ async def deliver_batch(life_bot: Bot, world_bot: Bot) -> dict[str,int]:
             bot=life_bot if row["bot_name"]=="telelife" else world_bot
             payload=row["payload"]
             if row["action"]=="send_message":
-                await bot.send_message(chat_id=row["chat_id"],text=str(payload["text"]))
+                await bot.send_message(chat_id=row["chat_id"],text=escape(str(payload["text"])))
             elif row["action"]=="send_invoice":
                 await bot.send_invoice(chat_id=row["chat_id"],title=str(payload["title"]),
                     description=str(payload["description"]),payload=str(payload["invoice_payload"]),
@@ -12301,6 +12784,146 @@ RULES={
 def rules_for(code:str)->Rules:return RULES.get(code,RULES["republic"])
 ```
 
+### `packages\core\services\intergroup_council.py`
+
+```python
+"""Two-country council: citizens vote locally, then the other group decides."""
+from __future__ import annotations
+from packages.core import db
+from packages.core.repositories import outbox_repo
+from packages.core.services import country_trade
+
+ACTIONS={
+ "friend":"دوستی رسمی","trade_partner":"شراکت تجاری","defensive_ally":"پیمان دفاعی",
+ "aid_food":"ارسال ۵۰ واحد غذا","aid_energy":"ارسال ۵۰ واحد انرژی","aid_irt":"ارسال ۵۰۰ هزار تومان",
+}
+RELATIONS=frozenset({"friend","trade_partner","defensive_ally"})
+AID={"aid_food":"food","aid_energy":"energy","aid_irt":"IRT"}
+
+async def _citizen_country(conn,player_id:int)->int:
+ value=await conn.fetchval("SELECT country_id FROM citizenships WHERE player_id=$1 AND is_active",player_id)
+ if not value:raise PermissionError("citizen_required")
+ return int(value)
+
+async def _citizen_count(conn,country_id:int)->int:
+ return int(await conn.fetchval("SELECT count(*) FROM citizenships WHERE country_id=$1 AND is_active",country_id) or 0)
+
+def threshold(citizens:int)->int:
+ return 1 if citizens<=2 else 2 if citizens<=6 else 3
+
+async def create(proposer:int,target:int,actor:int,action:str,key:str):
+ if action not in ACTIONS:raise ValueError("invalid_council_action")
+ if proposer==target:raise ValueError("same_country")
+ async with db.transaction() as conn:
+  if await _citizen_country(conn,actor)!=proposer:raise PermissionError("citizen_required")
+  if not await conn.fetchval("SELECT 1 FROM countries WHERE id=$1",target):raise ValueError("country_not_found")
+  row=await conn.fetchrow("""INSERT INTO country_council_proposals
+   (proposer_country_id,target_country_id,created_by_player_id,action_code,idempotency_key)
+   VALUES($1,$2,$3,$4,$5)
+   ON CONFLICT(proposer_country_id,target_country_id,action_code)
+   WHERE status IN ('local_voting','remote_voting') DO NOTHING RETURNING id""",proposer,target,actor,action,key)
+  if not row:raise ValueError("proposal_exists")
+  proposal_id=int(row['id'])
+  await conn.execute("INSERT INTO country_council_votes(proposal_id,country_id,player_id,vote) VALUES($1,$2,$3,'yes')",proposal_id,proposer,actor)
+  await conn.execute("UPDATE country_council_proposals SET local_yes=1 WHERE id=$1",proposal_id)
+  return await _advance_vote(conn,proposal_id)
+
+async def vote(proposal_id:int,player_id:int,choice:str):
+ if choice not in {"yes","no"}:raise ValueError("invalid_vote")
+ execute=False
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM country_council_proposals WHERE id=$1 FOR UPDATE",proposal_id)
+  if not row:raise ValueError("proposal_not_found")
+  if row['status'] not in {'local_voting','remote_voting'}:raise ValueError("proposal_closed")
+  expected=int(row['proposer_country_id'] if row['status']=='local_voting' else row['target_country_id'])
+  if await _citizen_country(conn,player_id)!=expected:raise PermissionError("wrong_country_vote")
+  inserted=await conn.fetchval("""INSERT INTO country_council_votes(proposal_id,country_id,player_id,vote)
+   VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING player_id""",proposal_id,expected,player_id,choice)
+  if not inserted:raise ValueError("already_voted")
+  field=("local_" if row['status']=='local_voting' else "remote_")+choice
+  await conn.execute(f"UPDATE country_council_proposals SET {field}={field}+1,updated_at=now() WHERE id=$1",proposal_id)
+  result=await _advance_vote(conn,proposal_id);execute=result.pop('execute',False)
+ if execute:return await _execute(proposal_id)
+ return result
+
+async def _advance_vote(conn,proposal_id:int):
+ row=await conn.fetchrow("SELECT * FROM country_council_proposals WHERE id=$1 FOR UPDATE",proposal_id)
+ side='local' if row['status']=='local_voting' else 'remote'
+ country=int(row['proposer_country_id'] if side=='local' else row['target_country_id'])
+ needed=threshold(await _citizen_count(conn,country));yes=int(row[f'{side}_yes']);no=int(row[f'{side}_no'])
+ if no>=needed:
+  await conn.execute("UPDATE country_council_proposals SET status='rejected',updated_at=now() WHERE id=$1",proposal_id)
+  return {"id":proposal_id,"status":"rejected","yes":yes,"no":no,"needed":needed}
+ if yes<needed:return {"id":proposal_id,"status":str(row['status']),"yes":yes,"no":no,"needed":needed}
+ if side=='local':
+  await conn.execute("UPDATE country_council_proposals SET status='remote_voting',remote_closes_at=now()+interval '24 hours',updated_at=now() WHERE id=$1",proposal_id)
+  chat=await conn.fetchval("SELECT g.telegram_id FROM countries c JOIN groups g ON g.id=c.group_id WHERE c.id=$1",row['target_country_id'])
+  source=await conn.fetchval("SELECT name FROM countries WHERE id=$1",row['proposer_country_id'])
+  await outbox_repo.enqueue(conn,f"council:{proposal_id}:remote","intergroup_council",{"text":f"🌍 {source} یک پیشنهاد تازه فرستاده: {ACTIONS[str(row['action_code'])]}. از بخش شورای جهان رأی بدهید."},chat)
+  return {"id":proposal_id,"status":"remote_voting","yes":yes,"no":no,"needed":needed}
+ # Mark execution intent while locked; the effect runs after commit to avoid nested transaction deadlocks.
+ await conn.execute("UPDATE country_council_proposals SET updated_at=now() WHERE id=$1",proposal_id)
+ return {"id":proposal_id,"status":"remote_voting","yes":yes,"no":no,"needed":needed,"execute":True}
+
+async def _official(country_id:int,*,diplomacy:bool)->int|None:
+ roles=['foreign_minister'] if diplomacy else ['economy_minister','foreign_minister']
+ return await db.fetchval("""SELECT COALESCE(c.president_player_id,(SELECT player_id FROM country_offices
+  WHERE country_id=c.id AND role_code=ANY($2::text[]) ORDER BY id LIMIT 1)) FROM countries c WHERE c.id=$1""",country_id,roles)
+
+async def _execute(proposal_id:int):
+ row=await db.fetchrow("SELECT * FROM country_council_proposals WHERE id=$1",proposal_id)
+ if not row or row['status']!='remote_voting':raise ValueError("proposal_closed")
+ action=str(row['action_code']);a=int(row['proposer_country_id']);b=int(row['target_country_id']);key=f"council:{proposal_id}:execute"
+ try:
+  actor=await _official(a,diplomacy=action in RELATIONS)
+  if not actor:raise ValueError("source_official_required")
+  if action in RELATIONS:
+   target_actor=await _official(b,diplomacy=True)
+   if not target_actor:raise ValueError("target_official_required")
+   await country_trade.propose_relation(a,b,int(actor),action,key+":propose")
+   await country_trade.accept_relation(b,a,int(target_actor),key+":accept")
+  else:
+   try:await country_trade.send_aid(a,b,int(actor),AID[action],key)
+   except ValueError as exc:
+    # Council aid is also a negotiated transfer. If there is no active crisis,
+    # move the agreed preset atomically without granting humanitarian reputation.
+    if str(exc)!="recipient_has_no_crisis":raise
+    asset=AID[action];amount=int(__import__('packages.core.config',fromlist=['get_config']).get_config().section("country_trade.aid.presets")[asset])
+    from packages.core.repositories import ledger_repo
+    async with db.transaction() as conn:
+     for cid in sorted((a,b)):
+      if not await ledger_repo.lock_country(conn,cid):raise ValueError("country_not_found")
+     debit=await ledger_repo.change_country(conn,a,asset,-amount);credit=await ledger_repo.change_country(conn,b,asset,amount)
+     await ledger_repo.insert(conn,player_id=None,country_id=a,key=key+":debit",reason="council_group_aid",asset=asset,account=ledger_repo.country_account(asset),amount=-amount,balance=debit,metadata={"recipient":b,"proposal_id":proposal_id})
+     await ledger_repo.insert(conn,player_id=None,country_id=b,key=key+":credit",reason="council_group_aid",asset=asset,account=ledger_repo.country_account(asset),amount=amount,balance=credit,metadata={"donor":a,"proposal_id":proposal_id})
+ except (ValueError,PermissionError) as exc:
+  await db.execute("UPDATE country_council_proposals SET status='failed',failure_code=$2,updated_at=now() WHERE id=$1 AND status='remote_voting'",proposal_id,str(exc))
+  return {"id":proposal_id,"status":"failed","reason":str(exc)}
+ await db.execute("UPDATE country_council_proposals SET status='approved',executed_at=now(),updated_at=now() WHERE id=$1 AND status='remote_voting'",proposal_id)
+ return {"id":proposal_id,"status":"approved"}
+
+async def dashboard(country_id:int):
+ return await db.fetch("""SELECT p.*,a.name proposer_name,b.name target_name FROM country_council_proposals p
+  JOIN countries a ON a.id=p.proposer_country_id JOIN countries b ON b.id=p.target_country_id
+  WHERE (p.proposer_country_id=$1 OR p.target_country_id=$1) AND p.status IN('local_voting','remote_voting')
+  ORDER BY p.created_at DESC LIMIT 12""",country_id)
+
+async def detail(proposal_id:int):
+ return await db.fetchrow("""SELECT p.*,a.name proposer_name,b.name target_name FROM country_council_proposals p
+  JOIN countries a ON a.id=p.proposer_country_id JOIN countries b ON b.id=p.target_country_id WHERE p.id=$1""",proposal_id)
+
+async def has_voted(proposal_id:int,player_id:int)->bool:
+ return bool(await db.fetchval("SELECT 1 FROM country_council_votes WHERE proposal_id=$1 AND player_id=$2",proposal_id,player_id))
+
+async def countries_except(country_id:int):
+ return await db.fetch("SELECT id,name FROM countries WHERE id<>$1 AND status<>'forming' ORDER BY name LIMIT 30",country_id)
+
+async def expire_due()->int:
+ return int(await db.fetchval("""WITH x AS (UPDATE country_council_proposals SET status='expired',updated_at=now()
+  WHERE (status='local_voting' AND local_closes_at<=now()) OR (status='remote_voting' AND remote_closes_at<=now()) RETURNING 1)
+  SELECT count(*) FROM x""") or 0)
+```
+
 ### `packages\core\services\life_progression.py`
 
 ```python
@@ -13010,6 +13633,17 @@ logger = logging.getLogger(__name__)
 
 Sender = Callable[[int | None, str, dict[str, Any]], Awaitable[None]]
 
+EVENT_TEXTS: dict[str, str] = {
+    "harvest_boom": "🌾 رونق برداشت\n\nامروز تولید محصولات کشاورزی ۲۰٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "mining_surge": "⛏ رونق استخراج\n\nامروز تولید مواد معدنی ۲۰٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "energy_wave": "⚡ موج انرژی\n\nامروز تولید انرژی ۱۵٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "technology_rush": "🔬 جهش فناوری\n\nامروز تولید فناوری ۱۵٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "market_day": "💱 روز پررونق بازار\n\nامروز تولید ارزی ۱۰٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+}
+
+def daily_event_text(code: object) -> str:
+    return EVENT_TEXTS.get(str(code), "📢 رویداد تازه‌ای در جهان آغاز شده است؛ جزئیات آن را در پنل کشور ببینید.")
+
 
 def _backoff(delays: list[int], attempts: int) -> int:
     """Delay for the next retry. `attempts` is already incremented by claim()."""
@@ -13100,7 +13734,7 @@ async def ensure_daily_events(today: date | None = None) -> int:
                     conn,
                     f"daily-event:{day}",
                     "daily_event",
-                    {"event_date": str(day), "event_code": code, "effect": spec},
+                    {"event_date": str(day), "event_code": code, "effect": spec, "text": daily_event_text(code)},
                     destination,
                 )
                 created += 1
@@ -13388,6 +14022,7 @@ class WorkReceipt:
     xp: int
     asset: str
     tax_toman: int
+    salary_toman: int
     country_amount: int
     country_asset: str | None
     country_name: str | None
@@ -13422,12 +14057,12 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
         if not row:raise ValueError("job_not_found")
         existing=await conn.fetchrow("SELECT * FROM work_claims WHERE idempotency_key=$1",key)
         if existing:
-            return WorkReceipt(0,0,str(existing['asset_code']),0,0,None,None,str(existing['shift_mode']))
+            return WorkReceipt(0,0,str(existing['asset_code']),0,int(existing['salary_net_toman'] or 0),0,None,None,str(existing['shift_mode']))
         accrual=accrue(row,now);gross=accrual.stored
         asset_bonus=await life_progression.asset_bonus_bp(conn,player_id,'work_bonus_bp')
         gross=floor(gross*(10000+asset_bonus)/10000)
         if gross<cfg.int_("jobs.production.minimum_collection_amount"):
-            return WorkReceipt(0,0,str(row['output_asset_code']),0,0,None,None,str(row.get('shift_mode') or 'balanced'))
+            return WorkReceipt(0,0,str(row['output_asset_code']),0,0,0,None,None,str(row.get('shift_mode') or 'balanced'))
         mode=str(row.get('shift_mode') or 'balanced');spec=cfg.section(f"jobs.purpose_loop.shift_modes.{mode}")
         asset=str(row['output_asset_code']);country=await production_repo.country_for_player(conn,player_id)
         player_pct=int(spec['player_percent']);country_pct=int(spec['country_percent']) if country else 0
@@ -13442,14 +14077,25 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
             gross=floor(gross*(10000+min(bonus,5000))/10000)
             gross=max(1,floor(gross*max(5000,min(15000,economy_modifier))/10000))
         player_amount=max(1,floor(gross*player_pct/100));country_amount=max(0,floor(gross*country_pct/100))
-        tax=0;country_asset=asset if country else None
+        tax=0;salary=0;salary_gross=0;country_asset=asset if country else None
         if asset=='IRT':
             tax=floor(player_amount*cfg.int_("jobs.purpose_loop.tax_percent")/100) if country else 0
             player_amount-=tax
+            salary=player_amount
+            salary_gross=player_amount+tax
             country_asset=str(cfg.get("jobs.purpose_loop.national_output_asset_for_irt_jobs")) if country else None
             country_amount=floor(gross*cfg.int_("jobs.purpose_loop.national_output_percent_for_irt_jobs")/100) if country else 0
+        else:
+            # Resource jobs now pay cash wages as well as keeping the produced resource.
+            wage_unit=cfg.int_(f"resource_economy.assets.{asset}.wage_toman_per_unit")
+            salary_gross=player_amount*wage_unit
+            tax=floor(salary_gross*cfg.int_("jobs.purpose_loop.tax_percent")/100) if country else 0
+            salary=salary_gross-tax
         balance=await ledger_repo.change_player(conn,player_id,asset,player_amount)
         await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:player",reason="purposeful_work_player",asset=asset,account=ledger_repo.player_account(asset),amount=player_amount,balance=balance,metadata={"job":row['job_code'],"shift":mode,"gross":gross})
+        if asset!='IRT' and salary:
+            wallet=await ledger_repo.change_player(conn,player_id,'IRT',salary)
+            await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:salary",reason="work_cash_salary",asset='IRT',account='wallet',amount=salary,balance=wallet,metadata={"job":row['job_code'],"shift":mode,"resource":asset,"units":player_amount,"gross_salary":salary_gross,"tax":tax})
         if country and tax:
             treasury=await ledger_repo.change_country(conn,int(country['id']),'IRT',tax)
             await ledger_repo.insert(conn,player_id=None,country_id=int(country['id']),key=f"{key}:tax",reason="work_tax",asset='IRT',account='treasury',amount=tax,balance=treasury,metadata={"job":row['job_code'],"shift":mode})
@@ -13458,8 +14104,9 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
             await ledger_repo.insert(conn,player_id=None,country_id=int(country['id']),key=f"{key}:country",reason="national_work_output",asset=country_asset,account=ledger_repo.country_account(country_asset),amount=country_amount,balance=national,metadata={"job":row['job_code'],"shift":mode})
         fraction=gross/accrual.capacity if accrual.capacity else 0
         award=floor(cfg.int_("jobs.production.collection_xp_at_full_capacity")*fraction*int(spec['xp_percent'])/100) if fraction>=cfg.float_("jobs.production.minimum_collection_fraction_for_xp") else 0
-        await conn.execute("""INSERT INTO work_claims(idempotency_key,player_id,country_id,job_code,shift_mode,asset_code,gross_amount,player_amount,country_amount,tax_toman,xp_awarded)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)""",key,player_id,int(country['id']) if country else None,row['job_code'],mode,asset,gross,player_amount,country_amount,tax,award)
+        await conn.execute("""INSERT INTO work_claims
+          (idempotency_key,player_id,country_id,job_code,shift_mode,asset_code,gross_amount,player_amount,country_amount,tax_toman,xp_awarded,salary_gross_toman,salary_net_toman)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)""",key,player_id,int(country['id']) if country else None,row['job_code'],mode,asset,gross,player_amount,country_amount,tax,award,salary_gross,salary)
         await conn.execute("""UPDATE player_jobs SET stored_amount=0,production_updated_at=$2,last_claim_at=$2,total_claims=total_claims+1,
           total_tax_toman=total_tax_toman+$3,total_country_output=total_country_output+$4,updated_at=now() WHERE player_id=$1""",player_id,now,tax,country_amount)
         skill=await life_progression.record_work(conn,player_id,str(row['job_code']),f"{key}:skill",fraction)
@@ -13471,7 +14118,7 @@ async def collect_purposeful(player_id: int, key: str, at: datetime | None = Non
     if country_amount:await missions.report_progress(player_id,"national_output")
     if tax:await missions.report_progress(player_id,"pay_work_tax")
     if award:await missions.report_progress(player_id,"earn_xp_100",award)
-    return WorkReceipt(player_amount,award,asset,tax,country_amount,country_asset,str(country['name']) if country else None,mode,skill.code,skill.level,skill.xp,skill.needed)
+    return WorkReceipt(player_amount,award,asset,tax,salary,country_amount,country_asset,str(country['name']) if country else None,mode,skill.code,skill.level,skill.xp,skill.needed)
 ```
 
 ### `packages\core\services\progression.py`
@@ -13508,6 +14155,175 @@ def level_progress(level: int, xp: int) -> tuple[int, int]:
     if level >= max_level():
         return xp, max(xp, 1)
     return xp, xp_required(level)
+```
+
+### `packages\core\services\referrals.py`
+
+```python
+"""Referral growth with delayed qualification and idempotent milestone rewards."""
+from __future__ import annotations
+import base64
+from packages.core import db
+from packages.core.repositories import ledger_repo
+
+MILESTONES={1:100_000,3:250_000,5:500_000,10:1_000_000,20:2_000_000,50:5_000_000}
+
+def code(player_id:int)->str:
+ raw=int(player_id).to_bytes(8,"big");return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+def decode(value:str)->int|None:
+ try:
+  raw=base64.urlsafe_b64decode(value+"="*((4-len(value)%4)%4));number=int.from_bytes(raw,"big")
+  return number if number>0 else None
+ except (ValueError,TypeError):return None
+
+def start_payload(player_id:int)->str:return "ref_"+code(player_id)
+
+async def register(invited_player_id:int,payload:str|None)->bool:
+ if not payload or not payload.startswith("ref_"):return False
+ inviter=decode(payload[4:])
+ if not inviter or inviter==invited_player_id:return False
+ async with db.transaction() as conn:
+  # Referral is accepted only for a genuinely new account (10-minute grace for first /start retries).
+  invited=await conn.fetchrow("SELECT created_at FROM players WHERE id=$1 FOR UPDATE",invited_player_id)
+  if not invited or not await conn.fetchval("SELECT 1 FROM players WHERE id=$1 AND NOT is_banned",inviter):return False
+  is_new=bool(await conn.fetchval("SELECT $1::timestamptz >= now()-interval '10 minutes'",invited['created_at']))
+  if not is_new:return False
+  row=await conn.fetchval("""INSERT INTO player_referrals(inviter_player_id,invited_player_id,referral_code)
+   VALUES($1,$2,$3) ON CONFLICT(invited_player_id) DO NOTHING RETURNING id""",inviter,invited_player_id,payload[4:])
+  return bool(row)
+
+async def _qualifies(conn,player_id:int)->bool:
+ # Real activation: completed onboarding plus activity on two distinct game days.
+ step=int(await conn.fetchval("SELECT onboarding_step FROM player_ui_state WHERE player_id=$1",player_id) or 0)
+ days=int(await conn.fetchval("SELECT count(DISTINCT created_at::date) FROM ledger WHERE player_id=$1",player_id) or 0)
+ return step>=4 and days>=2
+
+async def qualify_for_player(player_id:int)->bool:
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM player_referrals WHERE invited_player_id=$1 AND status='pending' FOR UPDATE",player_id)
+  if not row or not await _qualifies(conn,player_id):return False
+  await conn.execute("UPDATE player_referrals SET status='qualified',qualified_at=now() WHERE id=$1",row['id'])
+  return True
+
+async def claim(inviter_id:int)->dict[str,int]:
+ async with db.transaction() as conn:
+  if await ledger_repo.lock_player(conn,inviter_id) is None:raise ValueError("player_not_found")
+  # Lock referrals so concurrent clicks cannot claim the same friend or milestone twice.
+  rows=await conn.fetch("SELECT id FROM player_referrals WHERE inviter_player_id=$1 AND status='qualified' ORDER BY id FOR UPDATE",inviter_id)
+  qualified_total=int(await conn.fetchval("SELECT count(*) FROM player_referrals WHERE inviter_player_id=$1 AND status IN('qualified','rewarded')",inviter_id) or 0)
+  paid=0;milestones=[]
+  for milestone,reward in MILESTONES.items():
+   if qualified_total<milestone:continue
+   if await conn.fetchval("SELECT 1 FROM referral_milestone_rewards WHERE player_id=$1 AND milestone=$2",inviter_id,milestone):continue
+   balance=await ledger_repo.change_player(conn,inviter_id,"IRT",reward)
+   await ledger_repo.insert(conn,player_id=inviter_id,country_id=None,key=f"referral:{inviter_id}:{milestone}",reason="referral_milestone",asset="IRT",account="wallet",amount=reward,balance=balance,metadata={"milestone":milestone})
+   await conn.execute("INSERT INTO referral_milestone_rewards(player_id,milestone,reward_toman) VALUES($1,$2,$3)",inviter_id,milestone,reward)
+   paid+=reward;milestones.append(milestone)
+  if rows:await conn.execute("UPDATE player_referrals SET status='rewarded',rewarded_at=now() WHERE inviter_player_id=$1 AND status='qualified'",inviter_id)
+  return {"qualified":qualified_total,"paid":paid,"milestones":len(milestones)}
+
+async def overview(player_id:int)->dict[str,int]:
+ row=await db.fetchrow("""SELECT count(*) total,count(*) FILTER(WHERE status='pending') pending,
+  count(*) FILTER(WHERE status IN('qualified','rewarded')) qualified FROM player_referrals WHERE inviter_player_id=$1""",player_id)
+ claimed=int(await db.fetchval("SELECT COALESCE(max(milestone),0) FROM referral_milestone_rewards WHERE player_id=$1",player_id) or 0)
+ q=int(row['qualified'] or 0);next_milestone=next((x for x in MILESTONES if x>q),50)
+ claimable=bool(await db.fetchval("SELECT 1 FROM (SELECT unnest($2::int[]) milestone) m WHERE milestone<=$1 AND NOT EXISTS(SELECT 1 FROM referral_milestone_rewards r WHERE r.player_id=$3 AND r.milestone=m.milestone) LIMIT 1",q,list(MILESTONES),player_id))
+ return {"total":int(row['total'] or 0),"pending":int(row['pending'] or 0),"qualified":q,"claimed":claimed,"next":next_milestone,"claimable":int(claimable)}
+```
+
+### `packages\core\services\resource_economy.py`
+
+```python
+"""Player resource inventory, fixed-price sales and social transfers."""
+from __future__ import annotations
+from dataclasses import dataclass
+from packages.core import db
+from packages.core.config import get_config
+from packages.core.repositories import ledger_repo
+
+ASSETS=frozenset({"food","minerals","technology","energy"})
+
+@dataclass(frozen=True,slots=True)
+class SaleReceipt:
+ asset:str;amount:int;gross:int;fee:int;net:int;resource_balance:int;wallet:int
+
+@dataclass(frozen=True,slots=True)
+class TransferReceipt:
+ asset:str;amount:int;balance:int;reputation:int;country_id:int;recipient_id:int|None
+
+def spec(asset:str)->dict[str,object]:
+ if asset not in ASSETS:raise ValueError("invalid_asset")
+ return get_config().section(f"resource_economy.assets.{asset}")
+
+def allowed_amount(amount:int,*,social:bool=False)->None:
+ path="resource_economy.social.allowed_amounts" if social else "resource_economy.market.allowed_amounts"
+ if amount not in {int(x) for x in get_config().get(path)}:raise ValueError("invalid_amount")
+
+async def inventory(player_id:int)->list[dict[str,object]]:
+ rows=await db.fetch("SELECT asset_code,quantity FROM player_resources WHERE player_id=$1 AND quantity>0 ORDER BY asset_code",player_id)
+ values={str(r["asset_code"]):int(r["quantity"]) for r in rows}
+ return [{"asset":a,"title":str(spec(a)["title"]),"quantity":values.get(a,0),"sell_price":int(spec(a)["sell_toman_per_unit"])} for a in sorted(ASSETS)]
+
+async def sell(player_id:int,asset:str,amount:int,key:str)->SaleReceipt:
+ allowed_amount(amount);cfg=get_config();item=spec(asset)
+ async with db.transaction() as conn:
+  if await ledger_repo.economy_frozen(conn):raise ValueError("economy_frozen")
+  # Serialize sales for this player; otherwise two simultaneous clicks can both pass the daily cap.
+  if await ledger_repo.lock_player(conn,player_id) is None:raise ValueError("player_not_found")
+  old=await conn.fetchrow("SELECT * FROM player_resource_sales WHERE idempotency_key=$1",key)
+  if old:
+   wallet=int(await conn.fetchval("SELECT wallet_toman FROM players WHERE id=$1",player_id) or 0)
+   balance=int(await conn.fetchval("SELECT quantity FROM player_resources WHERE player_id=$1 AND asset_code=$2",player_id,asset) or 0)
+   return SaleReceipt(asset,int(old['amount']),int(old['gross_toman']),int(old['fee_toman']),int(old['net_toman']),balance,wallet)
+  used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM player_resource_sales WHERE player_id=$1 AND created_at>=date_trunc('day',now())",player_id) or 0)
+  if used+amount>cfg.int_("resource_economy.market.daily_sell_units"):raise ValueError("resource_sell_daily_limit")
+  unit=int(item["sell_toman_per_unit"]);gross=amount*unit;fee=gross*cfg.int_("resource_economy.market.fee_percent")//100;net=gross-fee
+  resource_balance=await ledger_repo.change_player(conn,player_id,asset,-amount)
+  wallet=await ledger_repo.change_player(conn,player_id,"IRT",net)
+  await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:asset",reason="resource_sale",asset=asset,account=ledger_repo.player_account(asset),amount=-amount,balance=resource_balance,metadata={"unit_price":unit,"gross":gross,"fee":fee})
+  await ledger_repo.insert(conn,player_id=player_id,country_id=None,key=f"{key}:cash",reason="resource_sale_income",asset="IRT",account="wallet",amount=net,balance=wallet,metadata={"asset":asset,"units":amount,"gross":gross,"fee":fee})
+  await conn.execute("INSERT INTO player_resource_sales(player_id,asset_code,amount,unit_price_toman,gross_toman,fee_toman,net_toman,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",player_id,asset,amount,unit,gross,fee,net,key)
+  return SaleReceipt(asset,amount,gross,fee,net,resource_balance,wallet)
+
+async def _country(conn,player_id:int)->int:
+ value=await conn.fetchval("SELECT country_id FROM citizenships WHERE player_id=$1 AND is_active",player_id)
+ if not value:raise PermissionError("citizen_required")
+ return int(value)
+
+async def transfer(actor:int,asset:str,amount:int,key:str,*,recipient:int|None=None)->TransferReceipt:
+ allowed_amount(amount,social=True);spec(asset);cfg=get_config();kind="gift" if recipient else "country_donation"
+ async with db.transaction() as conn:
+  if await ledger_repo.economy_frozen(conn):raise ValueError("economy_frozen")
+  # Serialize all outgoing transfers for the actor so daily limits and reputation stay exact.
+  if await ledger_repo.lock_player(conn,actor) is None:raise ValueError("player_not_found")
+  old=await conn.fetchrow("SELECT * FROM citizen_resource_transfers WHERE idempotency_key=$1",key)
+  if old:
+   balance=int(await conn.fetchval("SELECT quantity FROM player_resources WHERE player_id=$1 AND asset_code=$2",actor,asset) or 0)
+   return TransferReceipt(asset,int(old['amount']),balance,int(old['reputation_awarded']),int(old['country_id']),old['recipient_id'])
+  country=await _country(conn,actor)
+  if recipient:
+   if recipient==actor:raise ValueError("self_interaction")
+   peer=await _country(conn,recipient)
+   if peer!=country:raise PermissionError("same_country_required")
+   used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM citizen_resource_transfers WHERE actor_id=$1 AND transfer_type='gift' AND created_at>=date_trunc('day',now())",actor) or 0)
+   if used+amount>cfg.int_("resource_economy.social.daily_gift_units"):raise ValueError("resource_gift_daily_limit")
+  else:
+   used=int(await conn.fetchval("SELECT COALESCE(sum(amount),0) FROM citizen_resource_transfers WHERE actor_id=$1 AND transfer_type='country_donation' AND created_at>=date_trunc('day',now())",actor) or 0)
+   if used+amount>cfg.int_("resource_economy.social.daily_country_donation_units"):raise ValueError("resource_donation_daily_limit")
+  balance=await ledger_repo.change_player(conn,actor,asset,-amount)
+  await ledger_repo.insert(conn,player_id=actor,country_id=None,key=f"{key}:debit",reason=f"resource_{kind}",asset=asset,account=ledger_repo.player_account(asset),amount=-amount,balance=balance,metadata={"country_id":country,"recipient_id":recipient})
+  if recipient:
+   target_balance=await ledger_repo.change_player(conn,recipient,asset,amount)
+   await ledger_repo.insert(conn,player_id=recipient,country_id=None,key=f"{key}:credit",reason="resource_gift_received",asset=asset,account=ledger_repo.player_account(asset),amount=amount,balance=target_balance,metadata={"sender_id":actor,"country_id":country})
+  else:
+   target_balance=await ledger_repo.change_country(conn,country,asset,amount)
+   await ledger_repo.insert(conn,player_id=None,country_id=country,key=f"{key}:credit",reason="citizen_resource_donation",asset=asset,account=ledger_repo.country_account(asset),amount=amount,balance=target_balance,metadata={"actor_id":actor})
+  count=int(await conn.fetchval("SELECT count(*) FROM citizen_resource_transfers WHERE actor_id=$1 AND created_at>=date_trunc('day',now())",actor) or 0)
+  rep=1 if count<cfg.int_("resource_economy.social.reputation_first_transfers") else 0
+  if rep:await conn.execute("UPDATE players SET reputation=LEAST(1000,reputation+$2) WHERE id=$1",actor,rep)
+  await conn.execute("INSERT INTO citizen_resource_transfers(country_id,actor_id,recipient_id,transfer_type,asset_code,amount,reputation_awarded,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",country,actor,recipient,kind,asset,amount,rep,key)
+  return TransferReceipt(asset,amount,balance,rep,country,recipient)
 ```
 
 ### `packages\core\services\scheduler_ops.py`
@@ -13568,6 +14384,9 @@ async def dashboard(country_id:int,player_id:int):
   "pending":await db.fetch("""SELECT r.id,r.kind,p.first_name proposer_name FROM social_relationships r JOIN players p ON p.id=r.proposed_by WHERE r.status='pending' AND r.proposed_by<>$1 AND (r.player_low_id=$1 OR r.player_high_id=$1) ORDER BY r.created_at DESC LIMIT 10""",player_id),
   "competitions":await db.fetch("""SELECT c.id,c.status,c.round_no,c.challenger_score,c.opponent_score,c.turn_player_id,p.first_name opponent_name FROM social_competitions c JOIN players p ON p.id=CASE WHEN c.challenger_id=$1 THEN c.opponent_id ELSE c.challenger_id END WHERE c.country_id=$2 AND ((c.status='pending' AND c.opponent_id=$1) OR (c.status='active' AND (c.challenger_id=$1 OR c.opponent_id=$1))) ORDER BY c.created_at DESC LIMIT 5""",player_id,country_id),
   "cases":int(await db.fetchval("SELECT count(*) FROM citizen_cases WHERE country_id=$1 AND status IN ('review','voting')",country_id) or 0),
+  "resource_activity":await db.fetch("""SELECT t.transfer_type,t.asset_code,t.amount,t.created_at,a.first_name actor_name,b.first_name recipient_name
+    FROM citizen_resource_transfers t JOIN players a ON a.id=t.actor_id LEFT JOIN players b ON b.id=t.recipient_id
+    WHERE t.country_id=$1 ORDER BY t.created_at DESC LIMIT 5""",country_id),
  }
 
 async def propose(kind:str,actor:int,target:int):
@@ -14112,6 +14931,7 @@ class Settings(BaseSettings):
     memory_warning_mb: int = Field(default=450, ge=64, le=4096)
 
     telelife_bot_token: str = ""
+    telelife_bot_username: str = ""
     teleworld_bot_token: str = ""
     global_news_chat_id: int | None = None
 
@@ -14540,9 +15360,8 @@ def cb(namespace: str, action: str, owner_id: int, arg: str = "") -> str:
 """Auto-expiring interactive panels.
 
 Every panel schedules its own cleanup via the PTB job queue. Timeouts come from
-`core.menu_cleanup` in config - nothing hardcoded. On expiry the keyboard is
-stripped, not the message: the player keeps the information, we free the
-callback surface.
+`core.menu_cleanup` in config - nothing hardcoded. On expiry the keyboard is stripped and the panel text is replaced with a clear
+Persian closed-state label, so stale controls and stale content cannot confuse users.
 """
 
 from __future__ import annotations
@@ -14571,10 +15390,11 @@ async def _expire(context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = job.data["chat_id"]
     message_id = job.data["message_id"]
     try:
-        await context.bot.edit_message_reply_markup(
-            chat_id=chat_id, message_id=message_id, reply_markup=None
+        message = await context.bot.edit_message_text(
+            chat_id=chat_id, message_id=message_id,
+            text="🔒 بسته شد", reply_markup=None
         )
-        # Buttons disappear while the informational message remains readable.
+        # The expired panel is explicit: controls disappear and its text says it is closed.
         # Persistent expiry is also checked by callback guards after restarts.
     except BadRequest as exc:
         logger.debug("panel cleanup no-op for chat %s: %s", chat_id, exc)
@@ -14658,6 +15478,33 @@ def day_stamp(now: datetime | None = None) -> str:
     return game_today(now).isoformat()
 ```
 
+### `packages\core\utils\fa_labels.py`
+
+```python
+"""Stable Persian labels for internal product codes shown to users."""
+from __future__ import annotations
+
+GOVERNMENT_NAMES: dict[str, str] = {
+    "republic": "جمهوری",
+    "presidential": "جمهوری ریاستی",
+    "parliamentary": "نظام پارلمانی",
+    "semi_presidential": "نظام نیمه‌ریاستی",
+    "monarchy": "پادشاهی مطلقه",
+    "constitutional_monarchy": "پادشاهی مشروطه",
+    "dictatorship": "دیکتاتوری",
+    "federal": "نظام فدرال",
+    "council": "نظام شورایی",
+    "direct_democracy": "دموکراسی مستقیم",
+    "theocracy": "حکومت دینی",
+    "military_junta": "شورای نظامی",
+    "oligarchy": "الیگارشی",
+}
+
+def government_name(code: object) -> str:
+    """Never leak an English government code into a user-facing surface."""
+    return GOVERNMENT_NAMES.get(str(code), "نوع حکومت نامشخص")
+```
+
 ### `packages\core\utils\fmt.py`
 
 ```python
@@ -14698,6 +15545,27 @@ def progress_bar(current: int, total: int, width: int = 10) -> str:
         return "▱" * width
     filled = max(0, min(width, round(current / total * width)))
     return "▰" * filled + "▱" * (width - filled)
+```
+
+### `packages\core\utils\message_text.py`
+
+```python
+"""Safe plain-text rendering for Telegram messages.
+
+The bots intentionally use no HTML parse mode. This sanitizer prevents legacy
+formatting tags stored in old text or database content from appearing raw.
+"""
+from __future__ import annotations
+import re
+
+_TELEGRAM_TAG = re.compile(
+    r"</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|tg-spoiler)(?:\s[^>]*)?>",
+    re.IGNORECASE,
+)
+
+def plain_text(value: object) -> str:
+    """Return readable Telegram text with legacy formatting tags removed."""
+    return _TELEGRAM_TAG.sub("", str(value))
 ```
 
 ### `pyproject.toml`
@@ -15174,6 +16042,21 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ارسال پیام کلید idempotency سمت سرور ارائه نمی‌کند؛ lease و ثبت تکمیل احتمال تکرار را کم می‌کند، اما قطع پردازش دقیقاً پس از ارسال و پیش از ثبت تکمیل می‌تواند پیام را دوباره ارسال کند. عملیات مالی settlement در دیتابیس همچنان قفل و idempotent است.
 ```
 
+### `RELEASE_INTERGROUP_COUNCIL_FA_2026-07-28.md`
+
+```markdown
+# انتشار شورای جهان بین گروه‌ها
+
+- هر گروه می‌تواند دوستی، شراکت تجاری، پیمان دفاعی یا کمک اقتصادی پیشنهاد دهد.
+- پیشنهاد ابتدا در گروه مبدأ و سپس در گروه مقصد رأی‌گیری می‌شود.
+- اجرا فقط پس از تأیید هر دو گروه انجام می‌شود.
+- هر شهروند برای هر مرحله فقط یک رأی دارد.
+- حد نصاب برای گروه کوچک ۱، متوسط ۲ و بزرگ ۳ رأی هم‌نظر است تا مسیر ساده بماند.
+- پیشنهادها پس از ۲۴ ساعت منقضی می‌شوند.
+- اجرای مالی و دیپلماتیک از سرویس‌های تراکنشی موجود استفاده می‌کند.
+- رابط شورا فقط سه گام دارد: انتخاب گروه، انتخاب تصمیم، رأی.
+```
+
 ### `RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md`
 
 ```markdown
@@ -15305,6 +16188,20 @@ Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ار�
 ابتدا روی دیتابیس staging دارای نسخه‌ای از داده واقعی، migrationها را اجرا کنید و سناریوهای انتخاب شغل، دریافت شیفت، خریدوفروش و کلیک هم‌زمان را بررسی کنید. سپس همان artifact را بدون تغییر روی production مستقر کنید.
 ```
 
+### `RELEASE_REFERRAL_GROWTH_FA_2026-07-28.md`
+
+```markdown
+# انتشار رشد و دعوت دوستان
+
+- هر بازیکن لینک دعوت شخصی دارد.
+- ثبت‌نام خام جایزه ندارد؛ دوست باید مسیر شروع را کامل کند و در دو روز جدا بازی کند.
+- هر بازیکن فقط یک دعوت‌کننده دارد و دعوت از خود رد می‌شود.
+- پاداش‌ها در نقاط ۱، ۳، ۵، ۱۰، ۲۰ و ۵۰ دوست فعال آزاد می‌شوند.
+- دریافت جایزه با Ledger و کلید یکتا انجام می‌شود و دوبار پرداخت نمی‌شود.
+- صفحه دعوت فقط آمار، هدف بعدی، ارسال لینک و دریافت جایزه را نشان می‌دهد.
+- در تله‌ورلد مسیر «بزرگ‌کردن کشور» برای افزودن گروه تازه و ورود به شورای جهان اضافه شد.
+```
+
 ### `RELEASE_SCALING_MIGRATION_FA.md`
 
 ```markdown
@@ -15434,6 +16331,39 @@ Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ار�
 - نبود استفاده از عنوان گروه در engagement و ارسال سیستمی: تأیید شد
 - قفل نامعتبر قدیمی `FOR UPDATE OF d,g`: وجود ندارد
 - اجرای کامل pytest در sandbox ممکن نبود، چون pytest و وابستگی‌های پروژه در محیط آفلاین نصب نیستند. پس از build اجرا شود: `python -m pytest -q`.
+```
+
+### `RELEASE_WORK_SOCIAL_ECONOMY_FA_2026-07-28.md`
+
+```markdown
+# انتشار حقوق شغل و اقتصاد اجتماعی منابع — ۲۸ ژوئیهٔ ۲۰۲۶
+
+## حقوق شغل
+- تمام شغل‌ها اکنون حقوق نقدی دارند.
+- شغل‌های خدماتی، حقوق تومان دریافت می‌کنند.
+- شغل‌های تولیدی هم‌زمان حقوق تومان و منبع شخصی دریافت می‌کنند.
+- رسید شیفت، حقوق نقدی، منابع شخصی، مالیات، سهم کشور و تجربه را جداگانه نمایش می‌دهد.
+- نرخ حقوق منابع از تنظیمات مستقل و قابل‌تعادل خوانده می‌شود.
+
+## فروش منابع
+- موجودی منابع شخصی و ارزش فروش آن‌ها در تله‌لایف نمایش داده می‌شود.
+- بازیکن می‌تواند مقدارهای ۱۰، ۵۰، ۱۰۰ یا ۵۰۰ واحد را فوری بفروشد.
+- فروش ۵٪ کارمزد و سقف روزانه دارد.
+- برداشت منبع و واریز تومان در یک تراکنش و با کلید یکتای ضد دوباره‌کاری انجام می‌شود.
+
+## تعاملات گروهی
+- شهروند می‌تواند منابع را به شهروند دیگری از همان کشور هدیه دهد.
+- شهروند می‌تواند منابع را مستقیم به ذخایر کشور اهدا کند.
+- انتقال به خود، انتقال بین دو کشور و عبور از سقف روزانه مسدود است.
+- تعامل‌های نخست روز اعتبار اجتماعی می‌دهند.
+- آخرین هدیه‌ها و کمک‌های کشور در صفحه «مردم و جامعه» نمایش داده می‌شود.
+- توقف مدیریتی اقتصاد، فروش و انتقال منابع را نیز متوقف می‌کند.
+
+## پایگاه داده و کنترل کیفیت
+- مهاجرت افزایشی `0024_work_salary_resource_social.sql` اضافه شد.
+- تست‌های قرارداد حقوق، فروش، انتقال اجتماعی و رابط فارسی اضافه شد.
+- Parse تمام Python و YAML موفق بود.
+- اجرای کامل تست‌های یکپارچه به Python 3.13، PostgreSQL و وابستگی‌های پروژه نیاز دارد.
 ```
 
 ### `render.yaml`
@@ -15939,6 +16869,54 @@ def test_every_world_keyboard_state_builds():
     for case in cases: validate(case)
 ```
 
+### `tests\test_beginner_value_ux_2026_07_28.py`
+
+```python
+"""Beginner comprehension and value-proposition regression contracts."""
+from pathlib import Path
+
+
+def read(path: str) -> str:
+    return Path(path).read_text(encoding="utf-8")
+
+
+def test_home_explains_the_game_and_one_next_action():
+    copy = read("apps/telelife_bot/texts/fa.py")
+    assert "اینجا چه کار می‌کنی؟" in copy
+    assert "الان فقط این کار" in copy
+    assert "کار کن ← پاداش بگیر ← قوی‌تر شو" in copy
+
+
+def test_home_menu_is_beginner_first():
+    keyboard = read("apps/telelife_bot/keyboards/main.py")
+    for label in ("قدم بعدی من", "کار و درآمد", "چرا بازی کنم؟", "راهنمای یک‌دقیقه‌ای"):
+        assert label in keyboard
+    home = keyboard[keyboard.index("def home("):keyboard.index("def journey(")]
+    assert "بازار ارز" not in home
+    assert "خانه و زندگی" not in home
+
+
+def test_onboarding_teaches_benefits_not_only_features():
+    life = read("apps/telelife_bot/handlers/life.py")
+    assert "فایده این قدم" in read("apps/telelife_bot/texts/fa.py")
+    assert "درآمد شغل با گذشت زمان جمع می‌شود" in life
+    assert "if step==3:await jobs(ctx,c)" in life
+
+
+def test_today_view_names_one_best_action():
+    ux = read("apps/telelife_bot/handlers/ux.py")
+    assert "بهترین کار الان" in ux
+    assert "next_action" in ux
+    assert "روزانه چند دقیقه کافی است" in ux
+
+
+def test_world_explains_shared_group_value():
+    copy = read("apps/teleworld_bot/texts/fa.py")
+    assert "کشور زنده گروه شما" in copy
+    assert "تصمیم‌های اعضا واقعی‌اند" in copy
+    assert "ماموریت فعلی گروه" in copy
+```
+
 ### `tests\test_callbacks.py`
 
 ```python
@@ -16330,6 +17308,55 @@ def test_relation_acceptance_claims_idempotency_before_mutation() -> None:
     assert block.index("if not inserted:return False") < block.index("UPDATE country_relations SET status")
 ```
 
+### `tests\test_fa_ux_hotfix_2026_07_28.py`
+
+```python
+"""Regression contracts for the Persian UX hotfix."""
+from pathlib import Path
+
+from packages.core.services.news import daily_event_text
+from packages.core.utils.fa_labels import GOVERNMENT_NAMES, government_name
+
+
+def test_all_government_codes_have_persian_labels():
+    codes = {
+        line.strip()[2:]
+        for line in Path("packages/core/config/data/country.yaml").read_text().splitlines()
+        if line.startswith("  - ")
+    }
+    assert codes <= GOVERNMENT_NAMES.keys()
+    assert government_name("monarchy") == "پادشاهی مطلقه"
+    assert not any(value.isascii() for value in GOVERNMENT_NAMES.values())
+
+
+def test_market_day_is_a_clear_persian_news_message():
+    text = daily_event_text("market_day")
+    assert "market_day" not in text
+    assert "روز پررونق بازار" in text
+    assert "۱۰٪" in text and "۲۴ ساعت" in text
+
+
+def test_closed_panels_change_the_message_text():
+    shared = Path("packages/core/ui/panels.py").read_text()
+    life = Path("apps/telelife_bot/handlers/panel.py").read_text()
+    world = Path("apps/teleworld_bot/handlers/world.py").read_text()
+    assert 'text="🔒 بسته شد"' in shared
+    assert 'text="🔒 بسته شد"' in life
+    assert 'text="🔒 بسته شد"' in world
+
+
+def test_world_has_slash_free_explicit_group_triggers():
+    world = Path("apps/teleworld_bot/handlers/world.py").read_text()
+    for trigger in ("تله ورلد", "تله‌ورلد", "پنل جهان"):
+        assert trigger in world
+
+
+def test_today_keyboard_avoids_duplicate_primary_styles():
+    source = Path("apps/telelife_bot/keyboards/main.py").read_text()
+    assert "primary_used=False" in source
+    assert "elif not primary_used" in source
+```
+
 ### `tests\test_fmt.py`
 
 ```python
@@ -16519,6 +17546,44 @@ def test_existing_citizen_gets_actionable_panel():
     assert "kb.citizenship_elsewhere()" in world
     assert 'action == "citizenship_cancel_confirm"' in world
     assert "def citizenship_cancel_confirm" in keyboard
+```
+
+### `tests\test_intergroup_council_2026.py`
+
+```python
+from pathlib import Path
+
+
+def test_vote_threshold_stays_simple_for_all_group_sizes():
+    source=Path("packages/core/services/intergroup_council.py").read_text()
+    assert "return 1 if citizens<=2 else 2 if citizens<=6 else 3" in source
+
+
+def test_only_clear_safe_actions_are_offered():
+    source=Path("packages/core/services/intergroup_council.py").read_text()
+    for action in ("friend","trade_partner","defensive_ally","aid_food","aid_energy","aid_irt"):
+        assert f'"{action}"' in source
+
+
+def test_schema_prevents_duplicate_votes_and_open_duplicates():
+    sql=Path("migrations/0025_intergroup_council.sql").read_text()
+    assert "PRIMARY KEY(proposal_id,country_id,player_id)" in sql
+    assert "uq_country_council_one_open_pair_action" in sql
+
+
+def test_world_routes_every_council_button():
+    keys=Path("apps/teleworld_bot/keyboards.py").read_text()
+    world=Path("apps/teleworld_bot/handlers/world.py").read_text()
+    for action in ("council","councilnew","councilto:","councilmake:","councilview:","councilvote:"):
+        assert action in keys and action in world
+
+
+def test_execution_uses_existing_atomic_trade_service():
+    source=Path("packages/core/services/intergroup_council.py").read_text()
+    assert "country_trade.propose_relation" in source
+    assert "country_trade.accept_relation" in source
+    assert "country_trade.send_aid" in source
+    assert "\"execute\":True" in source
 ```
 
 ### `tests\test_interval_bindings.py`
@@ -17011,6 +18076,29 @@ def test_phase5_critical_policy():
  c=get_config();assert len(c.section('jobs.jobs'))==7;assert c.float_('jobs.production.minimum_collection_fraction_for_xp')==0.05;assert c.bool_('jobs.production.checkpoint_before_upgrade');assert c.bool_('country_missions.daily.instantiate_on_eligible_action');assert c.int_('news.outbox.maximum_attempts')==5;assert c.bool_('national_project.projects.national_storage.once_per_country')
 ```
 
+### `tests\test_plain_message_text_2026_07_28.py`
+
+```python
+from pathlib import Path
+from packages.core.utils.message_text import plain_text
+
+
+def test_legacy_html_tags_are_removed():
+    assert plain_text('سلام <b>دوست</b>؛ <i>خوش آمدی</i>') == 'سلام دوست؛ خوش آمدی'
+
+
+def test_bot_sources_do_not_ship_html_formatting_tags():
+    tags=(' <b>','</b>','<i>','</i>','<code>','</code>')
+    for root in (Path('apps/telelife_bot'),Path('apps/teleworld_bot')):
+        for path in root.rglob('*.py'):
+            source=path.read_text()
+            assert not any(tag in source for tag in tags), path
+
+
+def test_admin_web_html_is_not_affected():
+    assert Path('apps/admin/templates/dashboard.html').exists()
+```
+
 ### `tests\test_production_security.py`
 
 ```python
@@ -17122,6 +18210,46 @@ def test_release_is_declared_done_and_migration_is_additive():
     assert Path("RELEASE_PURPOSEFUL_WORK_FA.md").exists()
     sql=Path("migrations/0015_purposeful_work_loop.sql").read_text()
     assert "DROP TABLE" not in sql and "work_claims" in sql and "IF NOT EXISTS" in sql
+```
+
+### `tests\test_referral_growth_2026.py`
+
+```python
+from pathlib import Path
+
+
+def test_referral_schema_is_one_inviter_per_player():
+ sql=Path("migrations/0026_referral_growth.sql").read_text()
+ assert "invited_player_id BIGINT NOT NULL UNIQUE" in sql
+ assert "CHECK(inviter_player_id<>invited_player_id)" in sql
+
+
+def test_rewards_require_real_activation():
+ source=Path("packages/core/services/referrals.py").read_text()
+ assert "step>=4 and days>=2" in source
+ assert "status='pending'" in source
+ assert "10 minutes" in source
+
+
+def test_rewards_are_idempotent_and_ledgered():
+ source=Path("packages/core/services/referrals.py").read_text()
+ sql=Path("migrations/0026_referral_growth.sql").read_text()
+ assert "PRIMARY KEY(player_id,milestone)" in sql
+ assert "referral_milestone" in source
+ assert "lock_player" in source
+
+
+def test_referral_routes_exist_and_home_stays_simple():
+ life=Path("apps/telelife_bot/handlers/life.py").read_text()
+ keys=Path("apps/telelife_bot/keyboards/main.py").read_text()
+ assert '"referrals"' in keys and "referrals_page" in life and "refclaim" in life
+ assert "start_payload" in life
+
+
+def test_group_growth_entry_exists():
+ keys=Path("apps/teleworld_bot/keyboards.py").read_text()
+ world=Path("apps/teleworld_bot/handlers/world.py").read_text()
+ assert "grow_country" in keys and "grow_country" in world
 ```
 
 ### `tests\test_release_rebuild_regressions.py`
@@ -17364,6 +18492,94 @@ def test_available_grows_with_level():
     assert len(unlocks.available(1)) < len(unlocks.available(50))
 ```
 
+### `tests\test_ux_economy_social_hotfix_2026_07_28.py`
+
+```python
+from pathlib import Path
+
+
+def test_economy_has_usd_and_resource_entries():
+    source=Path("apps/telelife_bot/keyboards/main.py").read_text()
+    assert '"market"' in source[source.index("def economy"):source.index("def savings")]
+    assert '"resources"' in source[source.index("def economy"):source.index("def savings")]
+
+
+def test_resource_sale_is_two_step_and_has_handler():
+    keys=Path("apps/telelife_bot/keyboards/main.py").read_text()
+    life=Path("apps/telelife_bot/handlers/life.py").read_text()
+    assert '"rpick"' in keys and "if a=='rpick':" in life
+    assert "resource_amounts" in keys
+
+
+def test_social_mutations_are_covered_by_access_gate():
+    source=Path("apps/teleworld_bot/handlers/world.py").read_text()
+    gate=source[source.index("MUTATING ="):source.index("async def access_page")]
+    for action in ('"socperson:"','"rgiftpick:"','"rdonatepick:"','"resourcegift"','"resourcedonate"','"socmarriage"'):
+        assert action in gate
+
+
+def test_daily_resource_limits_are_serialized():
+    source=Path("packages/core/services/resource_economy.py").read_text()
+    assert "lock_player(conn,player_id)" in source
+    assert "lock_player(conn,actor)" in source
+
+
+def test_onboarding_does_not_capture_every_world_callback():
+    source=Path("apps/teleworld_bot/handlers/onboarding.py").read_text()
+    register=source[source.index("def register"):]
+    assert 'pattern=r"^tw:"' not in register
+```
+
+### `tests\test_work_salary_resource_social_2026.py`
+
+```python
+"""Contracts for wages, resource sales and group resource interaction."""
+from datetime import UTC,datetime,timedelta
+from pathlib import Path
+from packages.core.config import get_config
+from packages.core.services.production import accrue
+from packages.core.services.resource_economy import ASSETS,spec
+
+class R(dict):
+ __getattr__=dict.__getitem__
+
+def test_every_resource_job_has_a_cash_wage():
+ jobs=get_config().section("jobs.jobs")
+ for job in jobs.values():
+  asset=str(job["output_asset"])
+  if asset!="IRT":assert int(spec(asset)["wage_toman_per_unit"])>0
+
+def test_resource_sale_price_is_below_wage_and_positive():
+ for asset in ASSETS:
+  item=spec(asset)
+  assert 0<int(item["sell_toman_per_unit"])<int(item["wage_toman_per_unit"])
+
+def test_resource_jobs_still_accrue_resources():
+ now=datetime.now(UTC);row=R(job_code="farmer",production_level=1,storage_level=1,stored_amount=0,production_updated_at=now-timedelta(hours=2))
+ assert accrue(row,now).stored==20
+
+def test_salary_and_resource_ledger_legs_are_atomic_in_service():
+ source=Path("packages/core/services/production.py").read_text()
+ assert 'reason="work_cash_salary"' in source
+ assert 'salary_net_toman' in source
+ assert 'asset!=\'IRT\'' in source
+
+def test_social_resource_schema_and_routes_exist():
+ sql=Path("migrations/0024_work_salary_resource_social.sql").read_text()
+ world=Path("apps/teleworld_bot/handlers/world.py").read_text()
+ service=Path("packages/core/services/resource_economy.py").read_text()
+ for table in ("citizen_resource_transfers","player_resource_sales"):assert table in sql
+ for action in ("rgift:","rdonate:"):assert action in world
+ assert "same_country_required" in service
+ assert "daily_gift_units" in service
+
+def test_life_explains_cash_and_resources_separately():
+ source=Path("apps/telelife_bot/handlers/life.py").read_text()
+ assert "حقوق نقدی" in source
+ assert "منبع ذخیره‌شده" in source
+ assert "منابع و فروش" in Path("apps/telelife_bot/keyboards/main.py").read_text()
+```
+
 ### `tests\test_world_access_contracts.py`
 
 ```python
@@ -17512,4 +18728,31 @@ if __name__=="__main__":main()
 - Life دارای خانه مرکزی، مسیر شروع چهارمرحله‌ای، هدف بعدی، کارهای روزانه، شغل، بانک، خانه و بازار است.
 - World دارای خانه مرکزی، وضعیت کشور، شهروندان، اقتصاد و منابع، انتخابات دکمه‌ای، پروژه ملی و شغل شخصی است.
 - Wizard ساخت کشور پیام‌های ورودی کاربر را حذف می‌کند و همان پنل را جلو می‌برد.
+```
+
+### `UX_BEGINNER_REDESIGN_FA_2026-07-28.md`
+
+```markdown
+# بازطراحی تجربه کاربر تازه‌وارد — ۲۸ ژوئیهٔ ۲۰۲۶
+
+## مسئله حل‌شده
+کاربر در نسخه قبل امکانات زیادی می‌دید، اما سریع متوجه نمی‌شد بازی درباره چیست، چرا باید ادامه دهد و قدم بعدی کدام است.
+
+## تغییرات
+- صفحه خانه اکنون در چند خط ارزش بازی را توضیح می‌دهد: شغل، درآمد، رشد شخصیت، دارایی و اثر روی کشور.
+- یک اقدام غالب با عنوان «قدم بعدی من» جایگزین انتخاب‌های هم‌وزن و گیج‌کننده شد.
+- منوی اصلی از ۹ انتخاب تخصصی به دسته‌های قابل‌فهم «کار و درآمد»، «کارهای امروز»، «پول و دارایی»، «کشور من»، «وضعیت من» و «مسیر پیشرفت» ساده شد.
+- صفحه‌های «چرا بازی کنم؟» و «راهنمای یک‌دقیقه‌ای» اضافه شدند.
+- آموزش چهارمرحله‌ای، فایده هر قدم و نتیجه قابل انتظار را پیش از اقدام توضیح می‌دهد.
+- پایان آموزش مستقیماً کاربر را به انتخاب شغل و نخستین چرخه درآمد هدایت می‌کند.
+- صفحه «امروز من» فقط یک بهترین کار را برجسته می‌کند و بقیه وضعیت‌ها را خلاصه نشان می‌دهد.
+- متن و منوی تله‌ورلد روی ارزش بازی گروهی، تصمیم جمعی و مأموریت فعلی کشور متمرکز شد.
+- متن دکمه‌ها از نام فنی بخش‌ها به نتیجه‌ای که کاربر می‌گیرد تغییر کرد.
+- تست‌های رگرسیون درک ارزش، سادگی منو، آموزش نتیجه‌محور و اقدام بعدی یکتا اضافه شدند.
+
+## کنترل کیفیت
+- Parse تمام فایل‌های Python موفق بود.
+- Parse تمام YAMLها موفق بود.
+- پنج قرارداد جدید تجربه تازه‌وارد و قرارداد رنگ‌بندی صفحه‌کلید موفق بودند.
+- اجرای کل pytest به محیط دارای Python 3.13، PostgreSQL و وابستگی‌های پروژه نیاز دارد.
 ```

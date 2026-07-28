@@ -18,7 +18,15 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
     k.row(B("💳 پول و دارایی", "economy", owner), B("🌍 کشور من", "country", owner))
     k.row(B("🪪 وضعیت من", "profile", owner), B("🧭 مسیر پیشرفت", "progress", owner))
     k.row(B("❓ چرا بازی کنم؟", "why", owner), B("📘 راهنمای یک‌دقیقه‌ای", "guide", owner))
+    k.row(B("🎁 دعوت دوست و جایزه", "referrals", owner, style=Style.SUCCESS))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
+    return k.build()
+
+def referrals(owner, invite_url="", claimable=False):
+    k=Keyboard()
+    if invite_url:k.row(url_button("📨 فرستادن لینک دعوت",f"https://t.me/share/url?url={invite_url}",style=Style.PRIMARY))
+    if claimable:k.row(B("🎁 دریافت جایزه آماده","refclaim",owner,style=Style.SUCCESS))
+    k.row(B("🔵 تازه‌سازی","referrals",owner),B("🏠 خانه","home",owner))
     return k.build()
 
 def journey(owner, step):
@@ -47,8 +55,10 @@ def missions(owner, keys):
     return k.build()
 
 def economy(owner):
-    return (Keyboard().row(B("🏦 مدیریت پس‌انداز", "savings", owner, style=Style.PRIMARY), B("🧾 پرداخت هزینه زندگی", "living", owner, style=Style.SUCCESS))
-            .row(B("🏠 انتخاب خانه", "housing", owner), B("🏠 منوی اصلی", "home", owner)).build())
+    return (Keyboard()
+            .row(B("🔵 مدیریت پس‌انداز", "savings", owner, style=Style.PRIMARY), B("🟡 پرداخت هزینه زندگی", "living", owner, style=Style.SUCCESS))
+            .row(B("🏠 انتخاب خانه", "housing", owner), B("🟣 بازار دلار", "market", owner))
+            .row(B("📦 منابع و فروش", "resources", owner), B("🏠 خانه", "home", owner)).build())
 
 def savings(owner):
     return (Keyboard().row(B("واریز ۵۰ هزار", "deposit", owner, "50000", Style.PRIMARY), B("برداشت ۵۰ هزار", "withdraw", owner, "50000"))
@@ -78,24 +88,28 @@ def jobs(owner, has_job, unlocked=True):
     return k.build()
 
 def resources(owner, rows):
-    k=Keyboard();emphasized=False
-    for item in rows:
-        if int(item["quantity"])<=0:continue
-        for amount in (10,50,100,500):
-            if amount<=int(item["quantity"]):
-                style=Style.PRIMARY if not emphasized else Style.SUCCESS
-                emphasized=True
-                k.row(B(f"فروش {amount} {item['title']}","rsell",owner,f"{item['asset']},{amount}",style))
-    k.row(B("🔄 تازه‌سازی موجودی","resources",owner),B("💼 بازگشت به شغل","jobs",owner))
+    """Show resource categories first, then amounts, to keep the panel compact."""
+    k=Keyboard();owned=[item for item in rows if int(item["quantity"])>0]
+    for item in owned:
+        k.row(B(f"🟣 {item['title']} · {item['quantity']} واحد","rpick",owner,str(item["asset"])))
+    if not owned:k.row(B("💼 رفتن به کار و تولید","jobs",owner,style=Style.SUCCESS))
+    k.row(B("🔵 تازه‌سازی","resources",owner,style=Style.PRIMARY),B("🏠 خانه","home",owner))
+    return k.build()
+
+def resource_amounts(owner,item):
+    k=Keyboard();quantity=int(item["quantity"]);asset=str(item["asset"])
+    amounts=[x for x in (10,50,100,500) if x<=quantity]
+    for i in range(0,len(amounts),2):
+        k.row(*[B(f"🟡 فروش {x} واحد","rsell",owner,f"{asset},{x}",Style.PRIMARY if x==amounts[-1] else Style.GLASS) for x in amounts[i:i+2]])
+    k.row(B("↩️ منابع","resources",owner))
     return k.build()
 
 def market(owner, unlocked=True):
-    k = Keyboard()
-    if not unlocked:
-        return k.row(B("🎯 رفتن به کارهای امروز", "missions", owner, style=Style.PRIMARY)).row(B("🏠 خانه", "home", owner)).build()
-    return (k.row(B("خرید ۱۰ دلار", "mbuy", owner, "1000", Style.PRIMARY), B("فروش ۱۰ دلار", "msell", owner, "1000"))
-            .row(B("خرید ۵۰ دلار", "mbuy", owner, "5000"), B("فروش ۵۰ دلار", "msell", owner, "5000"))
-            .row(B("🔄 تازه‌سازی", "market", owner), B("🏠 خانه", "home", owner)).build())
+    k=Keyboard()
+    if not unlocked:return k.row(B("🎯 رفتن به کارهای امروز","missions",owner,style=Style.PRIMARY)).row(B("🏠 خانه","home",owner)).build()
+    return (k.row(B("🟣 خرید ۱۰ دلار","mbuy",owner,"1000",Style.PRIMARY),B("🟡 فروش ۱۰ دلار","msell",owner,"1000"))
+            .row(B("🟣 خرید ۵۰ دلار","mbuy",owner,"5000"),B("🟡 فروش ۵۰ دلار","msell",owner,"5000",Style.SUCCESS))
+            .row(B("🔵 تازه‌سازی","market",owner),B("🏠 خانه","home",owner)).build())
 
 
 def progress(owner):

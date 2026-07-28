@@ -30,13 +30,13 @@ async def economy_panel(ctx,context):
  await send_panel(context,ctx.message,text,kb.economy_panel(ctx.telegram_id),"profile",edit=True)
 async def savings(ctx,context):
  v=await personal_economy.view(ctx.player.id)
- await send_panel(context,ctx.message,f"🏦 <b>پس‌انداز امن</b>\n\nکیف پول: <b>{fmt.toman(v.wallet)}</b>\nپس‌انداز: <b>{fmt.toman(v.savings)}</b>\n\nمبلغ را انتخاب کن.",kb.savings_panel(ctx.telegram_id),"profile",edit=True)
+ await send_panel(context,ctx.message,f"🏦 پس‌انداز امن\n\nکیف پول: {fmt.toman(v.wallet)}\nپس‌انداز: {fmt.toman(v.savings)}\n\nمبلغ را انتخاب کن.",kb.savings_panel(ctx.telegram_id),"profile",edit=True)
 async def housing(ctx,context):
- await send_panel(context,ctx.message,"🏠 <b>خانه و زندگی</b>\n\nخانه بهتر هزینه زندگی بیشتری دارد، اما مسیر رشد شخصیتت را کامل می‌کند. اجاره هفت‌روزه است؛ خرید دائمی.",kb.housing_panel(ctx.telegram_id),"profile",edit=True)
+ await send_panel(context,ctx.message,"🏠 خانه و زندگی\n\nخانه بهتر هزینه زندگی بیشتری دارد، اما مسیر رشد شخصیتت را کامل می‌کند. اجاره هفت‌روزه است؛ خرید دائمی.",kb.housing_panel(ctx.telegram_id),"profile",edit=True)
 async def jobs(ctx,context):
  row=await production_repo.get(ctx.player.id)
  if row:
-  a=production.accrue(row,__import__('datetime').datetime.now(__import__('datetime').UTC)); body=f"شغل: <b>{row['job_code']}</b>\nتولید ذخیره‌شده: <b>{fmt.number(a.stored)} / {fmt.number(a.capacity)}</b>\nنرخ: <b>{a.rate:.1f}</b> در ساعت\nسطح تولید: <b>{fmt.number(row['production_level'])}</b> · انبار: <b>{fmt.number(row['storage_level'])}</b>"
+  a=production.accrue(row,__import__('datetime').datetime.now(__import__('datetime').UTC)); body=f"شغل: {row['job_code']}\nتولید ذخیره‌شده: {fmt.number(a.stored)} / {fmt.number(a.capacity)}\nنرخ: {a.rate:.1f} در ساعت\nسطح تولید: {fmt.number(row['production_level'])} · انبار: {fmt.number(row['storage_level'])}"
  else: body="هنوز شغلی نداری. از بین گزینه‌ها خودت شغلی را انتخاب کن که به سبک بازیت می‌خورد."
  await send_panel(context,ctx.message,fa.JOBS_PANEL.format(body=body),kb.jobs_panel(ctx.telegram_id,bool(row)),"profile",edit=True)
 async def market(ctx,context):

@@ -5,6 +5,7 @@ panel and retires the previous keyboard first, so stale controls cannot mutate
 state or clutter the conversation.
 """
 from __future__ import annotations
+from packages.core.utils.message_text import plain_text
 
 import logging
 from telegram import Message
@@ -52,6 +53,7 @@ async def show(
     message: Message | None = None,
     force_new: bool = False,
 ):
+    text = plain_text(text)
     state = await ui_state_repo.ensure_life(player_id)
     target: Message | None = None
 
