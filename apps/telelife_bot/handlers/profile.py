@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from telegram import Update
+from html import escape
 from telegram.ext import CommandHandler, ContextTypes
 
 from apps.telelife_bot.texts import fa
@@ -26,7 +27,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not player.playable:
         text = (
-            fa.BANNED.format(reason=player.ban_reason or fa.NO_REASON)
+            fa.BANNED.format(reason=escape(player.ban_reason or fa.NO_REASON))
             if player.is_banned
             else fa.FROZEN
         )
@@ -37,7 +38,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await message.reply_text(
         fa.PROFILE.format(
-            name=player.first_name,
+            name=escape(player.first_name),
             level=fmt.number(player.level),
             prestige=fmt.number(player.prestige),
             xp_bar=fmt.progress_bar(current_xp, needed),

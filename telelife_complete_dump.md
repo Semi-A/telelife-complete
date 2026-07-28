@@ -3853,6 +3853,7 @@ from packages.core.services import country as countries, economy, elections, nat
 from packages.core.services import world_access
 from packages.core.utils import fmt
 from packages.core.utils.message_text import plain_text
+from packages.core.config import get_config
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
 FLOW = "world_creation"

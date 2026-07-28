@@ -38,5 +38,6 @@ def test_release_b_migration_is_additive_and_numbered_after_release_a():
 def test_scheduler_and_production_are_connected():
  scheduler=Path("apps/scheduler/main.py").read_text(encoding="utf-8")
  production=Path("packages/core/services/production.py").read_text(encoding="utf-8")
- assert 'scheduler_ops.run("country_economy_b"' in scheduler
+ assert '("country_economy_b", country_economy_b.catch_up)' in scheduler
+ assert 'await scheduler_ops.run(name, job)' in scheduler
  assert "production_modifier_bp" in production

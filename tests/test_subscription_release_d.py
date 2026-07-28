@@ -13,7 +13,8 @@ def test_ads_skip_subscribed_world_groups():
  assert "ad_free_until IS NULL OR ad_free_until<=now()" in text
 def test_stars_settlement_is_idempotent():
  text=(ROOT/'packages/core/services/commerce.py').read_text()
- assert "if payment[\"status\"]=='paid':return payment[\"purpose\"]" in text
+ assert "if payment[\"status\"]=='paid':" in text
+ assert "payment_charge_mismatch" in text
 def test_no_gameplay_power_is_granted():
  migration=(ROOT/'migrations/0010_stars_subscriptions_ad_marketplace.sql').read_text()
  assert 'ad_free_until' in migration

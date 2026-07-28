@@ -1,6 +1,7 @@
 """Guided private ad request flow and Telegram Stars settlement."""
 from __future__ import annotations
 from datetime import UTC,datetime
+from html import escape
 from telegram import InlineKeyboardButton,InlineKeyboardMarkup,LabeledPrice,Update
 from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,PreCheckoutQueryHandler,filters
 from packages.core.repositories import player_repo
@@ -23,14 +24,14 @@ async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
   p=await player_repo.get_by_telegram_id(q.from_user.id);rows=await commerce.player_ads(p.id) if p else []
   buttons=[];lines=["📂 درخواست‌های من"]
   for row in rows:
-   lines.append(f"#{row['id']} · {row['title']} · {row['status']}"+(f"\nیادداشت: {row['admin_note']}" if row['admin_note'] else ""))
+   lines.append(f"#{row['id']} · {escape(str(row['title']))} · {escape(str(row['status']))}"+(f"\nیادداشت: {escape(str(row['admin_note']))}" if row['admin_note'] else ""))
    if row['status']=='changes_requested':buttons.append([InlineKeyboardButton(f"✏️ اصلاح #{row['id']}",callback_data=f"ad:revise:{row['id']}")])
   buttons.append([InlineKeyboardButton("درخواست تازه",callback_data="ad:new")]);await q.answer();await q.edit_message_text("\n\n".join(lines) if rows else "درخواستی نداری.",reply_markup=keyboard(buttons));return
  if action[1]=="new":await q.answer();await q.edit_message_text("بسته را انتخاب کن.",reply_markup=menu());return
  if action[1]=="revise":
   p=await player_repo.get_by_telegram_id(q.from_user.id);row=await commerce.revision_source(int(action[2]),p.id) if p else None
   if not row:await q.answer("این درخواست قابل اصلاح نیست.",show_alert=True);return
-  context.user_data[FLOW]={"step":"title","package":row['package_code'],"channel":row['channel'],"revision_id":row['id']};await q.answer();await q.edit_message_text(f"عنوان اصلاح‌شده را بفرست.\nعنوان فعلی: {row['title']}");return
+  context.user_data[FLOW]={"step":"title","package":row['package_code'],"channel":row['channel'],"revision_id":row['id']};await q.answer();await q.edit_message_text(f"عنوان اصلاح‌شده را بفرست.\nعنوان فعلی: {escape(str(row['title']))}");return
  if action[1]=="pkg":await q.answer();await q.edit_message_text("محل نمایش تبلیغ را انتخاب کن. قیمت نهایی بر اساس کانال محاسبه می‌شود.",reply_markup=channels(action[2]));return
  if action[1]=="channel":context.user_data[FLOW]={"step":"title","package":action[2],"channel":action[3]};await q.answer();await q.edit_message_text(f"قیمت نهایی: {commerce.ad_price(action[2],action[3])} ⭐\n\nعنوان کوتاه تبلیغ را بفرست (۳ تا ۱۲۰ نویسه).")
 async def text(update:Update,context:ContextTypes.DEFAULT_TYPE):

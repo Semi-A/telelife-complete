@@ -359,9 +359,14 @@ async def reject_ad_request(ad_id:int,body:AdRejectBody,actor:AdminActor)->dict[
 async def pause_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:return {"paused":bool(await commerce.pause_ad(ad_id))}
 @router.post("/ad-requests/{ad_id}/refund")
 async def refund_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:
- row=await commerce.refundable(ad_id)
- if not row:raise HTTPException(409,"پس از نخستین پخش، بازپرداخت خودکار مجاز نیست.")
+ row=await commerce.begin_refund(ad_id,actor.username)
+ if not row:raise HTTPException(409,"پس از نخستین پخش یا در وضعیت فعلی، بازپرداخت مجاز نیست.")
  from telegram import Bot
- async with Bot(get_settings().telelife_bot_token) as bot:ok=await bot.refund_star_payment(user_id=row["telegram_id"],telegram_payment_charge_id=row["telegram_charge_id"])
- if ok:await commerce.mark_refunded(ad_id)
+ try:
+  async with Bot(get_settings().telelife_bot_token) as bot:
+   ok=await bot.refund_star_payment(user_id=row["telegram_id"],telegram_payment_charge_id=row["telegram_charge_id"])
+ except Exception:
+  await commerce.finish_refund(ad_id,False)
+  raise
+ await commerce.finish_refund(ad_id,bool(ok))
  return {"refunded":bool(ok)}

@@ -2,41 +2,25 @@ from packages.core.db import migrator
 
 
 def test_migrations_discovered_and_ordered():
-    files = migrator.discover()
-    assert files, "no migration files found"
-    names = [p.name for p in files]
-    assert names == sorted(names)
+    names = [path.name for path in migrator.discover()]
+    assert names and names == sorted(names)
     assert names[0].startswith("0001")
+    assert names[-1].startswith("0027")
 
 
 def test_checksum_is_stable():
-    a = migrator._checksum("SELECT 1;")
-    b = migrator._checksum("SELECT 1;")
-    assert a == b and len(a) == 16
-
-def test_only_pre_normalization_migrations_are_legacy_compatible():
-    assert migrator.LEGACY_CHECKSUM_VERSIONS == {
-        "0001_core_schema", "0002_progression", "0003_country_layer",
-        "0004_admin_command_center", "0005_life_world_hardening",
-        "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
-        "0008_world_access_lifecycle", "0009_ads_governance_moderation",
-        "0010_stars_subscriptions_ad_marketplace",
-        "0011_population_channels_migration",
-        "0012_reliability_live_market_engagement",
-        "0013_country_identity_candles_realism",
-        "0014_free_tier_hardening",
-    }
-    assert "0015_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert migrator._checksum("SELECT 1;") == migrator._checksum("SELECT 1;")
+    assert len(migrator._checksum("SELECT 1;")) == 16
 
 
-def test_new_migrations_remain_checksum_strict():
-    source = (migrator.Path(migrator.__file__)).read_text(encoding="utf-8")
-    assert "if version in LEGACY_CHECKSUM_VERSIONS" in source
+def test_recovered_history_ends_before_new_strict_migrations():
+    assert migrator.RECOVERED_BASELINE_END == "0026_referral_growth"
+    assert migrator.STRICT_CHECKSUM_FROM == "0027_"
+    assert migrator._is_recovered_history("0023_country_social_life")
+    assert not migrator._is_recovered_history("0027_production_integrity_hardening")
+
+
+def test_applied_new_migrations_remain_immutable():
+    source = migrator.Path(migrator.__file__).read_text(encoding="utf-8")
     assert "Create a new migration instead of editing history" in source
-
-def test_recovered_0021_and_0022_are_legacy_but_0023_is_strict():
-    from packages.core.db import migrator
-    assert "0021_multi_admin_hardening" in migrator.LEGACY_CHECKSUM_VERSIONS
-    assert "0022_ui_panel_expiry" in migrator.LEGACY_CHECKSUM_VERSIONS
-    assert migrator.STRICT_CHECKSUM_FROM == "0023_country_social_life"
-    assert "0023_country_social_life" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "await conn.execute(sql)" in source

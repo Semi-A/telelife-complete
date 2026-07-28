@@ -206,3 +206,26 @@ async def update_identity(
              "password_changed": password is not None},
         )
     return dict(row)
+
+async def authentication_blocked(throttle_key: str) -> bool:
+    return bool(await db.fetchval(
+        "SELECT blocked_until>now() FROM admin_auth_throttle WHERE throttle_key=$1",
+        throttle_key,
+    ))
+
+
+async def record_authentication_failure(throttle_key: str) -> None:
+    await db.execute(
+        """INSERT INTO admin_auth_throttle(throttle_key,failures,first_failed_at,blocked_until,updated_at)
+           VALUES($1,1,now(),NULL,now())
+           ON CONFLICT(throttle_key) DO UPDATE SET
+             failures=CASE WHEN admin_auth_throttle.first_failed_at<now()-interval '15 minutes' THEN 1 ELSE admin_auth_throttle.failures+1 END,
+             first_failed_at=CASE WHEN admin_auth_throttle.first_failed_at<now()-interval '15 minutes' THEN now() ELSE admin_auth_throttle.first_failed_at END,
+             blocked_until=CASE WHEN (CASE WHEN admin_auth_throttle.first_failed_at<now()-interval '15 minutes' THEN 1 ELSE admin_auth_throttle.failures+1 END)>=8 THEN now()+interval '15 minutes' ELSE admin_auth_throttle.blocked_until END,
+             updated_at=now()""",
+        throttle_key,
+    )
+
+
+async def clear_authentication_failures(throttle_key: str) -> None:
+    await db.execute("DELETE FROM admin_auth_throttle WHERE throttle_key=$1", throttle_key)

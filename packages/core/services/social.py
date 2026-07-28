@@ -1,6 +1,7 @@
 """Consent-first social interactions for citizens of the same country."""
 from __future__ import annotations
 from packages.core import db
+from packages.core.repositories import ledger_repo
 
 HELP_AMOUNTS={10_000,50_000,100_000,200_000}
 CATEGORIES={"harassment","fraud","threat","spam","other"}
@@ -67,16 +68,22 @@ async def divorce(actor:int):
 async def help(actor:int,target:int,amount:int,key:str):
  if amount not in HELP_AMOUNTS:raise ValueError("invalid_amount")
  async with db.transaction() as conn:
+  # Serialize outgoing help so retries and the daily limit are exact.
+  helper=await ledger_repo.lock_player(conn,actor)
+  if not helper:raise ValueError("player_not_found")
   previous=await conn.fetchrow("SELECT * FROM citizen_help_events WHERE idempotency_key=$1",key)
   if previous:return previous
   country=await require_peers(conn,actor,target)
-  helper=await conn.fetchrow("SELECT wallet_toman FROM players WHERE id=$1 FOR UPDATE",actor)
   if int(helper["wallet_toman"])<amount:raise ValueError("insufficient_balance")
   daily=int(await conn.fetchval("SELECT count(*) FROM citizen_help_events WHERE helper_id=$1 AND created_at>=date_trunc('day',now())",actor) or 0)
   if daily>=3:raise ValueError("help_daily_limit")
   rep=1 if daily<2 else 0
-  await conn.execute("UPDATE players SET wallet_toman=wallet_toman-$2,reputation=LEAST(1000,reputation+$3) WHERE id=$1",actor,amount,rep)
-  await conn.execute("UPDATE players SET wallet_toman=wallet_toman+$2 WHERE id=$1",target,amount)
+  debit=await ledger_repo.change_player(conn,actor,"IRT",-amount)
+  credit=await ledger_repo.change_player(conn,target,"IRT",amount)
+  await conn.execute("UPDATE players SET reputation=LEAST(1000,reputation+$2) WHERE id=$1",actor,rep)
+  debit_ok=await ledger_repo.insert(conn,player_id=actor,country_id=None,key=f"{key}:debit",reason="citizen_help",asset="IRT",account="wallet",amount=-amount,balance=debit,metadata={"recipient_id":target,"country_id":country})
+  credit_ok=await ledger_repo.insert(conn,player_id=target,country_id=None,key=f"{key}:credit",reason="citizen_help_received",asset="IRT",account="wallet",amount=amount,balance=credit,metadata={"helper_id":actor,"country_id":country})
+  if not (debit_ok and credit_ok):raise RuntimeError("citizen_help_ledger_conflict")
   return await conn.fetchrow("INSERT INTO citizen_help_events(country_id,helper_id,recipient_id,amount_toman,reputation_awarded,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",country,actor,target,amount,rep,key)
 
 async def challenge(actor:int,target:int):

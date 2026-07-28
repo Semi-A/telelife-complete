@@ -18,7 +18,7 @@ def test_all_python_files_parse():
 def test_no_shell_heredoc_fragments_in_source():
     banned = ("cat >", "<<'PY'", '<<"PY"', "\nEOF\n")
     for path in [*ROOT.rglob("*.py"), *ROOT.rglob("*.sql")]:
-        if path == Path(__file__):
+        if path.resolve() == Path(__file__).resolve():
             continue
         text = path.read_text(encoding="utf-8")
         assert not any(token in text for token in banned), path

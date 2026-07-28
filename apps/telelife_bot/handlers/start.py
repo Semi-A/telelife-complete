@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from telegram import Update
+from html import escape
 from telegram.ext import CommandHandler, ContextTypes
 
 from apps.telelife_bot.handlers.common import resolve
@@ -27,12 +28,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if existing is None:
         cfg = get_config()
         text = fa.WELCOME_NEW.format(
-            name=ctx.player.first_name,
+            name=escape(ctx.player.first_name),
             wallet=fmt.toman(cfg.int_("economy.starting_balance.wallet_toman")),
         )
     else:
         text = fa.WELCOME_BACK.format(
-            name=ctx.player.first_name,
+            name=escape(ctx.player.first_name),
             level=fmt.number(ctx.player.level),
             wallet=fmt.toman(ctx.player.wallet_toman),
         )

@@ -72,16 +72,17 @@ class SchedulerService:
         while not stop.is_set():
             if await _sleep_or_stop(stop, seconds_until_daily()):
                 return
-            try:
-                await daily_reset.run()
-                await usd_market.daily_rollover()
-                await country_jobs.daily_events()
-                await scheduler_ops.run("country_economy_b", country_economy_b.catch_up)
-                await scheduler_ops.run("country_realism", country_realism.daily_tick)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("daily jobs failed; scheduler remains active")
+            jobs = (
+                ("daily_reset", daily_reset.run),
+                ("usd_market_rollover", usd_market.daily_rollover),
+                ("country_daily_events", country_jobs.daily_events),
+                ("country_economy_b", country_economy_b.catch_up),
+                ("country_realism", country_realism.daily_tick),
+            )
+            for name, job in jobs:
+                if stop.is_set():
+                    return
+                await scheduler_ops.run(name, job)
 
     async def run(self, stop: asyncio.Event) -> None:
         self._running = True

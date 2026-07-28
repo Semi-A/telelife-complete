@@ -12,20 +12,31 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
   if chat_id is None:return
   if event_type=="marketplace_ad":
    from packages.core import db
-   ad=await db.fetchrow("SELECT * FROM ad_requests WHERE id=$1",payload["ad_id"])
-   if not ad:return
-   if payload.get("destination_type")=="world":
-    protected=await db.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
-    if protected:
-     await db.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
+   async with db.transaction() as conn:
+    ad=await conn.fetchrow("SELECT * FROM ad_requests WHERE id=$1 FOR UPDATE",payload["ad_id"])
+    if not ad:return
+    if ad["status"]!='active':
+     await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1 AND status<>'sent'",payload["delivery_id"])
+     return
+    claimed=await conn.fetchval("UPDATE ad_deliveries SET status='sending' WHERE id=$1 AND status IN ('queued','sending') RETURNING id",payload["delivery_id"])
+    if not claimed:return
+    if payload.get("destination_type")=="world":
+     protected=await conn.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
+     if protected:
+      await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
    text=f"📣 <b>{escape(str(ad['title']))}</b>\n\n{escape(str(ad['description']))}\n\n🔗 {escape(str(ad['target_url']))}"
-   if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+str(ad['target_url'])[:45]
+   if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+escape(str(ad['target_url'])[:45])
    sender_bot=life_bot if payload.get("destination_type")=="life" and life_bot is not None else bot
-   if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
-   else:await sender_bot.send_message(chat_id=chat_id,text=text)
-   await db.execute("UPDATE ad_deliveries SET status='sent',sent_at=now() WHERE id=$1",payload["delivery_id"])
-   await db.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
-   await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
+   try:
+    if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
+    else:await sender_bot.send_message(chat_id=chat_id,text=text)
+   except Exception:
+    await db.execute("UPDATE ad_deliveries SET status='queued' WHERE id=$1 AND status='sending'",payload["delivery_id"])
+    raise
+   async with db.transaction() as conn:
+    await conn.execute("UPDATE ad_deliveries SET status='sent',sent_at=now() WHERE id=$1 AND status='sending'",payload["delivery_id"])
+    await conn.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
+    await conn.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND status='active' AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued','sending'))",payload["ad_id"])
    return
   if event_type == 'daily_event':
    text=str(payload.get('text') or news.daily_event_text(payload.get('event_code')))
