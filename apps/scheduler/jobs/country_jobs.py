@@ -1,5 +1,6 @@
 """Country minute/daily jobs; all operations are retry-safe."""
 from __future__ import annotations
+from html import escape
 from telegram import Bot
 from packages.core.services import country_economy,elections,news,commerce,country_identity
 async def resolve_due()->dict[str,int]:return await elections.resolve_due()
@@ -17,7 +18,7 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
     protected=await db.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
     if protected:
      await db.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
-   text=f"📣 <b>{ad['title']}</b>\n\n{ad['description']}\n\n🔗 {ad['target_url']}"
+   text=f"📣 <b>{escape(str(ad['title']))}</b>\n\n{escape(str(ad['description']))}\n\n🔗 {escape(str(ad['target_url']))}"
    if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+str(ad['target_url'])[:45]
    sender_bot=life_bot if payload.get("destination_type")=="life" and life_bot is not None else bot
    if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
@@ -26,7 +27,10 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
    await db.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
    await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
    return
-  text=str(payload.get('text') or payload.get('event_code') or payload.get('mission_key') or event_type)
+  if event_type == 'daily_event':
+   text=str(payload.get('text') or news.daily_event_text(payload.get('event_code')))
+  else:
+   text=str(payload.get('text') or payload.get('mission_key') or '📢 یک خبر تازه منتشر شد.')
   destination=await country_identity.destination(chat_id)
   if destination:
    if not destination['country_id']:

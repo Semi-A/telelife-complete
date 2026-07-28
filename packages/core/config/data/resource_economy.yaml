@@ -1,0 +1,26 @@
+assets:
+  food:
+    title: "محصول کشاورزی"
+    wage_toman_per_unit: 1400
+    sell_toman_per_unit: 1100
+  minerals:
+    title: "مواد معدنی"
+    wage_toman_per_unit: 1800
+    sell_toman_per_unit: 1450
+  technology:
+    title: "فناوری"
+    wage_toman_per_unit: 3200
+    sell_toman_per_unit: 2600
+  energy:
+    title: "انرژی"
+    wage_toman_per_unit: 2100
+    sell_toman_per_unit: 1700
+market:
+  fee_percent: 5
+  allowed_amounts: [10, 50, 100, 500]
+  daily_sell_units: 5000
+social:
+  allowed_amounts: [10, 50, 100, 500]
+  daily_gift_units: 1000
+  daily_country_donation_units: 2000
+  reputation_first_transfers: 3

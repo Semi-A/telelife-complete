@@ -1,5 +1,6 @@
 """Retry-safe delivery of Telegram actions without extra infrastructure."""
 from __future__ import annotations
+from html import escape
 import logging
 from typing import Any
 from uuid import uuid4
@@ -24,7 +25,7 @@ async def deliver_batch(life_bot: Bot, world_bot: Bot) -> dict[str,int]:
             bot=life_bot if row["bot_name"]=="telelife" else world_bot
             payload=row["payload"]
             if row["action"]=="send_message":
-                await bot.send_message(chat_id=row["chat_id"],text=str(payload["text"]))
+                await bot.send_message(chat_id=row["chat_id"],text=escape(str(payload["text"])))
             elif row["action"]=="send_invoice":
                 await bot.send_invoice(chat_id=row["chat_id"],title=str(payload["title"]),
                     description=str(payload["description"]),payload=str(payload["invoice_payload"]),

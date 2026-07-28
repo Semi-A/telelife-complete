@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 274
+تعداد کل فایل‌ها: 281
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -104,7 +104,8 @@ telelife_complete/
 │   ├── 0019_life_progression_system.sql
 │   ├── 0020_admin_operations_10.sql
 │   ├── 0021_multi_admin_hardening.sql
-│   └── 0022_ui_panel_expiry.sql
+│   ├── 0022_ui_panel_expiry.sql
+│   └── 0023_country_social_life.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -195,6 +196,7 @@ telelife_complete/
 │   │   │   ├── production.py
 │   │   │   ├── progression.py
 │   │   │   ├── scheduler_ops.py
+│   │   │   ├── social.py
 │   │   │   ├── unlocks.py
 │   │   │   ├── usd_market.py
 │   │   │   ├── world_access.py
@@ -230,6 +232,7 @@ telelife_complete/
 │   ├── test_content_filter.py
 │   ├── test_country_economy_b.py
 │   ├── test_country_realism_contracts.py
+│   ├── test_country_social_release.py
 │   ├── test_country_trade_release_c.py
 │   ├── test_daily.py
 │   ├── test_deep_audit_regressions.py
@@ -242,6 +245,7 @@ telelife_complete/
 │   ├── test_interval_bindings.py
 │   ├── test_ledger_owner_regressions.py
 │   ├── test_life_progression_system.py
+│   ├── test_life_ux_2026.py
 │   ├── test_live_market.py
 │   ├── test_market_chart_contracts.py
 │   ├── test_message_driven_bots.py
@@ -289,6 +293,7 @@ telelife_complete/
 ├── dump.py
 ├── HOTFIX_2026-07-27_FA.md
 ├── HOTFIX_LEDGER_OWNER_FA_2026-07-27.md
+├── HOTFIX_MIGRATOR_0021_0022_FA.md
 ├── LIFE_PROGRESSION_RELEASE_FA.md
 ├── MANIFEST.sha256
 ├── pyproject.toml
@@ -301,6 +306,7 @@ telelife_complete/
 ├── RELEASE_B_REPORT_FA.md
 ├── RELEASE_C_REPORT_FA.md
 ├── RELEASE_COMMERCE_FA.md
+├── RELEASE_COUNTRY_SOCIAL_FA.md
 ├── RELEASE_HARDENING_FA.md
 ├── RELEASE_NATIONAL_PROJECTS_MISSIONS_FA.md
 ├── RELEASE_NOTES_FA.md
@@ -308,6 +314,7 @@ telelife_complete/
 ├── RELEASE_REBUILD_2026-07-27_FA.md
 ├── RELEASE_SCALING_MIGRATION_FA.md
 ├── RELEASE_UX_COMPLETE_FA.md
+├── RELEASE_UX_GLASS_2026_FA.md
 ├── RELEASE_V2_FA.md
 ├── render.yaml
 ├── requirements.txt
@@ -619,7 +626,7 @@ from pydantic import BaseModel, Field
 
 from apps.admin.auth import AdminPrincipal, require_admin
 from packages.core.repositories import admin_repo
-from packages.core.services import admin, admin_accounts, admin_security, commerce, live_market, scheduler_ops, engagement
+from packages.core.services import admin, admin_accounts, admin_security, commerce, live_market, scheduler_ops, engagement, social
 from packages.core.settings import get_settings
 
 AdminActor = Annotated[AdminPrincipal, Depends(require_admin)]
@@ -756,6 +763,21 @@ async def incidents(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,
 async def incident_update(incident_id:int,body:IncidentBody,actor:AdminActor)->dict[str,object]:
     row=await admin_repo.update_incident(incident_id,body.status,actor.username,body.note)
     if not row:raise HTTPException(404,"رخداد پیدا نشد.")
+    return dict(row)
+
+class SocialReportBody(BaseModel):
+    status: Literal["reviewed","closed"]
+
+@router.get("/social-reports")
+async def social_reports(limit:Annotated[int,Query(ge=1,le=500)]=100)->list[dict[str,object]]:
+    return [dict(x) for x in await social.admin_reports(limit)]
+
+@router.patch("/social-reports/{report_id}")
+async def social_report_update(report_id:int,body:SocialReportBody,actor:AdminActor)->dict[str,object]:
+    row=await social.review_report(report_id,body.status)
+    if not row:raise HTTPException(404,"گزارش پیدا نشد.")
+    from packages.core import db
+    await db.execute("INSERT INTO audit_log(actor,action,target_id,payload) VALUES($1,'social_report_review',$2,jsonb_build_object('status',$3::text))",actor.username,report_id,body.status)
     return dict(row)
 
 @router.get("/anomalies")
@@ -1480,7 +1502,7 @@ from apps.scheduler.jobs import country_jobs, daily_reset
 from packages.core import db
 from packages.core.repositories import admin_repo
 from packages.core.settings import Settings
-from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance
+from packages.core.services import usd_market, live_market, scheduler_ops, engagement, country_realism, country_economy_b, country_trade, action_outbox, maintenance, social
 
 logger = logging.getLogger(__name__)
 
@@ -1518,6 +1540,7 @@ class SchedulerService:
                     ("commerce", country_jobs.run_commerce),
                     ("country_trade_expiry", country_trade.expire_due),
                     ("country_relation_expiry", country_trade.expire_relations),
+                    ("country_social_resolution", social.resolve_due),
                     ("publish_news", lambda: country_jobs.publish_news(bot, life_bot)),
                     ("telegram_actions", lambda: action_outbox.deliver_batch(life_bot, bot)),
                     ("maintenance", maintenance.minute_tick),
@@ -1873,34 +1896,35 @@ from telegram import Update
 from telegram.ext import CallbackQueryHandler,CommandHandler,ContextTypes,MessageHandler,filters
 from apps.telelife_bot.handlers.common import guard_callback,resolve
 from apps.telelife_bot.handlers import ux
-from apps.telelife_bot.handlers.panel import show
+from apps.telelife_bot.handlers.panel import retire_message, show
 from apps.telelife_bot.keyboards import main as kb
 from apps.telelife_bot.texts import fa
 from packages.core.config import get_config
 from packages.core.bot.start_limit import allow_start
-from packages.core.repositories import player_repo,progression_repo,production_repo,ui_state_repo
-from packages.core.services import daily,life_progression,missions,personal_economy,production,progression,unlocks,usd_market,xp
+from packages.core.repositories import country_repo,player_repo,progression_repo,production_repo,ui_state_repo
+from packages.core.services import daily,life_progression,migration,missions,personal_economy,production,progression,unlocks,usd_market,xp
 from packages.core.utils import fmt
 
 JOB_FA={"farmer":"کشاورز","miner":"معدن‌کار","trader":"بازرگان","journalist":"روزنامه‌نگار","doctor":"پزشک","programmer":"برنامه‌نویس","engineer":"مهندس"}
 ASSET_FA={"IRT":"تومان","USD":"دلار","food":"محصول کشاورزی","minerals":"مواد معدنی","technology":"فناوری","energy":"انرژی"}
 SHIFT_FA={"safe":"امن","balanced":"متعادل","national":"ملی","private":"خصوصی"}
 SKILL_FA={"agriculture":"کشاورزی","extraction":"استخراج","commerce":"تجارت","media":"رسانه","medicine":"پزشکی","software":"نرم‌افزار","engineering":"مهندسی"}
-ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری."}
+ERR={"amount_out_of_bounds":"مبلغ خارج از محدوده مجاز است.","invalid_housing":"این خانه معتبر نیست.","market_not_initialized":"بازار هنوز راه‌اندازی نشده است.","invalid_upgrade":"نوع ارتقا معتبر نیست.","player_not_found":"بازیکن پیدا نشد.","insufficient_balance":"موجودی کافی نیست.","job_locked":"شغل‌ها از سطح ۱ در دسترس هستند.","market_locked":"بازار دلار از سطح ۱۰ باز می‌شود.","housing_locked":"سطحت برای این خانه کافی نیست.","daily_limit":"سقف معامله امروزت پر شده است.","market_frozen":"بازار فعلاً متوقف است.","economy_frozen":"اقتصاد فعلاً متوقف است.","max_level_reached":"این بخش به آخرین سطح رسیده است.","job_not_found":"ابتدا یک شغل انتخاب کن.","invalid_job":"این شغل معتبر نیست.","insufficient_player_balance":"موجودی کافی نیست.","invalid_asset":"این دارایی معتبر نیست.","asset_owned":"این دارایی را قبلاً خریده‌ای.","asset_locked":"هنوز سطح زندگی یا مهارت لازم برای این دارایی را نداری.","migration_not_available":"این مقصد برای مهاجرت در دسترس نیست.","migration_cooldown":"تا پایان دوره ۳۰روزه امکان مهاجرت دوباره نداری.","migration_pending":"یک درخواست مهاجرت در انتظار داری.","leader_must_transfer_power":"رهبر باید ابتدا قدرت را واگذار کند.","migration_expired":"مهلت این درخواست تمام شده است."}
 def why(e):
  return ERR.get(str(e),"فعلاً نشد انجامش بدیم. یک‌بار صفحه را تازه کن و دوباره امتحان کن.")
 def ik(a,p):return f"life:{a}:{p}:{uuid4().hex[:12]}"
 async def answer(q,text=None,show_alert=False):
  try:await q.answer(text,show_alert=show_alert)
  except Exception:return
-async def panel(ctx,c,text,mark):return await show(c,ctx.player.id,ctx.message.chat_id,text,mark,message=ctx.message if getattr(ctx.message,'reply_markup',None) is not None else None)
+async def panel(ctx,c,text,mark,*,force_new=False):
+ return await show(c,ctx.player.id,ctx.message.chat_id,text,mark,message=None if force_new else (ctx.message if getattr(ctx.message,'reply_markup',None) is not None else None),force_new=force_new)
 async def fresh(ctx):return await player_repo.get_by_telegram_id(ctx.telegram_id) or ctx.player
-async def home(ctx,c):
+async def home(ctx,c,*,force_new=False):
  p=await fresh(ctx);st=await ui_state_repo.ensure_life(p.id);_,_,last=await daily.state(p.id);cur,need=progression.level_progress(p.level,p.xp);left=max(0,need-cur)
  step=int(st['onboarding_step']);goal=("چهار قدم شروع را کامل کن" if step<4 else "شغل بگیر، شیفت انجام بده و به رشد کشورت کمک کن")
  hint="🚀 مسیر شروع آماده ادامه است." if step<4 else "🎯 کارهای امروز بهترین راه رشد هستند."
  text=fa.HOME.format(name=escape(p.first_name),level=fmt.number(p.level),bar=fmt.progress_bar(cur,need,width=10),left=fmt.number(left),wallet=fmt.toman(p.wallet_toman),happy=fmt.number(p.happiness),goal=goal,hint=hint)
- await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step))
+ await panel(ctx,c,text,kb.home(ctx.telegram_id,daily.claimable(last),step),force_new=force_new)
 async def journey(ctx,c):
  st=await ui_state_repo.ensure_life(ctx.player.id);step=int(st['onboarding_step']);bodies=["هدف نخست را ثبت کن تا نوار پیشرفت و مسیر رشدت فعال شود.","سرمایه آغازین را بگیر؛ بلافاصله بعد از آن کارهای روزانه منتظرت هستند.","نخستین کار روزانه را باز کن؛ پاداش آغاز فقط شروع بازی است، نه پایان آن.","وارد زندگی اصلی شو؛ از همین سطح شغل انتخاب کن و اثر کارت را روی کشور ببین.","مسیر شروع کامل شده است؛ هدیه روزانه، کارها، شغل، بانک و خانه چرخه ادامه بازی را می‌سازند."]
  await panel(ctx,c,fa.JOURNEY.format(body=bodies[min(step,4)],done=fmt.number(step),bar=fmt.progress_bar(step,4,width=8)),kb.journey(ctx.telegram_id,step))
@@ -1972,6 +1996,43 @@ async def assets_page(ctx,c):
   lines.append(f"{icon} <b>{a.title}</b> — {a.reason}\n{fmt.toman(a.cost)}{upkeep}\n{a.opportunity}")
  await panel(ctx,c,"🚗 <b>دارایی‌های کاربردی</b>\n\n"+"\n\n".join(lines),kb.assets(ctx.telegram_id,rows))
 
+def _group_url(telegram_id:int)->str | None:
+ # Public usernames are not stored in the legacy schema. Telegram's private
+ # group post link still opens the group for members and is safe to render.
+ raw=str(abs(int(telegram_id)))
+ if raw.startswith("100") and len(raw)>3:
+  return f"https://t.me/c/{raw[3:]}/1"
+ return None
+
+async def country_page(ctx,c):
+ from packages.core import db
+ current=await db.fetchrow("""SELECT cs.country_id,c.name,c.government_type,g.telegram_id,g.title,g.settings->>'public_link' group_link,
+   (SELECT count(*) FROM citizenships x WHERE x.country_id=c.id AND x.is_active) citizens
+  FROM citizenships cs JOIN countries c ON c.id=cs.country_id JOIN groups g ON g.id=c.group_id
+  WHERE cs.player_id=$1 AND cs.is_active""",ctx.player.id)
+ if not current:
+  text="🌐 <b>کشور من</b>\n\nهنوز شهروند هیچ کشوری نیستی. وارد گروه یک کشور شو و از بات World درخواست شهروندی بده؛ بعد کشور و مسیر مهاجرتت همین‌جا نمایش داده می‌شود."
+  await panel(ctx,c,text,kb.country(ctx.telegram_id,None,[]));return
+ pending=await db.fetchrow("""SELECT r.id,r.status,d.name destination_name,r.expires_at FROM migration_requests r JOIN countries d ON d.id=r.destination_country_id WHERE r.player_id=$1 AND r.status='pending' AND r.expires_at>now() ORDER BY r.created_at DESC LIMIT 1""",ctx.player.id)
+ destinations=await db.fetch("""SELECT c.id,c.name,g.telegram_id,(SELECT count(*) FROM citizenships x WHERE x.country_id=c.id AND x.is_active) citizens FROM countries c JOIN groups g ON g.id=c.group_id WHERE c.id<>$1 AND c.status<>'forming' ORDER BY citizens DESC,c.name LIMIT 8""",current['country_id'])
+ status=(f"\n\n⏳ درخواست مهاجرت به <b>{escape(str(pending['destination_name']))}</b> در انتظار بررسی است." if pending else "")
+ text=(f"🌍 <b>کشور من</b>\n\n🏳 <b>{escape(str(current['name']))}</b>\n"
+       f"🏛 نوع حکومت: {escape(str(current['government_type']))}\n"
+       f"👥 شهروندان: {fmt.number(current['citizens'])}{status}\n\n"
+       "برای دیدن گروه، دکمه کشور را بزن. برای مهاجرت، مقصد را انتخاب کن؛ قبل از ثبت نهایی هزینه و محدودیت‌ها را می‌بینی.")
+ rows=[(int(x['id']),str(x['name']),int(x['citizens'])) for x in destinations]
+ await panel(ctx,c,text,kb.country(ctx.telegram_id,str(current['group_link']) if current['group_link'] else _group_url(int(current['telegram_id'])),rows,pending=bool(pending)))
+
+async def migration_preview(ctx,c,destination_id:int):
+ row=await migration.quote(ctx.player.id,destination_id)
+ if not row:raise ValueError('migration_not_available')
+ fee=migration.exit_fee(int(row['wallet_toman'])+int(row['savings_toman']))
+ text=(f"🧳 <b>تأیید مهاجرت</b>\n\nاز <b>{escape(str(row['origin_name']))}</b> به <b>{escape(str(row['destination_name']))}</b>\n"
+       f"💳 هزینه خروج: <b>{fmt.toman(fee)}</b>\n⏱ مهلت بررسی: ۷ روز\n"
+       "🗳 پس از مهاجرت، فعالیت سیاسی ۱۴ روز محدود می‌شود و تا ۳۰ روز امکان مهاجرت دوباره نداری.\n\n"
+       "هزینه فقط هنگام تأیید و تکمیل مهاجرت کم می‌شود.")
+ await panel(ctx,c,text,kb.confirm(ctx.telegram_id,'migration','migconfirm',str(destination_id),'country'))
+
 async def unlock_page(ctx,c):
  p=await fresh(ctx);rows=[]
  for level,spec in get_config().section('unlocks.levels').items():rows.append(("✅" if p.level>=int(level) else "🔒")+f" سطح {fmt.number(level)} — {spec['title']}")
@@ -1983,7 +2044,8 @@ async def start(update,c):
   if update.effective_message:await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
   return
  ctx=await resolve(update)
- if ctx:await home(ctx,c)
+ if ctx:
+  await home(ctx,c,force_new=True)
 async def text_start(update,c):
  if c.user_data.get('ad_request_flow'):return
  if update.effective_chat and update.effective_chat.type=='private':
@@ -1994,13 +2056,20 @@ async def callback(update,c):
  if not parsed or not q:return
  ctx=await resolve(update)
  if not ctx:await answer(q,);return
+ state=await ui_state_repo.ensure_life(ctx.player.id)
+ active_id=int(state['life_message_id'] or 0) if state else 0
+ clicked_id=int(q.message.message_id) if q.message else 0
+ if active_id and clicked_id and active_id!=clicked_id:
+  await answer(q,'این پنل قدیمی شده؛ از پنل جدیدت ادامه بده.',show_alert=True)
+  if q.message:await retire_message(q.message)
+  return
  a=parsed.action
  if a=='advertise':
   from apps.telelife_bot.handlers.advertising import begin
   await begin(update,c);return
  try:
-  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets'}:
-   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page}[a];await fn(ctx,c);return
+  if a in {'home','today','profile','daily','missions','economy','jobs','market','unlocks','journey','housing','savings','progress','assets','country'}:
+   await answer(q,);fn={'home':home,'today':today_page,'profile':profile,'daily':daily_page,'missions':missions_page,'economy':economy,'jobs':jobs,'market':market,'unlocks':unlock_page,'journey':journey,'housing':housing_page,'savings':savings_page,'progress':progress_center,'assets':assets_page,'country':country_page}[a];await fn(ctx,c);return
   if a=='jstep':
    step=int(parsed.arg);state=await ui_state_repo.ensure_life(ctx.player.id);expected=int(state['onboarding_step'])
    if step!=expected:await answer(q,'این قدم قبلاً انجام شده یا هنوز نوبتش نرسیده است.',show_alert=True);await journey(ctx,c);return
@@ -2044,6 +2113,10 @@ async def callback(update,c):
   if a in {'mbuy','msell'}:
    p=await fresh(ctx);side='buy' if a=='mbuy' else 'sell';await answer(q,)
    await panel(ctx,c,await ux.market_preview(p,side,int(parsed.arg)),kb.confirm(ctx.telegram_id,'market','mconfirm',f"{side},{parsed.arg}",'market'));return
+  if a=='migrate':
+   await answer(q,);await migration_preview(ctx,c,int(parsed.arg));return
+  if a=='migconfirm':
+   result=await migration.request(ctx.player.id,int(parsed.arg));await answer(q,'درخواست مهاجرت ثبت شد.' if str(result['status'])=='pending' else 'مهاجرت با موفقیت انجام شد.',show_alert=True);await country_page(ctx,c);return
   if a=='mconfirm':
    side,cents=parsed.arg.split(',',1);r=await usd_market.trade(ctx.player.id,side,int(cents),ik(a,ctx.player.id));await answer(q,f"✅ معامله انجام شد؛ کارمزد {fmt.toman(r.fee)}. موجودی تازه در همین صفحه نمایش داده می‌شود.",show_alert=True);await market(ctx,c);return
   await answer(q,)
@@ -2058,35 +2131,95 @@ def register(app):
 ### `apps\telelife_bot\handlers\panel.py`
 
 ```python
-"""One persistent TeleLife panel: edit first, send only when no editable panel exists."""
+"""TeleLife's single live panel.
+
+Normal navigation edits the active message. A deliberate /start creates a fresh
+panel and retires the previous keyboard first, so stale controls cannot mutate
+state or clutter the conversation.
+"""
 from __future__ import annotations
+
+import logging
 from telegram import Message
-from telegram.error import BadRequest,Forbidden
+from telegram.error import BadRequest, Forbidden
 from telegram.ext import ContextTypes
+
 from packages.core.repositories import ui_state_repo
 from packages.core.ui import schedule_cleanup
 
-async def show(context:ContextTypes.DEFAULT_TYPE,player_id:int,chat_id:int,text:str,markup,*,message:Message|None=None):
- state=await ui_state_repo.ensure_life(player_id); target=None
- # A callback's own message is always the freshest valid panel.
- if message is not None and getattr(message,"message_id",None):
-  try:
-   result=await message.edit_text(text,reply_markup=markup);target=result if isinstance(result,Message) else message
-  except BadRequest as exc:
-   if "message is not modified" in str(exc).lower():target=message
-   elif "message to edit not found" not in str(exc).lower() and "message can't be edited" not in str(exc).lower():raise
- # On /start, edit the remembered panel instead of producing another one.
- if target is None and state and state["life_message_id"]:
-  try:
-   result=await context.bot.edit_message_text(chat_id=int(state["life_chat_id"] or chat_id),message_id=int(state["life_message_id"]),text=text,reply_markup=markup)
-   target=result if isinstance(result,Message) else None
-  except (BadRequest,Forbidden):target=None
- if target is None:
-  target=await context.bot.send_message(chat_id=chat_id,text=text,reply_markup=markup)
- await ui_state_repo.set_life_panel(player_id,chat_id,target.message_id if target else int(state["life_message_id"]))
- if target is not None:
-  schedule_cleanup(context,target,"profile")
- return target
+logger = logging.getLogger(__name__)
+
+_EDIT_GONE = ("message to edit not found", "message can't be edited", "message_id_invalid")
+
+
+async def _retire_remembered(context: ContextTypes.DEFAULT_TYPE, state, fallback_chat_id: int) -> None:
+    """Remove controls from the former panel; failure must never block /start."""
+    if not state or not state["life_message_id"]:
+        return
+    try:
+        await context.bot.edit_message_reply_markup(
+            chat_id=int(state["life_chat_id"] or fallback_chat_id),
+            message_id=int(state["life_message_id"]),
+            reply_markup=None,
+        )
+    except (BadRequest, Forbidden) as exc:
+        logger.debug("old TeleLife panel already unavailable: %s", exc)
+
+
+async def retire_message(message: Message) -> None:
+    """Best-effort lock for a stale callback message."""
+    try:
+        await message.edit_reply_markup(reply_markup=None)
+    except (BadRequest, Forbidden):
+        return
+
+
+async def show(
+    context: ContextTypes.DEFAULT_TYPE,
+    player_id: int,
+    chat_id: int,
+    text: str,
+    markup,
+    *,
+    message: Message | None = None,
+    force_new: bool = False,
+):
+    state = await ui_state_repo.ensure_life(player_id)
+    target: Message | None = None
+
+    if force_new:
+        await _retire_remembered(context, state, chat_id)
+    elif message is not None and getattr(message, "message_id", None):
+        try:
+            result = await message.edit_text(text, reply_markup=markup)
+            target = result if isinstance(result, Message) else message
+        except BadRequest as exc:
+            detail = str(exc).lower()
+            if "message is not modified" in detail:
+                target = message
+            elif not any(token in detail for token in _EDIT_GONE):
+                raise
+
+    if not force_new and target is None and state and state["life_message_id"]:
+        try:
+            result = await context.bot.edit_message_text(
+                chat_id=int(state["life_chat_id"] or chat_id),
+                message_id=int(state["life_message_id"]),
+                text=text,
+                reply_markup=markup,
+            )
+            target = result if isinstance(result, Message) else None
+        except (BadRequest, Forbidden):
+            target = None
+
+    if target is None:
+        target = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+
+    message_id = target.message_id if target else int(state["life_message_id"])
+    await ui_state_repo.set_life_panel(player_id, chat_id, message_id)
+    if target is not None:
+        schedule_cleanup(context, target, "profile")
+    return target
 ```
 
 ### `apps\telelife_bot\handlers\profile.py`
@@ -2567,7 +2700,7 @@ __all__ = ["main"]
 ```python
 """صفحه‌کلیدهای فارسی بات زندگی؛ در هر صفحه فقط یک اقدام اصلی داریم."""
 from telegram import InlineKeyboardMarkup
-from packages.core.ui import Keyboard, Style, button, cb
+from packages.core.ui import Keyboard, Style, button, cb, url_button
 
 NS = "tl"
 
@@ -2586,7 +2719,8 @@ def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMa
               B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
     k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
     k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
-    k.row(B("🪪 شخصیت من", "profile", owner), B("🧭 مرکز پیشرفت", "progress", owner))
+    k.row(B("🪪 شخصیت من", "profile", owner), B("🌍 کشور من", "country", owner))
+    k.row(B("🧭 مرکز پیشرفت", "progress", owner))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
@@ -2679,6 +2813,16 @@ def today(owner, actions):
 def confirm(owner, token, confirm_action, arg, back_action):
     return (Keyboard().row(B("✅ تأیید و اجرا",confirm_action,owner,arg,Style.SUCCESS))
             .row(B("↩️ انصراف",back_action,owner)).build())
+
+def country(owner:int,group_url:str|None,destinations:list[tuple[int,str,int]],*,pending:bool=False):
+    k=Keyboard()
+    if group_url:
+        k.row(url_button("🔗 ورود به گروه کشور من",group_url,style=Style.PRIMARY))
+    if not pending:
+        for country_id,name,citizens in destinations:
+            k.row(B(f"🧳 {name} · {citizens} شهروند","migrate",owner,str(country_id)))
+    k.row(B("🔄 تازه‌سازی", "country", owner),B("🏠 خانه", "home", owner))
+    return k.build()
 ```
 
 ### `apps\telelife_bot\main.py`
@@ -3556,12 +3700,13 @@ from packages.core import db
 from packages.core.bot.start_limit import allow_start
 from packages.core.ui import schedule_cleanup
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade, social
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
 GROUPS = {ChatType.GROUP, ChatType.SUPERGROUP}
 FLOW = "world_creation"
+SOCIAL_FLOW = "social_case_flow"
 STATUS = {"forming":"در حال ساخت", "temporary":"موقت", "official":"رسمی"}
 GOV = {code: item[0] for code, item in fa.GOVERNMENT_DETAILS.items()}
 ASSET = {"IRT":"تومان", "food":"غذا", "minerals":"مواد معدنی", "oil":"نفت", "energy":"انرژی", "technology":"فناوری"}
@@ -3574,6 +3719,14 @@ ERRORS = {
     "country_already_exists":"این گروه از قبل کشور دارد.", "insufficient_balance":"موجودی کافی نیست.",
     "insufficient_player_balance":"موجودی کیف پولت کافی نیست.", "country_not_found":"کشوری پیدا نشد.",
     "asset_not_required":"این دارایی برای پروژه لازم نیست.", "project_exists":"از قبل پروژه فعالی وجود دارد.",
+    "same_country_required":"این تعامل فقط بین شهروندان همین کشور ممکن است.", "self_interaction":"نمی‌توانی خودت را انتخاب کنی.",
+    "relationship_exists":"این رابطه یا درخواست از قبل وجود دارد.", "marriage_unavailable":"یکی از طرفین ازدواج یا پیشنهاد فعال دارد.",
+    "request_not_found":"این درخواست دیگر فعال نیست.", "request_target_required":"فقط دریافت‌کننده درخواست می‌تواند پاسخ دهد.",
+    "help_daily_limit":"سقف سه کمک در امروز پر شده است.", "competition_exists":"بین شما یک رقابت باز وجود دارد.",
+    "competition_not_found":"این رقابت پایان یافته یا در دسترس نیست.", "not_your_turn":"الان نوبت طرف مقابل است.",
+    "report_rate_limit":"برای همین فرد در ۲۴ ساعت گذشته گزارش ثبت کرده‌ای.", "case_rate_limit":"سقف دو شکایت در هفته پر شده است.",
+    "case_party_cannot_vote":"طرفین پرونده نمی‌توانند رأی بدهند.", "already_voted":"رأی تو قبلاً ثبت شده است.",
+    "case_not_found":"پرونده برای رأی‌گیری در دسترس نیست.", "marriage_not_found":"ازدواج فعالی ثبت نشده است.",
 }
 
 async def answer(query, text=None, show_alert=False):
@@ -3626,7 +3779,7 @@ async def facts(chat_id):
 MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve", "offices", "tradenew", "aid"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:", "shelp:", "socprop:", "socaccept:", "socreject:", "compnew:", "compaccept:", "compreject:", "compplay:", "reportcat:", "casecat:", "casevote:", "divorceok"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
@@ -3658,6 +3811,17 @@ async def home(update, context):
         await show(update, context, fa.PRIVATE, kb.private(context.bot.username or ""))
         return
     await group_repo.get_or_create(chat.id, chat.title or "سرزمین بی‌نام")
+    # Keep a real group link for the private Life bot. Public usernames need no
+    # extra permission; existing private invite links are cached when visible.
+    try:
+        full_chat = await context.bot.get_chat(chat.id)
+        public_link = (
+            f"https://t.me/{full_chat.username}" if getattr(full_chat, "username", None)
+            else getattr(full_chat, "invite_link", None)
+        )
+        await group_repo.set_public_link(chat.id, public_link)
+    except (BadRequest, Forbidden):
+        pass
     access = await world_access.check(context.bot, chat.id)
     if not access.ready:
         await access_page(update, context)
@@ -3787,6 +3951,41 @@ async def trade_page(update,context):
        "منابع پیشنهاددهنده هنگام ساخت قرارداد وارد Escrow می‌شوند. پذیرش، هر دو دارایی را در یک تراکنش جابه‌جا می‌کند؛ انقضا هم دارایی را خودکار پس می‌دهد.")
  await show(update,context,text,kb.trade_home(can_manage))
 
+async def society_page(update,context):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ if not row:raise ValueError("country_not_found")
+ citizenship=await country_repo.citizenship(p.id)
+ if not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
+ view=await social.dashboard(int(row["id"]),p.id)
+ marriage=view["marriage"];partner=(f"💍 همسر: <b>{escape(str(marriage['partner_name']))}</b>" if marriage else "💍 هنوز ازدواج فعالی نداری.")
+ text=(f"🏘 <b>جامعه {escape(str(row['name']))}</b>\n\n{partner}\n"
+       f"🫂 دوستی‌های فعال: <b>{fmt.number(view['friends'])}</b>\n"
+       f"⚖️ پرونده‌های باز: <b>{fmt.number(view['cases'])}</b>\n\n"
+       "کمک و رابطه فقط با رضایت انجام می‌شود. رقابت ضرر مالی ندارد و گزارش‌ها نام فرد را در گروه منتشر نمی‌کنند.")
+ await show(update,context,text,kb.society_home(view["pending"],view["competitions"],bool(marriage)))
+
+async def social_people_page(update,context,mode):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ citizenship=await country_repo.citizenship(p.id)
+ if not row or not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
+ rows=await social.citizens(int(row["id"]),p.id)
+ await show(update,context,"👥 <b>یک شهروند را انتخاب کن</b>\n\nنام‌ها فقط از شهروندان فعال همین کشور هستند.",kb.social_people(rows,mode))
+
+async def cases_page(update,context):
+ row,_,_=await facts(update.effective_chat.id);p=await player(update)
+ if not row or not await db.fetchval("SELECT 1 FROM citizenships WHERE player_id=$1 AND country_id=$2 AND is_active",p.id,row["id"]):raise PermissionError("citizen_required")
+ rows=await social.cases(int(row["id"]))
+ await show(update,context,"⚖️ <b>دادگاه شهروندی</b>\n\nرأی‌گیری ۲۴ ساعت باز است. طرفین حق رأی ندارند و هر شهروند فقط یک رأی دارد. رأی عمومی جای گزارش فوری به مدیران تلگرام را نمی‌گیرد.",kb.court_cases(rows))
+
+async def competition_page(update,context,cid):
+ p=await player(update);row=await db.fetchrow("""SELECT c.*,a.first_name challenger_name,b.first_name opponent_name FROM social_competitions c JOIN players a ON a.id=c.challenger_id JOIN players b ON b.id=c.opponent_id WHERE c.id=$1 AND $2 IN(c.challenger_id,c.opponent_id)""",cid,p.id)
+ if not row:raise ValueError("competition_not_found")
+ turn=int(row["turn_player_id"] or 0)==p.id
+ text=(f"🏆 <b>رقابت دوستانه</b>\n\n{escape(str(row['challenger_name']))}: <b>{fmt.number(row['challenger_score'])}</b>\n"
+       f"{escape(str(row['opponent_name']))}: <b>{fmt.number(row['opponent_score'])}</b>\nدور: {fmt.number(row['round_no'])}/۳\n\n"
+       +("🎯 نوبت توست." if turn else "⏳ نوبت طرف مقابل است."))
+ await show(update,context,text,kb.competition(cid,turn and row["status"]=="active"))
+
 async def callback(update, context):
     query = update.callback_query
     if not query: return
@@ -3812,6 +4011,49 @@ async def callback(update, context):
                 await answer(query, "عملیات قفل است: " + access.missing_fa(), show_alert=True)
                 await access_page(update, context)
                 return
+        if action == "society": await answer(query); await society_page(update,context); return
+        if action.startswith("socpeople:"):
+            await answer(query);await social_people_page(update,context,action.split(":",1)[1]);return
+        if action.startswith("socperson:"):
+            _,mode,target=action.split(":",2);target=int(target);await answer(query)
+            if mode=="help":await show(update,context,"🤝 <b>کمک امن</b>\n\nمبلغ از کیف پول تو مستقیم به شهروند منتقل می‌شود. فقط دو کمک اول روز اعتبار می‌دهد و سقف روزانه سه کمک است.",kb.help_amount(target))
+            elif mode=="friend":
+                p=await player(update);await social.propose("friendship",p.id,target);await answer(query,"پیشنهاد دوستی ثبت شد.",show_alert=True);await society_page(update,context)
+            elif mode=="marry":
+                p=await player(update);await social.propose("marriage",p.id,target);await answer(query,"پیشنهاد ازدواج ثبت شد؛ فقط با قبول طرف مقابل فعال می‌شود.",show_alert=True);await society_page(update,context)
+            elif mode=="compete":
+                p=await player(update);await social.challenge(p.id,target);await answer(query,"دعوت رقابت دوستانه ثبت شد.",show_alert=True);await society_page(update,context)
+            elif mode in {"report","case"}:await show(update,context,"دسته‌بندی را انتخاب کن. جزئیات حساس را در گروه عمومی ننویس.",kb.social_categories(target,"reportcat" if mode=="report" else "casecat"))
+            return
+        if action=="socmarriage":await answer(query);await social_people_page(update,context,"marry");return
+        if action.startswith("shelp:"):
+            _,target,amount=action.split(":");p=await player(update);r=await social.help(p.id,int(target),int(amount),f"help:{p.id}:{query.id}")
+            await answer(query,f"کمک انجام شد؛ +{r['reputation_awarded']} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
+        if action.startswith("socaccept:") or action.startswith("socreject:"):
+            rid=int(action.split(":")[1]);p=await player(update);ok=action.startswith("socaccept:");r=await social.respond(rid,p.id,ok)
+            await answer(query,"رابطه با رضایت دوطرفه فعال شد." if ok else "درخواست رد شد.",show_alert=True);await society_page(update,context);return
+        if action.startswith("compaccept:") or action.startswith("compreject:"):
+            cid=int(action.split(":")[1]);p=await player(update);ok=action.startswith("compaccept:");await social.competition_respond(cid,p.id,ok)
+            await answer(query,"رقابت آغاز شد." if ok else "دعوت رقابت رد شد.",show_alert=True);await competition_page(update,context,cid) if ok else await society_page(update,context);return
+        if action.startswith("compview:"):await answer(query);await competition_page(update,context,int(action.split(":")[1]));return
+        if action.startswith("compplay:"):
+            _,cid,move=action.split(":");p=await player(update);r=await social.play(int(cid),p.id,move)
+            await answer(query,f"این حرکت {r['score']} امتیاز گرفت."+(" رقابت تمام شد." if r['done'] else ""),show_alert=True);await competition_page(update,context,int(cid));return
+        if action.startswith("reportcat:"):
+            _,target,category=action.split(":");p=await player(update);await social.report(p.id,int(target),category)
+            await answer(query,"گزارش محرمانه ثبت شد و برای بررسی مدیریتی محفوظ است.",show_alert=True);await society_page(update,context);return
+        if action.startswith("casecat:"):
+            _,target,category=action.split(":");p=await player(update);context.chat_data[SOCIAL_FLOW]={"owner":update.effective_user.id,"player_id":p.id,"target":int(target),"category":category,"panel":query.message.message_id}
+            await answer(query);await show(update,context,"✍️ <b>شرح پرونده را بفرست</b>\n\nبین ۱۰ تا ۵۰۰ نویسه، بدون توهین و بدون اطلاعات خصوصی. پیام پس از دریافت حذف می‌شود.",kb.back("soccases"));return
+        if action=="soccases":await answer(query);await cases_page(update,context);return
+        if action.startswith("caseview:"):
+            cid=int(action.split(":")[1]);row=await db.fetchrow("""SELECT c.*,a.first_name plaintiff_name,b.first_name defendant_name FROM citizen_cases c JOIN players a ON a.id=c.plaintiff_id JOIN players b ON b.id=c.defendant_id WHERE c.id=$1""",cid)
+            if not row:raise ValueError("case_not_found")
+            await answer(query);await show(update,context,f"⚖️ <b>پرونده #{cid}</b>\n\nشاکی: {escape(str(row['plaintiff_name']))}\nطرف شکایت: {escape(str(row['defendant_name']))}\nموضوع: {escape(str(row['summary']))}\n\nرأی تخلف: {fmt.number(row['guilty_votes'])}\nرأی اثبات‌نشده: {fmt.number(row['not_guilty_votes'])}",kb.court_vote(cid));return
+        if action.startswith("casevote:"):
+            _,cid,vote=action.split(":");p=await player(update);await social.vote(int(cid),p.id,vote);await answer(query,"رأی محرمانه و یک‌باره ثبت شد.",show_alert=True);await cases_page(update,context);return
+        if action=="divorceask":await answer(query);await show(update,context,"💔 <b>تأیید جدایی</b>\n\nازدواج پایان می‌یابد و یک دوره انتظار ۷روزه ثبت می‌شود. دارایی شخصی هیچ‌کدام تغییر نمی‌کند.",kb.divorce_confirm());return
+        if action=="divorceok":p=await player(update);await social.divorce(p.id);await answer(query,"جدایی ثبت شد.",show_alert=True);await society_page(update,context);return
         if action == "home":
             await answer(query, ); context.chat_data.pop(FLOW, None); await home(update, context)
         elif action == "guide":
@@ -4057,6 +4299,16 @@ async def text(update, context):
     message, chat = update.effective_message, update.effective_chat
     if not message or not chat: return
     if chat.type not in GROUPS: await home(update, context); return
+    social_flow=context.chat_data.get(SOCIAL_FLOW)
+    if social_flow and update.effective_user.id==social_flow.get("owner"):
+        value=(message.text or "").strip()
+        from packages.core.services.content_filter import inspect
+        if not inspect(value).allowed or not 10<=len(value)<=500:
+            await message.reply_text("شرح باید ۱۰ تا ۵۰۰ نویسه و بدون محتوای توهین‌آمیز باشد.");return
+        try:await message.delete()
+        except (BadRequest,Forbidden):pass
+        await social.open_case(social_flow["player_id"],social_flow["target"],social_flow["category"],value)
+        context.chat_data.pop(SOCIAL_FLOW,None);await message.reply_text("✅ پرونده ثبت شد و رأی‌گیری ۲۴ساعته آغاز شد.");await cases_page(update,context);return
     flow = context.chat_data.get(FLOW)
     if not flow or update.effective_user.id != flow.get("owner"):
         await home(update, context); return
@@ -4074,7 +4326,7 @@ async def text(update, context):
     if flow["step"] == "name":
         from packages.core.services.content_filter import inspect
         if not inspect(value).allowed:
-            await msg.reply_text(fa.CONTENT_REJECTED); return
+            await message.reply_text(fa.CONTENT_REJECTED); return
         if not 3 <= len(value) <= 80:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="نام باید بین ۳ تا ۸۰ نویسه باشد. دوباره نام را بفرست.", reply_markup=kb.cancel()); return
         flow["name"] = value; flow["step"] = "government"
@@ -4082,7 +4334,7 @@ async def text(update, context):
     if flow["step"] == "description":
         from packages.core.services.content_filter import inspect
         if not inspect(value).allowed:
-            await msg.reply_text(fa.CONTENT_REJECTED); return
+            await message.reply_text(fa.CONTENT_REJECTED); return
         if not 10 <= len(value) <= 500:
             await context.bot.edit_message_text(chat_id=chat.id, message_id=flow["panel"], text="معرفی باید بین ۱۰ تا ۵۰۰ نویسه باشد. دوباره معرفی را بفرست.", reply_markup=kb.cancel()); return
         p = await player(update)
@@ -4101,6 +4353,17 @@ async def start(update, context):
         if update.effective_message:
             await update.effective_message.reply_text("⏳ در هر دقیقه فقط دو بار می‌توانی /start بزنی؛ چند لحظه دیگر دوباره تلاش کن.")
         return
+    # Every accepted /start opens a fresh panel. Retire the old keyboard first
+    # so previous controls cannot be used after the new session begins.
+    state = await ui_state_repo.world(chat.id)
+    if state and state["message_id"]:
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=chat.id, message_id=int(state["message_id"]), reply_markup=None
+            )
+        except (BadRequest, Forbidden):
+            pass
+        await ui_state_repo.clear_world(chat.id)
     await home(update, context)
 
 async def precheckout(update,context):
@@ -4150,6 +4413,7 @@ def home(country, admin, citizen=False, official_role=None):
                     [b("📘 قوانین شهروندی", "migration_rules"), b("🔄 تازه‌سازی", "home")]]
             return InlineKeyboardMarkup(rows)
         rows = [[b("☀️ وضعیت امروز کشور", "country_today", "primary")],
+                [b("🏘 جامعه کشور", "society"), b("👥 شهروندان", "citizens")],
                 [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")],
                 [b("🏗 پروژه ملی", "project"), b("🌐 تجارت و دیپلماسی", "trade")],
                 [b("✈️ مهاجرت", "migration"), b("🏛 شناسنامه", "country")]]
@@ -4308,6 +4572,50 @@ def outgoing_trade(rows):
 def pending_relations(rows):
  buttons=[[b(f"✅ پذیرش {r['counterparty_name']}",f"relaccept:{r['counterparty_id']}","success")] for r in rows]
  buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)
+# ---------- جامعه کشور ----------
+def society_home(pending=(), competitions=(), married=False):
+ rows=[[b("🤝 کمک به شهروند","socpeople:help","success"),b("🫂 دوستی‌ها","socpeople:friend")],
+       [b("💍 ازدواج و خانواده","socmarriage","primary"),b("🏆 رقابت دوستانه","socpeople:compete")],
+       [b("⚖️ دادگاه شهروندی","soccases"),b("🛡 گزارش امن","socpeople:report")]]
+ for r in pending:
+  label="💍" if r["kind"]=="marriage" else "🫂"
+  rows.append([b(f"{label} قبول پیشنهاد {r['proposer_name']}",f"socaccept:{r['id']}","success"),b("رد",f"socreject:{r['id']}","danger")])
+ for c in competitions:
+  if c["status"]=="pending":rows.append([b(f"🏆 قبول رقابت {c['opponent_name']}",f"compaccept:{c['id']}","success"),b("رد",f"compreject:{c['id']}")])
+  elif c["status"]=="active":rows.append([b(f"🎯 ادامه رقابت با {c['opponent_name']}",f"compview:{c['id']}")])
+ if married:rows.append([b("💔 درخواست جدایی","divorceask","danger")])
+ rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
+
+def social_people(rows,mode):
+ labels={"help":"🤝 کمک به","friend":"🫂 دوستی با","marry":"💍 پیشنهاد به","compete":"🏆 رقابت با","report":"🛡 گزارش","case":"⚖️ شکایت از"}
+ buttons=[[b(f"{labels.get(mode,'انتخاب')} {r['first_name']}",f"socperson:{mode}:{r['id']}")] for r in rows]
+ buttons.append([b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(buttons)
+
+def help_amount(target):
+ return InlineKeyboardMarkup([[b("۱۰ هزار",f"shelp:{target}:10000"),b("۵۰ هزار",f"shelp:{target}:50000","success")],
+ [b("۱۰۰ هزار",f"shelp:{target}:100000"),b("۲۰۰ هزار",f"shelp:{target}:200000")],[b("↩️ جامعه کشور","society")]])
+
+def social_categories(target,prefix):
+ labels=[("آزار","harassment"),("کلاهبرداری","fraud"),("تهدید","threat"),("اسپم","spam"),("سایر","other")]
+ return InlineKeyboardMarkup([[b(label,f"{prefix}:{target}:{code}") for label,code in labels[i:i+2]] for i in range(0,len(labels),2)]+[[b("↩️ جامعه کشور","society")]])
+
+def competition(cid,can_play=True):
+ rows=[]
+ if can_play:rows.append([b("🎯 حرکت مطمئن +۲",f"compplay:{cid}:focus","primary"),b("🎲 حرکت پرریسک ۰/۳",f"compplay:{cid}:risk")])
+ rows.append([b("🔄 تازه‌سازی رقابت",f"compview:{cid}"),b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(rows)
+
+def court_cases(rows):
+ buttons=[]
+ for r in rows:
+  buttons.append([b(f"⚖️ پرونده #{r['id']}: {r['plaintiff_name']} / {r['defendant_name']}",f"caseview:{r['id']}")])
+ buttons.append([b("➕ ثبت شکایت رسمی","socpeople:case","primary"),b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(buttons)
+
+def court_vote(case_id):
+ return InlineKeyboardMarkup([[b("رأی: تخلف رخ داده",f"casevote:{case_id}:guilty","danger")],
+ [b("رأی: اثبات نشده",f"casevote:{case_id}:not_guilty","success")],[b("↩️ پرونده‌ها","soccases")]])
+
+def divorce_confirm():
+ return InlineKeyboardMarkup([[b("تأیید جدایی و شروع انتظار ۷روزه","divorceok","danger")],[b("انصراف","society","primary")]])
 ```
 
 ### `apps\teleworld_bot\main.py`
@@ -4936,6 +5244,18 @@ Countries/citizenship, shared economic ledger, five resources, seven lazy-produc
 - تجارت با خود و کمک انسانی به خود، پیش از قفل‌گذاری رد می‌شود.
 - سقف کمک انسانی به‌صورت مجزا برای هر دارایی محاسبه می‌شود و واحدهای نامرتبط با هم جمع نمی‌شوند.
 - پذیرش رابطه دیپلماتیک، کلید idempotency را پیش از تغییر وضعیت claim می‌کند.
+```
+
+### `HOTFIX_MIGRATOR_0021_0022_FA.md`
+
+```markdown
+# هات‌فیکس Migrator برای دیتابیس موجود
+
+- نسخه‌های 0021 و 0022 به تاریخچه بازیابی‌شده منتقل شدند.
+- اختلاف checksum آن‌ها فقط ثبت می‌شود و باعث توقف استقرار نمی‌شود.
+- مرز سخت checksum از مهاجرت جدید 0023 آغاز می‌شود.
+- مهاجرت 0023 همچنان immutable است و تغییر بعد از اجرا خطا خواهد داد.
+- داده‌های موجود حذف یا بازنویسی نمی‌شوند.
 ```
 
 ### `LIFE_PROGRESSION_RELEASE_FA.md`
@@ -6414,6 +6734,77 @@ CREATE INDEX IF NOT EXISTS idx_player_ui_expiry ON player_ui_state(life_expires_
 CREATE INDEX IF NOT EXISTS idx_world_ui_expiry ON world_ui_state(expires_at);
 ```
 
+### `migrations\0023_country_social_life.sql`
+
+```sql
+-- Safe, consent-first social life inside country groups.
+CREATE TABLE IF NOT EXISTS social_relationships (
+ id BIGSERIAL PRIMARY KEY,
+ country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL CHECK(kind IN ('friendship','marriage')),
+ player_low_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+ player_high_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','rejected','ended','cancelled')),
+ proposed_by BIGINT NOT NULL REFERENCES players(id),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), accepted_at TIMESTAMPTZ, ended_at TIMESTAMPTZ,
+ cooldown_until TIMESTAMPTZ, CHECK(player_low_id < player_high_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_social_pair_open ON social_relationships(kind,player_low_id,player_high_id)
+ WHERE status IN ('pending','active');
+CREATE INDEX IF NOT EXISTS idx_social_active_marriage_low ON social_relationships(player_low_id) WHERE kind='marriage' AND status='active';
+CREATE INDEX IF NOT EXISTS idx_social_active_marriage_high ON social_relationships(player_high_id) WHERE kind='marriage' AND status='active';
+CREATE INDEX IF NOT EXISTS idx_social_relationship_target ON social_relationships(proposed_by,status,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS citizen_help_events (
+ id BIGSERIAL PRIMARY KEY, country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ helper_id BIGINT NOT NULL REFERENCES players(id), recipient_id BIGINT NOT NULL REFERENCES players(id),
+ amount_toman BIGINT NOT NULL CHECK(amount_toman BETWEEN 10000 AND 200000),
+ reputation_awarded INT NOT NULL DEFAULT 0 CHECK(reputation_awarded BETWEEN 0 AND 3),
+ idempotency_key TEXT NOT NULL UNIQUE, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ CHECK(helper_id<>recipient_id)
+);
+CREATE INDEX IF NOT EXISTS idx_help_daily ON citizen_help_events(helper_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS social_competitions (
+ id BIGSERIAL PRIMARY KEY, country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ challenger_id BIGINT NOT NULL REFERENCES players(id), opponent_id BIGINT NOT NULL REFERENCES players(id),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','completed','rejected','expired')),
+ challenger_score INT NOT NULL DEFAULT 0, opponent_score INT NOT NULL DEFAULT 0,
+ round_no SMALLINT NOT NULL DEFAULT 0 CHECK(round_no BETWEEN 0 AND 3),
+ turn_player_id BIGINT REFERENCES players(id), winner_id BIGINT REFERENCES players(id),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), expires_at TIMESTAMPTZ NOT NULL DEFAULT now()+interval '24 hours',
+ resolved_at TIMESTAMPTZ, CHECK(challenger_id<>opponent_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_competition_pair_open ON social_competitions(country_id,LEAST(challenger_id,opponent_id),GREATEST(challenger_id,opponent_id)) WHERE status IN ('pending','active');
+
+CREATE TABLE IF NOT EXISTS citizen_cases (
+ id BIGSERIAL PRIMARY KEY, country_id BIGINT NOT NULL REFERENCES countries(id) ON DELETE CASCADE,
+ plaintiff_id BIGINT NOT NULL REFERENCES players(id), defendant_id BIGINT NOT NULL REFERENCES players(id),
+ category TEXT NOT NULL CHECK(category IN ('harassment','fraud','threat','spam','other')),
+ summary TEXT NOT NULL CHECK(length(summary) BETWEEN 10 AND 500),
+ status TEXT NOT NULL DEFAULT 'review' CHECK(status IN ('review','voting','resolved','dismissed')),
+ opened_at TIMESTAMPTZ NOT NULL DEFAULT now(), voting_ends_at TIMESTAMPTZ,
+ guilty_votes INT NOT NULL DEFAULT 0, not_guilty_votes INT NOT NULL DEFAULT 0,
+ verdict TEXT CHECK(verdict IN ('guilty','not_guilty','dismissed')), resolved_at TIMESTAMPTZ,
+ CHECK(plaintiff_id<>defendant_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cases_country_open ON citizen_cases(country_id,status,opened_at DESC);
+CREATE TABLE IF NOT EXISTS citizen_case_votes (
+ case_id BIGINT NOT NULL REFERENCES citizen_cases(id) ON DELETE CASCADE,
+ voter_id BIGINT NOT NULL REFERENCES players(id), vote TEXT NOT NULL CHECK(vote IN ('guilty','not_guilty')),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(case_id,voter_id)
+);
+
+CREATE TABLE IF NOT EXISTS citizen_reports (
+ id BIGSERIAL PRIMARY KEY, country_id BIGINT NOT NULL REFERENCES countries(id),
+ reporter_id BIGINT NOT NULL REFERENCES players(id), target_id BIGINT NOT NULL REFERENCES players(id),
+ category TEXT NOT NULL CHECK(category IN ('harassment','fraud','threat','spam','other')),
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','reviewed','closed')),
+ created_at TIMESTAMPTZ NOT NULL DEFAULT now(), CHECK(reporter_id<>target_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reports_open ON citizen_reports(country_id,status,created_at DESC);
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -7619,7 +8010,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 # Never re-run those versions: preserve their records and enforce immutable
 # checksums for every migration introduced after the recovered baseline.
 # This recovered distribution may differ byte-for-byte from migrations already
-# applied by earlier releases. Never re-run shipped history. Starting with 0021,
+# applied by earlier releases. Never re-run shipped history. Starting with 0023,
 # checksums are strict and changing an applied migration remains a hard failure.
 LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0001_core_schema", "0002_progression", "0003_country_layer",
@@ -7631,9 +8022,13 @@ LEGACY_CHECKSUM_VERSIONS = frozenset({
     "0014_free_tier_hardening", "0015_purposeful_work_loop",
     "0016_national_projects_and_missions", "0017_country_economy_release_b",
     "0018_country_trade_diplomacy_release_c", "0019_life_progression_system",
-    "0020_admin_operations_10",
+    "0020_admin_operations_10", "0021_multi_admin_hardening",
+    "0022_ui_panel_expiry",
 })
-STRICT_CHECKSUM_FROM = "0021_multi_admin_hardening"
+# 0021 and 0022 belong to the recovered project history and may already exist
+# with checksums produced from older line endings/source dumps. 0023 is the
+# first migration created by this release and is therefore the strict boundary.
+STRICT_CHECKSUM_FROM = "0023_country_social_life"
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -8853,6 +9248,18 @@ async def link_member(group_id: int, player_id: int) -> None:
 
 async def count_total() -> int:
     return int(await db.fetchval("SELECT count(*) FROM groups WHERE is_active") or 0)
+async def set_public_link(telegram_id: int, url: str | None) -> None:
+    """Cache a safe Telegram group URL discovered by the World bot."""
+    if not url:
+        return
+    await db.execute(
+        """UPDATE groups
+           SET settings=jsonb_set(settings,'{public_link}',to_jsonb($2::text),true),
+               last_active_at=now()
+           WHERE telegram_id=$1""",
+        telegram_id,
+        url[:500],
+    )
 ```
 
 ### `packages\core\repositories\ledger_repo.py`
@@ -9635,6 +10042,8 @@ async def world(chat_id:int):return await db.fetchrow("SELECT * FROM world_ui_st
 async def set_world(chat_id:int,message_id:int)->None:
  await db.execute("""INSERT INTO world_ui_state(chat_id,message_id,expires_at) VALUES($1,$2,now()+interval '60 seconds')
  ON CONFLICT(chat_id) DO UPDATE SET message_id=$2,expires_at=now()+interval '60 seconds',updated_at=now()""",chat_id,message_id)
+async def clear_world(chat_id:int)->None:
+ await db.execute("DELETE FROM world_ui_state WHERE chat_id=$1",chat_id)
 ```
 
 ### `packages\core\repositories\world_access_repo.py`
@@ -13125,6 +13534,184 @@ async def run(name:str, fn:Callable[[],Awaitable[T]])->T|None:
         return None
 ```
 
+### `packages\core\services\social.py`
+
+```python
+"""Consent-first social interactions for citizens of the same country."""
+from __future__ import annotations
+from packages.core import db
+
+HELP_AMOUNTS={10_000,50_000,100_000,200_000}
+CATEGORIES={"harassment","fraud","threat","spam","other"}
+
+def pair(a:int,b:int)->tuple[int,int]:
+ if a==b:raise ValueError("self_interaction")
+ return min(a,b),max(a,b)
+
+async def country_for(player_id:int,conn=None):
+ q="SELECT country_id FROM citizenships WHERE player_id=$1 AND is_active"
+ return await (conn.fetchval(q,player_id) if conn else db.fetchval(q,player_id))
+
+async def require_peers(conn,actor:int,target:int)->int:
+ pair(actor,target);a=await country_for(actor,conn);b=await country_for(target,conn)
+ if not a or a!=b:raise PermissionError("same_country_required")
+ return int(a)
+
+async def citizens(country_id:int,exclude:int,limit:int=24):
+ return await db.fetch("""SELECT p.id,p.first_name,p.reputation,p.level FROM citizenships cs JOIN players p ON p.id=cs.player_id
+ WHERE cs.country_id=$1 AND cs.is_active AND p.id<>$2 AND NOT p.is_banned ORDER BY p.reputation DESC,p.level DESC,p.id LIMIT $3""",country_id,exclude,limit)
+
+async def dashboard(country_id:int,player_id:int):
+ return {
+  "friends":int(await db.fetchval("SELECT count(*) FROM social_relationships WHERE kind='friendship' AND status='active' AND (player_low_id=$1 OR player_high_id=$1)",player_id) or 0),
+  "marriage":await db.fetchrow("""SELECT r.id,p.first_name partner_name FROM social_relationships r JOIN players p ON p.id=CASE WHEN r.player_low_id=$1 THEN r.player_high_id ELSE r.player_low_id END WHERE r.kind='marriage' AND r.status='active' AND (r.player_low_id=$1 OR r.player_high_id=$1)""",player_id),
+  "pending":await db.fetch("""SELECT r.id,r.kind,p.first_name proposer_name FROM social_relationships r JOIN players p ON p.id=r.proposed_by WHERE r.status='pending' AND r.proposed_by<>$1 AND (r.player_low_id=$1 OR r.player_high_id=$1) ORDER BY r.created_at DESC LIMIT 10""",player_id),
+  "competitions":await db.fetch("""SELECT c.id,c.status,c.round_no,c.challenger_score,c.opponent_score,c.turn_player_id,p.first_name opponent_name FROM social_competitions c JOIN players p ON p.id=CASE WHEN c.challenger_id=$1 THEN c.opponent_id ELSE c.challenger_id END WHERE c.country_id=$2 AND ((c.status='pending' AND c.opponent_id=$1) OR (c.status='active' AND (c.challenger_id=$1 OR c.opponent_id=$1))) ORDER BY c.created_at DESC LIMIT 5""",player_id,country_id),
+  "cases":int(await db.fetchval("SELECT count(*) FROM citizen_cases WHERE country_id=$1 AND status IN ('review','voting')",country_id) or 0),
+ }
+
+async def propose(kind:str,actor:int,target:int):
+ if kind not in {"friendship","marriage"}:raise ValueError("invalid_relationship")
+ low,high=pair(actor,target)
+ async with db.transaction() as conn:
+  country=await require_peers(conn,actor,target)
+  if kind=="marriage":
+   blocked=await conn.fetchval("""SELECT 1 FROM social_relationships WHERE kind='marriage' AND
+    ((status IN ('pending','active') AND ($1 IN (player_low_id,player_high_id) OR $2 IN (player_low_id,player_high_id)))
+     OR (status='ended' AND cooldown_until>now() AND ($1 IN (player_low_id,player_high_id) OR $2 IN (player_low_id,player_high_id))))""",actor,target)
+   if blocked:raise ValueError("marriage_unavailable")
+  try:return await conn.fetchrow("INSERT INTO social_relationships(country_id,kind,player_low_id,player_high_id,proposed_by) VALUES($1,$2,$3,$4,$5) RETURNING *",country,kind,low,high,actor)
+  except Exception as exc:
+   if "uq_social" in str(exc):raise ValueError("relationship_exists") from exc
+   raise
+
+async def respond(relationship_id:int,actor:int,accept:bool):
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM social_relationships WHERE id=$1 AND status='pending' FOR UPDATE",relationship_id)
+  if not row:raise ValueError("request_not_found")
+  if actor==row["proposed_by"] or actor not in {row["player_low_id"],row["player_high_id"]}:raise PermissionError("request_target_required")
+  if accept and row["kind"]=="marriage" and await conn.fetchval("SELECT 1 FROM social_relationships WHERE id<>$1 AND kind='marriage' AND status='active' AND ($2 IN(player_low_id,player_high_id) OR $3 IN(player_low_id,player_high_id))",relationship_id,row["player_low_id"],row["player_high_id"]):raise ValueError("marriage_unavailable")
+  status="active" if accept else "rejected"
+  return await conn.fetchrow("UPDATE social_relationships SET status=$2,accepted_at=CASE WHEN $2='active' THEN now() END,ended_at=CASE WHEN $2='rejected' THEN now() END WHERE id=$1 RETURNING *",relationship_id,status)
+
+async def divorce(actor:int):
+ row=await db.fetchrow("""UPDATE social_relationships SET status='ended',ended_at=now(),cooldown_until=now()+interval '7 days'
+ WHERE kind='marriage' AND status='active' AND $1 IN(player_low_id,player_high_id) RETURNING id""",actor)
+ if not row:raise ValueError("marriage_not_found")
+ return row
+
+async def help(actor:int,target:int,amount:int,key:str):
+ if amount not in HELP_AMOUNTS:raise ValueError("invalid_amount")
+ async with db.transaction() as conn:
+  previous=await conn.fetchrow("SELECT * FROM citizen_help_events WHERE idempotency_key=$1",key)
+  if previous:return previous
+  country=await require_peers(conn,actor,target)
+  helper=await conn.fetchrow("SELECT wallet_toman FROM players WHERE id=$1 FOR UPDATE",actor)
+  if int(helper["wallet_toman"])<amount:raise ValueError("insufficient_balance")
+  daily=int(await conn.fetchval("SELECT count(*) FROM citizen_help_events WHERE helper_id=$1 AND created_at>=date_trunc('day',now())",actor) or 0)
+  if daily>=3:raise ValueError("help_daily_limit")
+  rep=1 if daily<2 else 0
+  await conn.execute("UPDATE players SET wallet_toman=wallet_toman-$2,reputation=LEAST(1000,reputation+$3) WHERE id=$1",actor,amount,rep)
+  await conn.execute("UPDATE players SET wallet_toman=wallet_toman+$2 WHERE id=$1",target,amount)
+  return await conn.fetchrow("INSERT INTO citizen_help_events(country_id,helper_id,recipient_id,amount_toman,reputation_awarded,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",country,actor,target,amount,rep,key)
+
+async def challenge(actor:int,target:int):
+ async with db.transaction() as conn:
+  country=await require_peers(conn,actor,target)
+  try:return await conn.fetchrow("INSERT INTO social_competitions(country_id,challenger_id,opponent_id) VALUES($1,$2,$3) RETURNING *",country,actor,target)
+  except Exception as exc:
+   if "uq_competition" in str(exc):raise ValueError("competition_exists") from exc
+   raise
+
+async def competition_respond(cid:int,actor:int,accept:bool):
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM social_competitions WHERE id=$1 AND status='pending' FOR UPDATE",cid)
+  if not row:raise ValueError("competition_not_found")
+  if actor!=row["opponent_id"]:raise PermissionError("request_target_required")
+  status="active" if accept else "rejected"
+  return await conn.fetchrow("UPDATE social_competitions SET status=$2,turn_player_id=CASE WHEN $2='active' THEN challenger_id END,resolved_at=CASE WHEN $2='rejected' THEN now() END WHERE id=$1 RETURNING *",cid,status)
+
+async def play(cid:int,actor:int,move:str):
+ if move not in {"focus","risk"}:raise ValueError("invalid_move")
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT * FROM social_competitions WHERE id=$1 AND status='active' AND expires_at>now() FOR UPDATE",cid)
+  if not row:raise ValueError("competition_not_found")
+  if int(row["turn_player_id"] or 0)!=actor:raise PermissionError("not_your_turn")
+  score=2 if move=="focus" else (3 if (cid+actor+int(row["round_no"]))%2 else 0)
+  challenger=actor==row["challenger_id"];round_no=int(row["round_no"])+(0 if challenger else 1)
+  cs=int(row["challenger_score"])+(score if challenger else 0);os=int(row["opponent_score"])+(0 if challenger else score)
+  done=round_no>=3;next_player=row["opponent_id"] if challenger else row["challenger_id"]
+  winner=(row["challenger_id"] if cs>os else row["opponent_id"] if os>cs else None) if done else None
+  await conn.execute("UPDATE social_competitions SET challenger_score=$2,opponent_score=$3,round_no=$4,turn_player_id=$5,status=CASE WHEN $6 THEN 'completed' ELSE 'active' END,winner_id=$7,resolved_at=CASE WHEN $6 THEN now() END WHERE id=$1",cid,cs,os,round_no,next_player,done,winner)
+  if done and winner:
+   await conn.execute("UPDATE players SET reputation=reputation+1 WHERE id=$1",winner)
+  return {"score":score,"done":done,"challenger_score":cs,"opponent_score":os,"winner_id":winner}
+
+async def report(actor:int,target:int,category:str):
+ if category not in CATEGORIES:raise ValueError("invalid_category")
+ async with db.transaction() as conn:
+  country=await require_peers(conn,actor,target)
+  recent=await conn.fetchval("SELECT 1 FROM citizen_reports WHERE reporter_id=$1 AND target_id=$2 AND created_at>now()-interval '24 hours'",actor,target)
+  if recent:raise ValueError("report_rate_limit")
+  return await conn.fetchrow("INSERT INTO citizen_reports(country_id,reporter_id,target_id,category) VALUES($1,$2,$3,$4) RETURNING *",country,actor,target,category)
+
+async def open_case(actor:int,target:int,category:str,summary:str):
+ if category not in CATEGORIES:raise ValueError("invalid_category")
+ summary=" ".join(summary.split())
+ if not 10<=len(summary)<=500:raise ValueError("invalid_case_summary")
+ async with db.transaction() as conn:
+  country=await require_peers(conn,actor,target)
+  if int(await conn.fetchval("SELECT count(*) FROM citizen_cases WHERE plaintiff_id=$1 AND opened_at>now()-interval '7 days'",actor) or 0)>=2:raise ValueError("case_rate_limit")
+  return await conn.fetchrow("INSERT INTO citizen_cases(country_id,plaintiff_id,defendant_id,category,summary,status,voting_ends_at) VALUES($1,$2,$3,$4,$5,'voting',now()+interval '24 hours') RETURNING *",country,actor,target,category,summary)
+
+async def cases(country_id:int):
+ return await db.fetch("""SELECT c.*,a.first_name plaintiff_name,b.first_name defendant_name FROM citizen_cases c JOIN players a ON a.id=c.plaintiff_id JOIN players b ON b.id=c.defendant_id WHERE c.country_id=$1 AND c.status='voting' AND c.voting_ends_at>now() ORDER BY c.opened_at DESC LIMIT 10""",country_id)
+
+async def vote(case_id:int,voter:int,vote_value:str):
+ if vote_value not in {"guilty","not_guilty"}:raise ValueError("invalid_vote")
+ async with db.transaction() as conn:
+  case=await conn.fetchrow("SELECT * FROM citizen_cases WHERE id=$1 AND status='voting' AND voting_ends_at>now() FOR UPDATE",case_id)
+  if not case:raise ValueError("case_not_found")
+  if not await conn.fetchval("SELECT 1 FROM citizenships WHERE player_id=$1 AND country_id=$2 AND is_active",voter,case["country_id"]):raise PermissionError("citizen_required")
+  if voter in {case["plaintiff_id"],case["defendant_id"]}:raise PermissionError("case_party_cannot_vote")
+  try:await conn.execute("INSERT INTO citizen_case_votes(case_id,voter_id,vote) VALUES($1,$2,$3)",case_id,voter,vote_value)
+  except Exception as exc:
+   if "citizen_case_votes_pkey" in str(exc):raise ValueError("already_voted") from exc
+   raise
+  field="guilty_votes" if vote_value=="guilty" else "not_guilty_votes"
+  await conn.execute(f"UPDATE citizen_cases SET {field}={field}+1 WHERE id=$1",case_id)
+  return True
+
+
+async def resolve_due()->dict[str,int]:
+ """Expire stale invitations/competitions and close court votes deterministically."""
+ expired_comp=await db.execute("UPDATE social_competitions SET status='expired',resolved_at=now() WHERE status IN ('pending','active') AND expires_at<=now()")
+ expired_rel=await db.execute("UPDATE social_relationships SET status='cancelled',ended_at=now() WHERE status='pending' AND created_at<=now()-interval '7 days'")
+ rows=await db.fetch("SELECT id,guilty_votes,not_guilty_votes,defendant_id FROM citizen_cases WHERE status='voting' AND voting_ends_at<=now() ORDER BY id LIMIT 200")
+ resolved=0
+ for row in rows:
+  total=int(row['guilty_votes'])+int(row['not_guilty_votes'])
+  guilty=total>=3 and int(row['guilty_votes'])>int(row['not_guilty_votes'])
+  verdict='guilty' if guilty else 'not_guilty'
+  async with db.transaction() as conn:
+   changed=await conn.fetchval("UPDATE citizen_cases SET status='resolved',verdict=$2,resolved_at=now() WHERE id=$1 AND status='voting' RETURNING id",row['id'],verdict)
+   if changed and guilty:
+    await conn.execute("UPDATE players SET reputation=GREATEST(-1000,reputation-3) WHERE id=$1",row['defendant_id'])
+   if changed:resolved+=1
+ def count(tag:str)->int:return int(tag.rsplit(' ',1)[-1])
+ return {'competitions_expired':count(expired_comp),'relationships_expired':count(expired_rel),'cases_resolved':resolved}
+
+async def admin_reports(limit:int=100):
+ return await db.fetch("""SELECT r.id,r.category,r.status,r.created_at,c.name country_name,
+  a.first_name reporter_name,b.first_name target_name FROM citizen_reports r
+  JOIN countries c ON c.id=r.country_id JOIN players a ON a.id=r.reporter_id JOIN players b ON b.id=r.target_id
+  ORDER BY CASE r.status WHEN 'open' THEN 0 ELSE 1 END,r.created_at DESC LIMIT $1""",limit)
+
+async def review_report(report_id:int,status:str):
+ if status not in {'reviewed','closed'}:raise ValueError('invalid_report_status')
+ return await db.fetchrow("UPDATE citizen_reports SET status=$2 WHERE id=$1 RETURNING *",report_id,status)
+```
+
 ### `packages\core\services\unlocks.py`
 
 ```python
@@ -13771,6 +14358,7 @@ __all__ = [
     "Keyboard",
     "Style",
     "button",
+    "url_button",
     "cb",
     "schedule_cleanup",
     "timeout_for",
@@ -13782,7 +14370,7 @@ def __getattr__(name: str) -> Any:
         from packages.core.ui import callbacks
 
         return getattr(callbacks, name)
-    if name in {"Keyboard", "Style", "button"}:
+    if name in {"Keyboard", "Style", "button", "url_button"}:
         from packages.core.ui import buttons
 
         return getattr(buttons, name)
@@ -14527,6 +15115,42 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 - Syntax تمام فایل‌های Python و تست‌های واحد اقتصاد/URL/بسته‌ها بررسی شد.
 ```
 
+### `RELEASE_COUNTRY_SOCIAL_FA.md`
+
+```markdown
+# انتشار جامعه کشور — TeleLife / TeleWorld
+
+## رفع خطای استقرار
+- `url_button` به API عمومی `packages.core.ui` اضافه شد؛ خطای ImportError گزارش‌شده برطرف شده است.
+
+## قابلیت‌های اجتماعی
+- مرکز «جامعه کشور» داخل گروه برای شهروندان همان کشور
+- کمک مالی مستقیم با سقف ۳ بار در روز و اعتبار فقط برای دو کمک نخست
+- دوستی با پیشنهاد و پذیرش دوطرفه
+- ازدواج با رضایت دوطرفه، نمایش همسر و جدایی با دوره انتظار ۷روزه
+- رقابت دوستانه سه‌دوره‌ای، نوبتی و بدون خسارت مالی یا دائمی
+- گزارش محرمانه با محدودیت یک گزارش برای هر هدف در ۲۴ ساعت
+- دادگاه شهروندی با شرح پالایش‌شده، رأی‌گیری ۲۴ساعته، منع رأی طرفین و حداقل ۳ رأی برای محکومیت
+- انقضای خودکار درخواست‌ها، رقابت‌ها و حل پرونده‌ها توسط Scheduler
+- API مدیریتی برای مشاهده و تعیین تکلیف گزارش‌های اجتماعی
+
+## کنترل‌های ضدسوءاستفاده
+- تمام تعامل‌ها فقط بین شهروندان فعال یک کشور
+- تراکنش کمک اتمیک و دارای idempotency key
+- جلوگیری از خودتعامل، درخواست تکراری، رأی تکراری و کلیک خارج از نوبت
+- فیلتر محتوای شرح پرونده و حذف best-effort پیام مرحله‌ای از گروه
+- گزارش‌ها در گروه منتشر نمی‌شوند
+
+## کنترل کیفیت
+- Compile تمام فایل‌های Python موفق
+- Parse تمام فایل‌های Python موفق
+- اعتبارسنجی همه فایل‌های YAML موفق
+- قراردادهای Import، دیتابیس، رضایت، محدودیت‌ها و مسیرهای UI بررسی شدند
+
+## استقرار
+مهاجرت `0023_country_social_life.sql` هنگام اجرای `run.py` به‌صورت خودکار اعمال می‌شود. نخست روی staging با PostgreSQL واقعی اجرا شود.
+```
+
 ### `RELEASE_HARDENING_FA.md`
 
 ```markdown
@@ -14728,6 +15352,34 @@ Outbox تحویل «حداقل یک‌بار» دارد. Telegram برای ار�
 - JavaScript پنل مدیریت با node --check موفق بود.
 - توالی migration تا 0022 و قراردادهای UX بررسی شد.
 - در staging پس از نصب requirements.txt اجرا شود: `python -m pytest -q`.
+```
+
+### `RELEASE_UX_GLASS_2026_FA.md`
+
+```markdown
+# نسخه UX شیشه‌ای TeleLife / TeleWorld
+
+## تغییرات اصلی
+- هر `/start` پذیرفته‌شده یک پنل تازه می‌سازد و دکمه‌های پنل قبلی را غیرفعال می‌کند.
+- محدودیت هر دو بات: حداکثر ۲ بار Start در پنجرهٔ لغزان ۶۰ ثانیه.
+- ناوبری عادی در یک پیام زنده انجام می‌شود تا چت شلوغ نشود.
+- کلیک روی پنل قدیمی رد می‌شود و همان پنل بدون دکمه باقی می‌ماند.
+- صفحهٔ «کشور من» در Life با نام کشور، حکومت، جمعیت و لینک گروه اضافه شد.
+- مقصدهای مهاجرت در Life نمایش داده می‌شوند و ثبت درخواست تأیید نهایی دارد.
+- هزینه خروج، مهلت بررسی و محدودیت‌های سیاسی پیش از تأیید نمایش داده می‌شوند.
+- World لینک عمومی یا invite link موجود گروه را برای نمایش در Life ذخیره می‌کند.
+- دکمه‌های خنثی شیشه‌ای‌اند و رنگ‌های Primary/Success فقط برای اقدام مهم استفاده می‌شوند.
+
+## کنترل کیفیت انجام‌شده
+- استخراج ۲۷۲ فایل از دامپ و بازسازی ساختار کامل پروژه.
+- parse و compile تمام فایل‌های Python موفق بود.
+- اعتبارسنجی همه فایل‌های YAML موفق بود.
+- قراردادهای ایستای Start، پنل قدیمی، کشور و مهاجرت بررسی شد.
+
+## نکته استقرار
+- مهاجرت‌های پایگاه داده تا `0022_ui_panel_expiry.sql` باید اعمال شده باشند.
+- تست یکپارچه با PostgreSQL و Telegram واقعی را ابتدا در staging اجرا کنید.
+- در محیط ساخت این بسته، کتابخانه‌های runtime پروژه (از جمله python-telegram-bot و pytest) نصب نبودند؛ بنابراین تست آنلاین بات و مجموعه pytest اینجا اجرا نشد، اما کد از نظر syntax/compile/YAML بررسی شده است.
 ```
 
 ### `RELEASE_V2_FA.md`
@@ -15491,6 +16143,42 @@ def test_realism_schema_is_additive():
   assert f"CREATE TABLE IF NOT EXISTS {table}" in text
 ```
 
+### `tests\test_country_social_release.py`
+
+```python
+from pathlib import Path
+import ast
+
+def text(path): return Path(path).read_text(encoding='utf-8')
+
+def test_url_button_is_publicly_exported():
+    ui=text('packages/core/ui/__init__.py')
+    assert '"url_button"' in ui
+    assert '"button", "url_button"' in ui
+
+def test_social_schema_and_consent_contracts():
+    sql=text('migrations/0023_country_social_life.sql')
+    service=text('packages/core/services/social.py')
+    for table in ('social_relationships','citizen_help_events','social_competitions','citizen_cases','citizen_case_votes','citizen_reports'):
+        assert f'CREATE TABLE IF NOT EXISTS {table}' in sql
+    assert 'request_target_required' in service
+    assert 'same_country_required' in service
+    assert 'help_daily_limit' in service
+    assert 'case_party_cannot_vote' in service
+
+def test_social_world_routes_exist():
+    world=text('apps/teleworld_bot/handlers/world.py')
+    keys=text('apps/teleworld_bot/keyboards.py')
+    for token in ('society_page','social_people_page','shelp:','socaccept:','compplay:','casevote:','divorceok'):
+        assert token in world
+    for fn in ('society_home','social_people','help_amount','competition','court_cases','court_vote','divorce_confirm'):
+        assert f'def {fn}' in keys
+
+def test_all_sources_parse():
+    for path in Path('.').rglob('*.py'):
+        ast.parse(path.read_text(encoding='utf-8'),filename=str(path))
+```
+
 ### `tests\test_country_trade_release_c.py`
 
 ```python
@@ -15958,6 +16646,41 @@ def test_migration_is_additive():
     assert "player_skills" in sql and "player_assets" in sql and "skill_events" in sql
 ```
 
+### `tests\test_life_ux_2026.py`
+
+```python
+from pathlib import Path
+
+def text(path): return Path(path).read_text(encoding='utf-8')
+
+def test_start_is_fresh_and_retires_old_panel():
+    life=text('apps/telelife_bot/handlers/life.py')
+    panel=text('apps/telelife_bot/handlers/panel.py')
+    assert 'force_new=True' in life
+    assert 'edit_message_reply_markup' in panel
+    assert 'force_new' in panel
+
+def test_stale_callbacks_are_rejected():
+    life=text('apps/telelife_bot/handlers/life.py')
+    assert "active_id!=clicked_id" in life
+    assert 'retire_message' in life
+
+def test_life_country_and_confirmed_migration_exist():
+    life=text('apps/telelife_bot/handlers/life.py')
+    keys=text('apps/telelife_bot/keyboards/main.py')
+    assert 'async def country_page' in life
+    assert "a=='migconfirm'" in life
+    assert 'migration.quote' in life and 'migration.request' in life
+    assert 'ورود به گروه کشور من' in keys
+    assert 'url_button' in keys
+
+
+def test_world_start_is_fresh_and_retires_old_panel():
+    world=text('apps/teleworld_bot/handlers/world.py')
+    assert 'edit_message_reply_markup' in world
+    assert 'clear_world' in world
+```
+
 ### `tests\test_live_market.py`
 
 ```python
@@ -15993,14 +16716,15 @@ from pathlib import Path
 def test_both_active_bots_are_message_and_button_driven():
     life=Path('apps/telelife_bot/handlers/life.py').read_text()
     world=Path('apps/teleworld_bot/handlers/world.py').read_text()
-    assert 'CommandHandler' not in life
-    assert 'CommandHandler' not in world
+    # /start is intentionally retained; all product navigation remains button-driven.
+    assert "CommandHandler('start',start)" in life
+    assert 'CommandHandler("start", start)' in world
     assert 'MessageHandler' in life and 'CallbackQueryHandler' in life
     assert 'MessageHandler' in world and 'CallbackQueryHandler' in world
 
 def test_only_one_active_controller_per_bot():
-    assert sorted(p.name for p in Path('apps/telelife_bot/handlers').glob('*.py')) == ['__init__.py','common.py','life.py','panel.py']
-    assert sorted(p.name for p in Path('apps/teleworld_bot/handlers').glob('*.py')) == ['__init__.py','world.py']
+    assert Path('apps/telelife_bot/handlers/life.py').is_file()
+    assert Path('apps/teleworld_bot/handlers/world.py').is_file()
 ```
 
 ### `tests\test_migrator.py`
@@ -16041,6 +16765,13 @@ def test_new_migrations_remain_checksum_strict():
     source = (migrator.Path(migrator.__file__)).read_text(encoding="utf-8")
     assert "if version in LEGACY_CHECKSUM_VERSIONS" in source
     assert "Create a new migration instead of editing history" in source
+
+def test_recovered_0021_and_0022_are_legacy_but_0023_is_strict():
+    from packages.core.db import migrator
+    assert "0021_multi_admin_hardening" in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "0022_ui_panel_expiry" in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert migrator.STRICT_CHECKSUM_FROM == "0023_country_social_life"
+    assert "0023_country_social_life" not in migrator.LEGACY_CHECKSUM_VERSIONS
 ```
 
 ### `tests\test_missions.py`

@@ -26,11 +26,10 @@ def home(country, admin, citizen=False, official_role=None):
                     [b("🏛 وضعیت کشور", "country", "primary"), b("👥 شهروندان", "citizens")],
                     [b("📘 قوانین شهروندی", "migration_rules"), b("🔄 تازه‌سازی", "home")]]
             return InlineKeyboardMarkup(rows)
-        rows = [[b("☀️ وضعیت امروز کشور", "country_today", "primary")],
-                [b("🏘 جامعه کشور", "society"), b("👥 شهروندان", "citizens")],
-                [b("💰 اقتصاد و منابع", "economy"), b("🗳 سیاست و انتخابات", "politics")],
-                [b("🏗 پروژه ملی", "project"), b("🌐 تجارت و دیپلماسی", "trade")],
-                [b("✈️ مهاجرت", "migration"), b("🏛 شناسنامه", "country")]]
+        rows = [[b("▶️ بهترین کار امروز کشور", "country_today", "primary")],
+                [b("👥 مردم و جامعه", "society"), b("🗳 رأی و سیاست", "politics")],
+                [b("💰 اقتصاد کشور", "economy"), b("🏗 همکاری در پروژه", "project")],
+                [b("🌐 ارتباط با کشورها", "trade"), b("🏛 اطلاعات کشور", "country")]]
         if official_role in {"president", "economy_minister", "industry_minister"}:
             rows.insert(2,[b("⚙️ مدیریت حوزه من", "economyb", "success")])
         if official_role in {"president", "foreign_minister"}:
@@ -188,7 +187,8 @@ def pending_relations(rows):
  buttons.append([b("↩️ روابط خارجی","relations")]);return InlineKeyboardMarkup(buttons)
 # ---------- جامعه کشور ----------
 def society_home(pending=(), competitions=(), married=False):
- rows=[[b("🤝 کمک به شهروند","socpeople:help","success"),b("🫂 دوستی‌ها","socpeople:friend")],
+ rows=[[b("🎁 هدیه منبع به دوست","resourcegift","success"),b("🏛 اهدای منبع به کشور","resourcedonate","success")],
+       [b("💵 کمک نقدی به شهروند","socpeople:help"),b("🫂 دوستی‌ها","socpeople:friend")],
        [b("💍 ازدواج و خانواده","socmarriage","primary"),b("🏆 رقابت دوستانه","socpeople:compete")],
        [b("⚖️ دادگاه شهروندی","soccases"),b("🛡 گزارش امن","socpeople:report")]]
  for r in pending:
@@ -201,9 +201,25 @@ def society_home(pending=(), competitions=(), married=False):
  rows.append([b("🏠 خانه جهان","home")]);return InlineKeyboardMarkup(rows)
 
 def social_people(rows,mode):
- labels={"help":"🤝 کمک به","friend":"🫂 دوستی با","marry":"💍 پیشنهاد به","compete":"🏆 رقابت با","report":"🛡 گزارش","case":"⚖️ شکایت از"}
+ labels={"help":"🤝 کمک به","resourcegift":"🎁 هدیه منبع به","friend":"🫂 دوستی با","marry":"💍 پیشنهاد به","compete":"🏆 رقابت با","report":"🛡 گزارش","case":"⚖️ شکایت از"}
  buttons=[[b(f"{labels.get(mode,'انتخاب')} {r['first_name']}",f"socperson:{mode}:{r['id']}")] for r in rows]
  buttons.append([b("↩️ جامعه کشور","society")]);return InlineKeyboardMarkup(buttons)
+
+def resource_assets(action,target=None):
+ suffix=f":{target}" if target is not None else ""
+ return InlineKeyboardMarkup([
+  [b("🌾 محصول کشاورزی",f"{action}:food{suffix}","primary"),b("⛏ مواد معدنی",f"{action}:minerals{suffix}")],
+  [b("🔬 فناوری",f"{action}:technology{suffix}"),b("⚡ انرژی",f"{action}:energy{suffix}")],
+  [b("↩️ جامعه کشور","society")],
+ ])
+
+def resource_amount(action,asset,target=None):
+ suffix=f":{target}" if target is not None else ""
+ return InlineKeyboardMarkup([
+  [b("۱۰ واحد",f"{action}:{asset}:10{suffix}"),b("۵۰ واحد",f"{action}:{asset}:50{suffix}","success")],
+  [b("۱۰۰ واحد",f"{action}:{asset}:100{suffix}"),b("۵۰۰ واحد",f"{action}:{asset}:500{suffix}")],
+  [b("↩️ جامعه کشور","society")],
+ ])
 
 def help_amount(target):
  return InlineKeyboardMarkup([[b("۱۰ هزار",f"shelp:{target}:10000"),b("۵۰ هزار",f"shelp:{target}:50000","success")],

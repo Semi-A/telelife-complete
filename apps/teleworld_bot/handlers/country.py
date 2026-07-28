@@ -13,6 +13,7 @@ from packages.core.models import Player
 from packages.core.repositories import country_repo, player_repo
 from packages.core.services import country as country_service
 from packages.core.services import country_missions, economy
+from packages.core.utils.fa_labels import government_name
 
 _GROUP_TYPES = {ChatType.GROUP, ChatType.SUPERGROUP}
 
@@ -89,7 +90,7 @@ async def show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         fa.COUNTRY_STATUS.format(
             name=row["name"],
             description=row["description"],
-            government=row["government_type"],
+            government=government_name(row["government_type"]),
             treasury=row["treasury_toman"],
         )
     )

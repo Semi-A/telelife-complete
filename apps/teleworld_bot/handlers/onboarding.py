@@ -11,6 +11,7 @@ from packages.core.services import country as country_service
 from packages.core.services import economy, elections, production
 from packages.core.repositories import production_repo
 from packages.core.utils import fmt
+from packages.core.utils.fa_labels import government_name
 from uuid import uuid4
 
 _GROUPS={ChatType.GROUP,ChatType.SUPERGROUP}
@@ -74,7 +75,7 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE)->None:
  if action=="country":
   row=await country_repo.by_chat(q.message.chat.id)
   await q.answer()
-  if row:await q.edit_message_text(fa.COUNTRY_STATUS.format(name=row['name'],description=row['description'],government=fa.GOVERNMENT_NAMES.get(row['government_type'],row['government_type']),treasury=row['treasury_toman']),reply_markup=kb.country_actions())
+  if row:await q.edit_message_text(fa.COUNTRY_STATUS.format(name=row['name'],description=row['description'],government=government_name(row['government_type']),treasury=row['treasury_toman']),reply_markup=kb.country_actions())
   return
  if action=="jobs":
   user=q.from_user;player=await player_repo.get_or_create(user.id,username=user.username,first_name=user.first_name or "شهروند",language_code=user.language_code or "fa")

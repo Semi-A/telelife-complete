@@ -24,9 +24,10 @@ async def _retire_remembered(context: ContextTypes.DEFAULT_TYPE, state, fallback
     if not state or not state["life_message_id"]:
         return
     try:
-        await context.bot.edit_message_reply_markup(
+        await context.bot.edit_message_text(
             chat_id=int(state["life_chat_id"] or fallback_chat_id),
             message_id=int(state["life_message_id"]),
+            text="🔒 بسته شد",
             reply_markup=None,
         )
     except (BadRequest, Forbidden) as exc:

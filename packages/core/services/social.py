@@ -29,6 +29,9 @@ async def dashboard(country_id:int,player_id:int):
   "pending":await db.fetch("""SELECT r.id,r.kind,p.first_name proposer_name FROM social_relationships r JOIN players p ON p.id=r.proposed_by WHERE r.status='pending' AND r.proposed_by<>$1 AND (r.player_low_id=$1 OR r.player_high_id=$1) ORDER BY r.created_at DESC LIMIT 10""",player_id),
   "competitions":await db.fetch("""SELECT c.id,c.status,c.round_no,c.challenger_score,c.opponent_score,c.turn_player_id,p.first_name opponent_name FROM social_competitions c JOIN players p ON p.id=CASE WHEN c.challenger_id=$1 THEN c.opponent_id ELSE c.challenger_id END WHERE c.country_id=$2 AND ((c.status='pending' AND c.opponent_id=$1) OR (c.status='active' AND (c.challenger_id=$1 OR c.opponent_id=$1))) ORDER BY c.created_at DESC LIMIT 5""",player_id,country_id),
   "cases":int(await db.fetchval("SELECT count(*) FROM citizen_cases WHERE country_id=$1 AND status IN ('review','voting')",country_id) or 0),
+  "resource_activity":await db.fetch("""SELECT t.transfer_type,t.asset_code,t.amount,t.created_at,a.first_name actor_name,b.first_name recipient_name
+    FROM citizen_resource_transfers t JOIN players a ON a.id=t.actor_id LEFT JOIN players b ON b.id=t.recipient_id
+    WHERE t.country_id=$1 ORDER BY t.created_at DESC LIMIT 5""",country_id),
  }
 
 async def propose(kind:str,actor:int,target:int):

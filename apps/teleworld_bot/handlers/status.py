@@ -1,4 +1,4 @@
-"""TeleWorld onboarding, group activation and status commands."""
+"""تله‌ورلد onboarding, group activation and status commands."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ async def _sync(update: Update) -> tuple[int, str] | None:
 def _private_menu(bot_username: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
-            "➕ افزودن TeleWorld به گروه",
+            "➕ افزودن تله‌ورلد به گروه",
             url=f"https://t.me/{bot_username}?startgroup=true",
             style="primary",
         )],

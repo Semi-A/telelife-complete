@@ -19,6 +19,17 @@ logger = logging.getLogger(__name__)
 
 Sender = Callable[[int | None, str, dict[str, Any]], Awaitable[None]]
 
+EVENT_TEXTS: dict[str, str] = {
+    "harvest_boom": "🌾 رونق برداشت\n\nامروز تولید محصولات کشاورزی ۲۰٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "mining_surge": "⛏ رونق استخراج\n\nامروز تولید مواد معدنی ۲۰٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "energy_wave": "⚡ موج انرژی\n\nامروز تولید انرژی ۱۵٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "technology_rush": "🔬 جهش فناوری\n\nامروز تولید فناوری ۱۵٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+    "market_day": "💱 روز پررونق بازار\n\nامروز تولید ارزی ۱۰٪ بیشتر است و این اثر تا ۲۴ ساعت ادامه دارد.",
+}
+
+def daily_event_text(code: object) -> str:
+    return EVENT_TEXTS.get(str(code), "📢 رویداد تازه‌ای در جهان آغاز شده است؛ جزئیات آن را در پنل کشور ببینید.")
+
 
 def _backoff(delays: list[int], attempts: int) -> int:
     """Delay for the next retry. `attempts` is already incremented by claim()."""
@@ -109,7 +120,7 @@ async def ensure_daily_events(today: date | None = None) -> int:
                     conn,
                     f"daily-event:{day}",
                     "daily_event",
-                    {"event_date": str(day), "event_code": code, "effect": spec},
+                    {"event_date": str(day), "event_code": code, "effect": spec, "text": daily_event_text(code)},
                     destination,
                 )
                 created += 1

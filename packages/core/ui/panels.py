@@ -1,9 +1,8 @@
 """Auto-expiring interactive panels.
 
 Every panel schedules its own cleanup via the PTB job queue. Timeouts come from
-`core.menu_cleanup` in config - nothing hardcoded. On expiry the keyboard is
-stripped, not the message: the player keeps the information, we free the
-callback surface.
+`core.menu_cleanup` in config - nothing hardcoded. On expiry the keyboard is stripped and the panel text is replaced with a clear
+Persian closed-state label, so stale controls and stale content cannot confuse users.
 """
 
 from __future__ import annotations
@@ -32,10 +31,11 @@ async def _expire(context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = job.data["chat_id"]
     message_id = job.data["message_id"]
     try:
-        await context.bot.edit_message_reply_markup(
-            chat_id=chat_id, message_id=message_id, reply_markup=None
+        message = await context.bot.edit_message_text(
+            chat_id=chat_id, message_id=message_id,
+            text="🔒 بسته شد", reply_markup=None
         )
-        # Buttons disappear while the informational message remains readable.
+        # The expired panel is explicit: controls disappear and its text says it is closed.
         # Persistent expiry is also checked by callback guards after restarts.
     except BadRequest as exc:
         logger.debug("panel cleanup no-op for chat %s: %s", chat_id, exc)

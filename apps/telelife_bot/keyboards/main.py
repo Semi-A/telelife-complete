@@ -10,22 +10,19 @@ def B(text, action, owner, arg="", style=Style.GLASS):
 def home(owner: int, daily_ready: bool, onboarding: int = 4) -> InlineKeyboardMarkup:
     k = Keyboard()
     if onboarding < 4:
-        k.row(B("🚀 ادامه مسیر شروع", "journey", owner, style=Style.PRIMARY))
+        k.row(B("▶️ قدم بعدی من", "journey", owner, style=Style.PRIMARY))
     else:
-        k.row(B("☀️ امروز من", "today", owner, style=Style.PRIMARY),
-              B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
-    if onboarding < 4:
-        k.row(B("☀️ امروز من", "today", owner),
-              B("🎁 هدیه روزانه", "daily", owner, style=Style.SUCCESS if daily_ready else Style.GLASS))
-    k.row(B("💼 کار و دریافت درآمد", "jobs", owner), B("💳 دارایی و بانک", "economy", owner))
-    k.row(B("💵 بازار ارز", "market", owner), B("🏠 خانه و زندگی", "housing", owner))
-    k.row(B("🪪 شخصیت من", "profile", owner), B("🌍 کشور من", "country", owner))
-    k.row(B("🧭 مرکز پیشرفت", "progress", owner))
+        k.row(B("▶️ قدم بعدی من", "today", owner, style=Style.PRIMARY))
+    k.row(B("💼 کار و درآمد", "jobs", owner, style=Style.SUCCESS),
+          B("🎯 کارهای امروز", "missions", owner, style=Style.SUCCESS))
+    k.row(B("💳 پول و دارایی", "economy", owner), B("🌍 کشور من", "country", owner))
+    k.row(B("🪪 وضعیت من", "profile", owner), B("🧭 مسیر پیشرفت", "progress", owner))
+    k.row(B("❓ چرا بازی کنم؟", "why", owner), B("📘 راهنمای یک‌دقیقه‌ای", "guide", owner))
     k.row(B("📣 درخواست تبلیغ", "advertise", owner))
     return k.build()
 
 def journey(owner, step):
-    labels = {0:"✨ تعیین هدف نخست", 1:"🎁 دریافت سرمایه آغازین", 2:"🎯 بازکردن نخستین کار روزانه", 3:"🏁 ورود به زندگی اصلی"}
+    labels = {0:"✨ شروع زندگی من", 1:"🎁 گرفتن سرمایه شروع", 2:"🎯 دیدن اولین کار", 3:"💼 انتخاب شغل و شروع درآمد"}
     k = Keyboard()
     if 0 <= step < 4:
         k.row(B(labels[step], "jstep", owner, str(step), Style.PRIMARY))
@@ -77,7 +74,19 @@ def jobs(owner, has_job, unlocked=True):
         k.row(B("💻 برنامه‌نویس", "jchoose", owner, "programmer"), B("📈 بازرگان", "jchoose", owner, "trader"))
         k.row(B("⚡ مهندس", "jchoose", owner, "engineer"), B("🩺 پزشک", "jchoose", owner, "doctor"))
         k.row(B("📰 روزنامه‌نگار", "jchoose", owner, "journalist"))
-    k.row(B("🏠 منوی اصلی", "home", owner))
+    k.row(B("📦 منابع و فروش", "resources", owner, style=Style.SUCCESS), B("🏠 منوی اصلی", "home", owner))
+    return k.build()
+
+def resources(owner, rows):
+    k=Keyboard();emphasized=False
+    for item in rows:
+        if int(item["quantity"])<=0:continue
+        for amount in (10,50,100,500):
+            if amount<=int(item["quantity"]):
+                style=Style.PRIMARY if not emphasized else Style.SUCCESS
+                emphasized=True
+                k.row(B(f"فروش {amount} {item['title']}","rsell",owner,f"{item['asset']},{amount}",style))
+    k.row(B("🔄 تازه‌سازی موجودی","resources",owner),B("💼 بازگشت به شغل","jobs",owner))
     return k.build()
 
 def market(owner, unlocked=True):
@@ -95,18 +104,28 @@ def progress(owner):
 
 def assets(owner, rows):
     k=Keyboard()
+    emphasized=False
     for item in rows:
         if item.available and not item.owned:
-            k.row(B(f"خرید {item.title}", "abuy", owner, item.code, Style.PRIMARY))
+            style=Style.PRIMARY if not emphasized else Style.SUCCESS
+            emphasized=True
+            k.row(B(f"خرید {item.title}", "abuy", owner, item.code, style))
     k.row(B("🧭 مرکز پیشرفت", "progress", owner), B("🏠 خانه", "home", owner))
     return k.build()
 
 def today(owner, actions):
-    labels={"daily":"🎁 دریافت هدیه","missions":"🎯 دریافت پاداش مأموریت","jobs":"💼 رفتن به شغل","economy":"💳 بررسی هزینه زندگی"}
-    styles={"daily":Style.SUCCESS,"missions":Style.SUCCESS,"jobs":Style.PRIMARY,"economy":Style.PRIMARY}
+    labels={"daily":"🎁 گرفتن هدیه آماده","missions":"🎯 ادامه کارهای امروز","jobs":"💼 کار و دریافت درآمد","economy":"🧾 بررسی هزینه زندگی"}
     k=Keyboard()
+    primary_used=False
     for action in actions:
-        k.row(B(labels.get(action,"ادامه"),action,owner,style=styles.get(action,Style.GLASS)))
+        if action in {"daily", "missions"}:
+            style=Style.SUCCESS
+        elif not primary_used:
+            style=Style.PRIMARY
+            primary_used=True
+        else:
+            style=Style.SUCCESS
+        k.row(B(labels.get(action,"ادامه"),action,owner,style=style))
     k.row(B("🔄 تازه‌سازی امروز", "today", owner),B("🏠 خانه", "home", owner))
     return k.build()
 
@@ -123,3 +142,9 @@ def country(owner:int,group_url:str|None,destinations:list[tuple[int,str,int]],*
             k.row(B(f"🧳 {name} · {citizens} شهروند","migrate",owner,str(country_id)))
     k.row(B("🔄 تازه‌سازی", "country", owner),B("🏠 خانه", "home", owner))
     return k.build()
+
+def learn(owner):
+    return (Keyboard().row(B("▶️ قدم بعدی من", "today", owner, style=Style.PRIMARY))
+            .row(B("💼 دیدن شغل‌ها", "jobs", owner, style=Style.SUCCESS),
+                 B("🌍 کشور من", "country", owner))
+            .row(B("🏠 خانه", "home", owner)).build())

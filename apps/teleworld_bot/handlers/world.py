@@ -13,7 +13,7 @@ from packages.core import db
 from packages.core.bot.start_limit import allow_start
 from packages.core.ui import schedule_cleanup
 from packages.core.repositories import country_repo, election_repo, group_repo, player_repo, project_repo, ui_state_repo, world_access_repo
-from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade, social
+from packages.core.services import country as countries, economy, elections, national_project, commerce, migration, country_realism, country_objectives, country_economy_b, country_trade, resource_economy, social
 from packages.core.services import world_access
 from packages.core.utils import fmt
 
@@ -35,7 +35,7 @@ ERRORS = {
     "same_country_required":"این تعامل فقط بین شهروندان همین کشور ممکن است.", "self_interaction":"نمی‌توانی خودت را انتخاب کنی.",
     "relationship_exists":"این رابطه یا درخواست از قبل وجود دارد.", "marriage_unavailable":"یکی از طرفین ازدواج یا پیشنهاد فعال دارد.",
     "request_not_found":"این درخواست دیگر فعال نیست.", "request_target_required":"فقط دریافت‌کننده درخواست می‌تواند پاسخ دهد.",
-    "help_daily_limit":"سقف سه کمک در امروز پر شده است.", "competition_exists":"بین شما یک رقابت باز وجود دارد.",
+    "help_daily_limit":"سقف سه کمک در امروز پر شده است.", "resource_gift_daily_limit":"سقف هدیه منابع امروز پر شده است.", "resource_donation_daily_limit":"سقف اهدای منابع امروز پر شده است.", "invalid_amount":"این مقدار معتبر نیست.", "competition_exists":"بین شما یک رقابت باز وجود دارد.",
     "competition_not_found":"این رقابت پایان یافته یا در دسترس نیست.", "not_your_turn":"الان نوبت طرف مقابل است.",
     "report_rate_limit":"برای همین فرد در ۲۴ ساعت گذشته گزارش ثبت کرده‌ای.", "case_rate_limit":"سقف دو شکایت در هفته پر شده است.",
     "case_party_cannot_vote":"طرفین پرونده نمی‌توانند رأی بدهند.", "already_voted":"رأی تو قبلاً ثبت شده است.",
@@ -92,14 +92,14 @@ async def facts(chat_id):
 MUTATING = {"create", "join", "leave", "estart", "nominate", "subtreasury", "migration", "rate", "reserve", "offices", "tradenew", "aid"}
 
 def is_mutating(action: str) -> bool:
-    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:", "shelp:", "socprop:", "socaccept:", "socreject:", "compnew:", "compaccept:", "compreject:", "compplay:", "reportcat:", "casecat:", "casevote:", "divorceok"))
+    return action in MUTATING or action.startswith(("donate:", "vote:", "pstart:", "pcon:", "ptreasury:", "gov:", "govok:", "substar:", "migrate:", "migaccept:", "migreject:", "rate:", "reserve:", "budget:", "appoint:", "tradepreset:", "tradeaccept:", "tradecancel:", "relprop:", "relaccept:", "sanction:", "sanctionlift:", "aidsend:", "shelp:", "rgift:", "rdonate:", "socprop:", "socaccept:", "socreject:", "compnew:", "compaccept:", "compreject:", "compplay:", "reportcat:", "casecat:", "casevote:", "divorceok"))
 
 async def access_page(update, context, *, force: bool = False):
     access = await world_access.check(context.bot, update.effective_chat.id, force=force)
     if access.ready:
-        await show(update, context, "✅ <b>دسترسی کامل است</b>\n\nبات مدیر است و اجازه حذف پیام‌های مرحله‌ای را دارد. جهان آماده استفاده است.", kb.access(True))
+        await show(update, context, "✅ <b>دسترسی کامل است</b>\n\nتله‌ورلد مدیر است و اجازه حذف پیام‌های مرحله‌ای را دارد. جهان آماده استفاده است.", kb.access(True))
     else:
-        await show(update, context, "🔒 <b>جهان در حالت محدود است</b>\n\nکمبود: " + access.missing_fa() + "\n\nاز تنظیمات گروه، بات را مدیر کنید و اجازه «حذف پیام‌ها» را فعال کنید. اجازه افزودن مدیر یا تغییر اطلاعات گروه لازم نیست.", kb.access(False))
+        await show(update, context, "🔒 <b>جهان در حالت محدود است</b>\n\nکمبود: " + access.missing_fa() + "\n\nاز تنظیمات گروه، تله‌ورلد را مدیر کنید و اجازه «حذف پیام‌ها» را فعال کنید. اجازه افزودن مدیر یا تغییر اطلاعات گروه لازم نیست.", kb.access(False))
     return access
 
 async def health_page(update, context):
@@ -109,7 +109,7 @@ async def health_page(update, context):
     election = await election_repo.open_for_country(country["id"]) if country else None
     project = await project_repo.active(country["id"]) if country else None
     lines = [
-        f"• دسترسی بات: {'کامل' if access.ready else 'ناقص — ' + access.missing_fa()}",
+        f"• دسترسی تله‌ورلد: {'کامل' if access.ready else 'ناقص — ' + access.missing_fa()}",
         f"• اتصال کشور: {'سالم' if country else 'هنوز کشوری ساخته نشده'}",
         f"• صفحه اصلی: {'ثبت شده' if panel else 'با نخستین نمایش ساخته می‌شود'}",
         f"• انتخابات فعال: {'بله' if election else 'خیر'}",
@@ -271,10 +271,19 @@ async def society_page(update,context):
  if not citizenship or int(citizenship["country_id"])!=int(row["id"]):raise PermissionError("citizen_required")
  view=await social.dashboard(int(row["id"]),p.id)
  marriage=view["marriage"];partner=(f"💍 همسر: <b>{escape(str(marriage['partner_name']))}</b>" if marriage else "💍 هنوز ازدواج فعالی نداری.")
- text=(f"🏘 <b>جامعه {escape(str(row['name']))}</b>\n\n{partner}\n"
-       f"🫂 دوستی‌های فعال: <b>{fmt.number(view['friends'])}</b>\n"
-       f"⚖️ پرونده‌های باز: <b>{fmt.number(view['cases'])}</b>\n\n"
-       "کمک و رابطه فقط با رضایت انجام می‌شود. رقابت ضرر مالی ندارد و گزارش‌ها نام فرد را در گروه منتشر نمی‌کنند.")
+ inventory=await resource_economy.inventory(p.id)
+ resources=" · ".join(f"{ASSET.get(x['asset'],'منبع')} {fmt.number(x['quantity'])}" for x in inventory if int(x['quantity'])>0) or "منبعی نداری؛ ابتدا نتیجه شیفت را در تله‌لایف بگیر"
+ activity=[]
+ for event in view["resource_activity"]:
+  asset_name=ASSET.get(str(event['asset_code']),'منبع');actor=escape(str(event['actor_name']))
+  if event['transfer_type']=='gift':activity.append(f"🎁 {actor} به {escape(str(event['recipient_name']))}، {fmt.number(event['amount'])} {asset_name} هدیه داد")
+  else:activity.append(f"🏛 {actor}، {fmt.number(event['amount'])} {asset_name} به کشور اهدا کرد")
+ feed="\n".join(activity) or "هنوز انتقال عمومی ثبت نشده است."
+ text=(f"🏘 <b>مردم و جامعه {escape(str(row['name']))}</b>\n\n{partner}\n"
+       f"🫂 دوستی‌های فعال: <b>{fmt.number(view['friends'])}</b> · ⚖️ پرونده‌های باز: <b>{fmt.number(view['cases'])}</b>\n\n"
+       f"📦 <b>منابع قابل تعامل تو:</b> {resources}\n\n"
+       f"<b>آخرین همکاری‌های کشور</b>\n{feed}\n\n"
+       "اینجا می‌توانی منبع به دوستت هدیه بدهی یا مستقیم به کشور کمک کنی. انتقال‌ها قطعی، ثبت‌شده و محدود به شهروندان همین کشورند.")
  await show(update,context,text,kb.society_home(view["pending"],view["competitions"],bool(marriage)))
 
 async def social_people_page(update,context,mode):
@@ -325,11 +334,14 @@ async def callback(update, context):
                 await access_page(update, context)
                 return
         if action == "society": await answer(query); await society_page(update,context); return
+        if action=="resourcegift":await answer(query);await social_people_page(update,context,"resourcegift");return
+        if action=="resourcedonate":await answer(query);await show(update,context,"🏛 <b>اهدای منبع به کشور</b>\n\nمنبع مستقیم از موجودی تو به ذخایر کشور می‌رود و در اقتصاد روزانه کشور مصرف می‌شود.",kb.resource_assets("rdonatepick"));return
         if action.startswith("socpeople:"):
             await answer(query);await social_people_page(update,context,action.split(":",1)[1]);return
         if action.startswith("socperson:"):
             _,mode,target=action.split(":",2);target=int(target);await answer(query)
             if mode=="help":await show(update,context,"🤝 <b>کمک امن</b>\n\nمبلغ از کیف پول تو مستقیم به شهروند منتقل می‌شود. فقط دو کمک اول روز اعتبار می‌دهد و سقف روزانه سه کمک است.",kb.help_amount(target))
+            elif mode=="resourcegift":await show(update,context,"🎁 <b>هدیه منبع</b>\n\nمنبع و مقدار را انتخاب کن؛ انتقال مستقیم و برگشت‌ناپذیر است.",kb.resource_assets("rgiftpick",target))
             elif mode=="friend":
                 p=await player(update);await social.propose("friendship",p.id,target);await answer(query,"پیشنهاد دوستی ثبت شد.",show_alert=True);await society_page(update,context)
             elif mode=="marry":
@@ -339,6 +351,16 @@ async def callback(update, context):
             elif mode in {"report","case"}:await show(update,context,"دسته‌بندی را انتخاب کن. جزئیات حساس را در گروه عمومی ننویس.",kb.social_categories(target,"reportcat" if mode=="report" else "casecat"))
             return
         if action=="socmarriage":await answer(query);await social_people_page(update,context,"marry");return
+        if action.startswith("rgiftpick:"):
+            _,asset,target=action.split(":");await answer(query);await show(update,context,"🎁 <b>مقدار هدیه را انتخاب کن</b>\n\nانتقال پس از انتخاب مقدار فوراً ثبت می‌شود.",kb.resource_amount("rgift",asset,int(target)));return
+        if action.startswith("rgift:"):
+            _,asset,amount,target=action.split(":");p=await player(update);r=await resource_economy.transfer(p.id,asset,int(amount),f"rgift:{p.id}:{query.id}",recipient=int(target))
+            await answer(query,f"🎁 {fmt.number(r.amount)} واحد {ASSET.get(r.asset,'منبع')} هدیه شد؛ +{r.reputation} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
+        if action.startswith("rdonatepick:"):
+            _,asset=action.split(":");await answer(query);await show(update,context,"🏛 <b>مقدار کمک به کشور</b>\n\nاین منبع وارد ذخایر عمومی کشور می‌شود.",kb.resource_amount("rdonate",asset));return
+        if action.startswith("rdonate:"):
+            _,asset,amount=action.split(":");p=await player(update);r=await resource_economy.transfer(p.id,asset,int(amount),f"rdonate:{p.id}:{query.id}")
+            await answer(query,f"🏛 {fmt.number(r.amount)} واحد {ASSET.get(r.asset,'منبع')} به کشور اهدا شد؛ +{r.reputation} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
         if action.startswith("shelp:"):
             _,target,amount=action.split(":");p=await player(update);r=await social.help(p.id,int(target),int(amount),f"help:{p.id}:{query.id}")
             await answer(query,f"کمک انجام شد؛ +{r['reputation_awarded']} اعتبار اجتماعی.",show_alert=True);await society_page(update,context);return
@@ -624,7 +646,15 @@ async def text(update, context):
         context.chat_data.pop(SOCIAL_FLOW,None);await message.reply_text("✅ پرونده ثبت شد و رأی‌گیری ۲۴ساعته آغاز شد.");await cases_page(update,context);return
     flow = context.chat_data.get(FLOW)
     if not flow or update.effective_user.id != flow.get("owner"):
-        await home(update, context); return
+        trigger = " ".join((message.text or "").strip().casefold().split())
+        triggers = {"تله ورلد", "تله‌ورلد", "تل ورلد", "teleworld", "پنل جهان", "جهان"}
+        if trigger in triggers:
+            try:
+                await message.delete()
+            except (BadRequest, Forbidden):
+                pass
+            await home(update, context)
+        return
     value = (message.text or "").strip()
     access = await world_access.check(context.bot, chat.id)
     if not access.ready:
@@ -671,8 +701,9 @@ async def start(update, context):
     state = await ui_state_repo.world(chat.id)
     if state and state["message_id"]:
         try:
-            await context.bot.edit_message_reply_markup(
-                chat_id=chat.id, message_id=int(state["message_id"]), reply_markup=None
+            await context.bot.edit_message_text(
+                chat_id=chat.id, message_id=int(state["message_id"]),
+                text="🔒 بسته شد", reply_markup=None
             )
         except (BadRequest, Forbidden):
             pass

@@ -21,7 +21,7 @@ class TodayView:
 
 
 async def today_view(player: Any) -> TodayView:
-    """Prioritise ready rewards, urgent costs and the next useful action."""
+    """Show one clear next action, then compact supporting status."""
     streak, _, last_claim = await daily.state(player.id)
     ready_daily = daily.claimable(last_claim)
     items = await missions.ensure_today(player.id, max(1, player.level))
@@ -31,43 +31,38 @@ async def today_view(player: Any) -> TodayView:
     job = await production_repo.get(player.id)
     accrual = production.accrue(job, datetime.now(UTC)) if job else None
 
-    rows = ["☀️ <b>امروز من</b>", ""]
-    actions: list[str] = []
     if ready_daily:
-        rows.append("🟢 هدیه روزانه آماده دریافت است.")
-        actions.append("daily")
-    else:
-        rows.append(f"✅ هدیه روزانه دریافت شده · زنجیره {fmt.number(streak)} روز")
-    rows.append(f"{'🟢' if claimable else '🟡'} مأموریت‌ها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""))
-    if claimable:
-        actions.append("missions")
-    if accrual and accrual.stored > 0:
-        ratio = round((accrual.stored / accrual.capacity) * 100) if accrual.capacity else 0
-        rows.append(f"🟢 درآمد شغل: {fmt.number(accrual.stored)} واحد آماده · انبار {fmt.number(ratio)}٪")
-        actions.append("jobs")
-    elif job:
-        rows.append("▫️ درآمد شغل در حال جمع‌شدن است.")
-    else:
-        rows.append("🟡 هنوز شغلی انتخاب نکرده‌ای.")
-        actions.append("jobs")
-    if economy.living_due:
-        icon = "⚠️" if economy.wallet < economy.living_due else "🟡"
-        rows.append(f"{icon} هزینه زندگی: {fmt.toman(economy.living_due)}")
-        actions.append("economy")
-    else:
-        rows.append("✅ هزینه زندگی تسویه است.")
-    rows.extend(("", "🎯 <b>پیشنهاد بعدی</b>"))
-    if ready_daily:
-        rows.append("هدیه را بگیر و سپس مأموریت‌های امروز را ادامه بده.")
+        next_action, next_label = "daily", "🎁 هدیه آماده‌ات را بگیر"
+        why = "پول و تجربه می‌گیری و زنجیره حضورت حفظ می‌شود."
     elif claimable:
-        rows.append("پاداش مأموریت کامل‌شده را دریافت کن.")
-    elif accrual and accrual.stored:
-        rows.append("نتیجه شیفت را بگیر تا درآمد و تجربه ثبت شود.")
+        next_action, next_label = "missions", "🎯 پاداش کار کامل‌شده را بگیر"
+        why = "پاداش آماده است؛ دریافتش سطحت را جلو می‌برد."
+    elif not job:
+        next_action, next_label = "jobs", "💼 یک شغل انتخاب کن"
+        why = "درآمد شغل با گذشت زمان جمع می‌شود و مهارت می‌سازد."
+    elif accrual and accrual.stored > 0:
+        next_action, next_label = "jobs", "💰 نتیجه شیفت را دریافت کن"
+        why = "درآمد، تجربه و اثر کارت روی کشور ثبت می‌شود."
     elif economy.living_due:
-        rows.append("هزینه زندگی را بررسی کن تا بدهی روی هم جمع نشود.")
+        next_action, next_label = "economy", "🧾 هزینه زندگی را بررسی کن"
+        why = "پرداخت منظم از جمع‌شدن بدهی جلوگیری می‌کند."
     else:
-        rows.append("یک مأموریت یا شیفت شغلی را جلو ببر.")
-    return TodayView("\n".join(rows), tuple(dict.fromkeys(actions))[:3])
+        next_action, next_label = "missions", "🎯 یکی از کارهای امروز را جلو ببر"
+        why = "سریع‌ترین راه دریافت تجربه و بازکردن امکانات تازه است."
+
+    job_status = "شغل نداری" if not job else (f"{fmt.number(accrual.stored)} واحد درآمد آماده" if accrual and accrual.stored else "درآمد در حال جمع‌شدن")
+    rows = [
+        "☀️ <b>امروز من</b>", "",
+        "🎯 <b>بهترین کار الان</b>", next_label, why, "",
+        "<b>وضعیت کوتاه</b>",
+        f"🎁 هدیه: {'آماده' if ready_daily else 'گرفته شده'} · زنجیره {fmt.number(streak)} روز",
+        f"🎯 کارها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""),
+        f"💼 شغل: {job_status}",
+        f"🧾 هزینه زندگی: {fmt.toman(economy.living_due) if economy.living_due else 'تسویه'}",
+        "", "روزانه چند دقیقه کافی است؛ اول دکمه رنگی را بزن.",
+    ]
+    extras = [a for a in ("daily" if ready_daily else None, "missions" if claimable else None, "jobs" if job else None, "economy" if economy.living_due else None) if a and a != next_action]
+    return TodayView("\n".join(rows), tuple([next_action, *extras[:2]]))
 
 
 def upgrade_preview(row: Any, kind: str, wallet: int) -> str:
