@@ -88,9 +88,9 @@ async def missions_page(ctx,c):
 async def economy(ctx,c):
  v=await personal_economy.view(ctx.player.id);house="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,fa.ECONOMY.format(wallet=fmt.toman(v.wallet),savings=fmt.toman(v.savings),house=house,due=fmt.toman(v.living_due)),kb.economy(ctx.telegram_id))
 async def savings_page(ctx,c):
- v=await personal_economy.view(ctx.player.id);await panel(ctx,c,f"🏦 مدیریت پس‌انداز\n\nکیف پول: {fmt.toman(v.wallet)}\nپس‌انداز: {fmt.toman(v.savings)}\n\nواریز، پول را از کیف پول به پس‌انداز منتقل می‌کند؛ برداشت برعکس آن است. مبلغ را انتخاب کن.",kb.savings(ctx.telegram_id))
+ v=await personal_economy.view(ctx.player.id);await panel(ctx,c,f"🏦 پس‌انداز\n{fa.RULE}\n\n👛 کیف پول: {fmt.toman(v.wallet)}\n🏦 پس‌انداز: {fmt.toman(v.savings)}\n\n{fa.SOFT}\nواریز یعنی پول را کنار می‌گذاری تا خرج روزمره نشود؛ برداشت یعنی برش می‌گردانی به کیف پول. مبلغ را از دکمه‌های زیر انتخاب کن.",kb.savings(ctx.telegram_id))
 async def housing_page(ctx,c):
- p=await fresh(ctx);v=await personal_economy.view(p.id);current="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,f"🏠 خانه و زندگی\n\nخانه فعلی: {current}\n\nاتاق از سطح ۳، آپارتمان از سطح ۸ و ویلا از سطح ۲۰ باز می‌شود. اجاره هفت‌روزه است و خرید دائمی. خانه بهتر هزینه روزانه بیشتری دارد؛ پیش از انتخاب، موجودی و سطح خودت را بررسی کن.",kb.housing(ctx.telegram_id))
+ p=await fresh(ctx);v=await personal_economy.view(p.id);current="نداری" if not v.housing else str(get_config().get(f"phase3.housing.options.{v.housing['housing_code']}.title"));await panel(ctx,c,f"🏠 خانه و زندگی\n{fa.RULE}\n\n🏡 خانهٔ فعلی: {current}\n\n🔓 اتاق از سطح ۳ · آپارتمان از سطح ۸ · ویلا از سطح ۲۰\n📅 اجاره هفت‌روزه است، خرید دائمی.\n\n{fa.SOFT}\nخانهٔ بهتر شادی بیشتری می‌آورد، اما هزینهٔ روزانه‌اش هم بالاتر است. پیش از انتخاب، یک نگاه به موجودی و سطحت بینداز.",kb.housing(ctx.telegram_id))
 async def jobs(ctx,c):
  p=await fresh(ctx);row=await production_repo.get(p.id)
  if row:
@@ -115,15 +115,18 @@ async def resources_page(ctx,c):
 
 async def market(ctx,c):
  v=await usd_market.view();p=await fresh(ctx)
- status="⛔ متوقف" if v.frozen else "✅ عادی" if v.health>=75 else "⚠️ پرنوسان"
- access="\n\n🔒 خریدوفروش از سطح ۱۰ باز می‌شود؛ تا آن موقع می‌توانی قیمت‌ها را دنبال کنی." if p.level<10 else "\n\nقیمت را دیدی؟ پایین همین صفحه می‌توانی خرید یا فروش انجام بدهی."
- text=("💱 بازار دلار\n\n"
+ status="⛔ متوقف" if v.frozen else "✅ آرام" if v.health>=75 else "⚠️ پرنوسان"
+ access=("\n🔒 خریدوفروش از سطح ۱۰ باز می‌شود؛ تا آن‌وقت می‌توانی قیمت‌ها را دنبال کنی و بازار را یاد بگیری."
+         if p.level<10 else
+         "\nقیمت را دیدی؟ همین پایین می‌توانی خرید یا فروش کنی. فاصلهٔ خرید و فروش، سود واقعی‌ات را تعیین می‌کند.")
+ text=("💱 بازار دلار\n"
+       f"{fa.RULE}\n\n"
        f"🟢 قیمت خرید: {fmt.toman(v.buy_price)}\n"
        f"🔴 قیمت فروش: {fmt.toman(v.sell_price)}\n"
-       f"💵 موجودی شما: {fmt.usd(p.usd_cents)}\n\n"
+       f"💵 دلار تو: {fmt.usd(p.usd_cents)}\n\n"
        f"وضعیت بازار: {status}\n"
-       f"شاخص سلامت: {fmt.number(v.health)} از ۱۰۰"
-       +access)
+       f"شاخص سلامت: {fmt.number(v.health)} از ۱۰۰\n\n"
+       f"{fa.SOFT}"+access)
  await panel(ctx,c,text,kb.market(ctx.telegram_id,p.level>=10))
 
 async def progress_center(ctx,c):

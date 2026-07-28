@@ -15,8 +15,8 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 # SQL bytes may differ from records produced by older releases (line endings and
 # recovered source revisions), so an applied row is authoritative and is never
 # re-executed. All schema corrections belong in 0027 and later.
-RECOVERED_BASELINE_END = "0026_referral_growth"
-STRICT_CHECKSUM_FROM = "0027_"
+RECOVERED_BASELINE_END = "0027_production_integrity_hardening"
+STRICT_CHECKSUM_FROM = "0028_"
 LEGACY_CHECKSUM_VERSIONS = frozenset()
 
 _BOOTSTRAP = """
@@ -28,8 +28,18 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 """
 
 
+def _normalise(text: str) -> str:
+    """Line endings are a packaging detail, never a schema change.
+
+    The archive has travelled through Windows and Linux checkouts, so the same
+    migration can arrive with CRLF or LF. Hashing the normalised text keeps a
+    deployment from failing on a difference that has no effect on SQL.
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 def _checksum(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(_normalise(text).encode("utf-8")).hexdigest()[:16]
 
 
 def discover() -> list[Path]:

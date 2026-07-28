@@ -52,14 +52,22 @@ async def today_view(player: Any) -> TodayView:
 
     job_status = "شغل نداری" if not job else (f"{fmt.number(accrual.stored)} واحد درآمد آماده" if accrual and accrual.stored else "درآمد در حال جمع‌شدن")
     rows = [
-        "☀️ امروز من", "",
-        "🎯 بهترین کار الان", next_label, why, "",
-        "وضعیت کوتاه",
+        "☀️ امروز من",
+        "━━━━━━━━━━━━━━━",
+        "",
+        "🎯 بهترین کار الان",
+        next_label,
+        why,
+        "",
+        "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈",
         f"🎁 هدیه: {'آماده' if ready_daily else 'گرفته شده'} · زنجیره {fmt.number(streak)} روز",
-        f"🎯 کارها: {fmt.number(completed)} از {fmt.number(len(items))} کامل" + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""),
+        f"🎯 کارها: {fmt.number(completed)} از {fmt.number(len(items))} کامل"
+        + (f" · {fmt.number(claimable)} پاداش آماده" if claimable else ""),
         f"💼 شغل: {job_status}",
         f"🧾 هزینه زندگی: {fmt.toman(economy.living_due) if economy.living_due else 'تسویه'}",
-        "", "روزانه چند دقیقه کافی است؛ اول دکمه رنگی را بزن.",
+        "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈",
+        "",
+        "روزانه چند دقیقه کافی است؛ اول دکمه رنگی را بزن، بقیه‌اش خودش جلو می‌رود.",
     ]
     extras = [a for a in ("daily" if ready_daily else None, "missions" if claimable else None, "jobs" if job else None, "economy" if economy.living_due else None) if a and a != next_action]
     return TodayView("\n".join(rows), tuple([next_action, *extras[:2]]))

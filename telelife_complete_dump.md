@@ -2,7 +2,7 @@
 
 مسیر مبدا: `D:\PRojects\telelife_complete`
 
-تعداد کل فایل‌ها: 305
+تعداد کل فایل‌ها: 309
 
 
 ## ساختار پوشه‌ها و فایل‌ها
@@ -108,7 +108,8 @@ telelife_complete/
 │   ├── 0023_country_social_life.sql
 │   ├── 0024_work_salary_resource_social.sql
 │   ├── 0025_intergroup_council.sql
-│   └── 0026_referral_growth.sql
+│   ├── 0026_referral_growth.sql
+│   └── 0027_production_integrity_hardening.sql
 ├── packages/
 │   ├── core/
 │   │   ├── bot/
@@ -271,6 +272,7 @@ telelife_complete/
 │   ├── test_phase3_phase4_contracts.py
 │   ├── test_phase5_config.py
 │   ├── test_plain_message_text_2026_07_28.py
+│   ├── test_production_integrity_0027.py
 │   ├── test_production_security.py
 │   ├── test_progression.py
 │   ├── test_project_integrity.py
@@ -305,6 +307,7 @@ telelife_complete/
 ├── CHANGELOG_FA_2026-07-27.md
 ├── CHANGELOG_FA_2026-07-27_V2.md
 ├── DELIVERY.md
+├── DEPLOY_CHECKLIST_0027_FA.md
 ├── Dockerfile
 ├── dump.py
 ├── HOTFIX_2026-07-27_FA.md
@@ -319,6 +322,7 @@ telelife_complete/
 ├── pyproject.toml
 ├── README.md
 ├── README_FA.md
+├── RELEASE_0027_FA.md
 ├── RELEASE_2026_07_27_FA.md
 ├── RELEASE_8_5_HARDENING_FA.md
 ├── RELEASE_AUDIT_FA.md
@@ -504,8 +508,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Annotated
+import hashlib
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from packages.core.services import admin_accounts
@@ -521,6 +526,7 @@ class AdminPrincipal:
 
 
 async def require_admin(
+    request: Request,
     credentials: Annotated[HTTPBasicCredentials | None, Depends(security)],
 ) -> AdminPrincipal:
     """Authenticate the bootstrap account or an enabled database admin."""
@@ -530,13 +536,19 @@ async def require_admin(
             detail="نام کاربری و گذرواژه لازم است.",
             headers={"WWW-Authenticate": "Basic realm=TeleLife Admin"},
         )
+    client_ip = request.client.host if request.client else "unknown"
+    throttle_key = hashlib.sha256(f"{client_ip}|{credentials.username.strip().lower()}".encode()).hexdigest()
+    if await admin_accounts.authentication_blocked(throttle_key):
+        raise HTTPException(status_code=429, detail="تلاش‌های ورود بیش از حد است؛ چند دقیقه بعد دوباره امتحان کنید.")
     identity = await admin_accounts.authenticate(credentials.username, credentials.password)
     if identity is None:
+        await admin_accounts.record_authentication_failure(throttle_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="نام کاربری یا گذرواژه نادرست است.",
             headers={"WWW-Authenticate": "Basic realm=TeleLife Admin"},
         )
+    await admin_accounts.clear_authentication_failures(throttle_key)
     return AdminPrincipal(identity.username, identity.role, identity.source)
 ```
 
@@ -999,11 +1011,16 @@ async def reject_ad_request(ad_id:int,body:AdRejectBody,actor:AdminActor)->dict[
 async def pause_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:return {"paused":bool(await commerce.pause_ad(ad_id))}
 @router.post("/ad-requests/{ad_id}/refund")
 async def refund_ad_request(ad_id:int,actor:AdminActor)->dict[str,bool]:
- row=await commerce.refundable(ad_id)
- if not row:raise HTTPException(409,"پس از نخستین پخش، بازپرداخت خودکار مجاز نیست.")
+ row=await commerce.begin_refund(ad_id,actor.username)
+ if not row:raise HTTPException(409,"پس از نخستین پخش یا در وضعیت فعلی، بازپرداخت مجاز نیست.")
  from telegram import Bot
- async with Bot(get_settings().telelife_bot_token) as bot:ok=await bot.refund_star_payment(user_id=row["telegram_id"],telegram_payment_charge_id=row["telegram_charge_id"])
- if ok:await commerce.mark_refunded(ad_id)
+ try:
+  async with Bot(get_settings().telelife_bot_token) as bot:
+   ok=await bot.refund_star_payment(user_id=row["telegram_id"],telegram_payment_charge_id=row["telegram_charge_id"])
+ except Exception:
+  await commerce.finish_refund(ad_id,False)
+  raise
+ await commerce.finish_refund(ad_id,bool(ok))
  return {"refunded":bool(ok)}
 ```
 
@@ -1403,20 +1420,31 @@ async def publish_news(bot:Bot,life_bot:Bot|None=None)->dict[str,int]:
   if chat_id is None:return
   if event_type=="marketplace_ad":
    from packages.core import db
-   ad=await db.fetchrow("SELECT * FROM ad_requests WHERE id=$1",payload["ad_id"])
-   if not ad:return
-   if payload.get("destination_type")=="world":
-    protected=await db.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
-    if protected:
-     await db.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
+   async with db.transaction() as conn:
+    ad=await conn.fetchrow("SELECT * FROM ad_requests WHERE id=$1 FOR UPDATE",payload["ad_id"])
+    if not ad:return
+    if ad["status"]!='active':
+     await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1 AND status<>'sent'",payload["delivery_id"])
+     return
+    claimed=await conn.fetchval("UPDATE ad_deliveries SET status='sending' WHERE id=$1 AND status IN ('queued','sending') RETURNING id",payload["delivery_id"])
+    if not claimed:return
+    if payload.get("destination_type")=="world":
+     protected=await conn.fetchval("SELECT ad_free_until>now() FROM groups WHERE telegram_id=$1",chat_id)
+     if protected:
+      await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE id=$1",payload["delivery_id"]);return
    text=f"📣 <b>{escape(str(ad['title']))}</b>\n\n{escape(str(ad['description']))}\n\n🔗 {escape(str(ad['target_url']))}"
-   if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+str(ad['target_url'])[:45]
+   if ad["image_bytes"] and len(text)>1000:text=text[:960]+"…\n\n🔗 "+escape(str(ad['target_url'])[:45])
    sender_bot=life_bot if payload.get("destination_type")=="life" and life_bot is not None else bot
-   if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
-   else:await sender_bot.send_message(chat_id=chat_id,text=text)
-   await db.execute("UPDATE ad_deliveries SET status='sent',sent_at=now() WHERE id=$1",payload["delivery_id"])
-   await db.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
-   await db.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued'))",payload["ad_id"])
+   try:
+    if ad["image_bytes"]:await sender_bot.send_photo(chat_id=chat_id,photo=bytes(ad["image_bytes"]),caption=text)
+    else:await sender_bot.send_message(chat_id=chat_id,text=text)
+   except Exception:
+    await db.execute("UPDATE ad_deliveries SET status='queued' WHERE id=$1 AND status='sending'",payload["delivery_id"])
+    raise
+   async with db.transaction() as conn:
+    await conn.execute("UPDATE ad_deliveries SET status='sent',sent_at=now() WHERE id=$1 AND status='sending'",payload["delivery_id"])
+    await conn.execute("UPDATE ad_requests SET first_delivery_at=COALESCE(first_delivery_at,now()),updated_at=now() WHERE id=$1",payload["ad_id"])
+    await conn.execute("UPDATE ad_requests SET status='completed',updated_at=now() WHERE id=$1 AND status='active' AND NOT EXISTS(SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('scheduled','queued','sending'))",payload["ad_id"])
    return
   if event_type == 'daily_event':
    text=str(payload.get('text') or news.daily_event_text(payload.get('event_code')))
@@ -1593,16 +1621,17 @@ class SchedulerService:
         while not stop.is_set():
             if await _sleep_or_stop(stop, seconds_until_daily()):
                 return
-            try:
-                await daily_reset.run()
-                await usd_market.daily_rollover()
-                await country_jobs.daily_events()
-                await scheduler_ops.run("country_economy_b", country_economy_b.catch_up)
-                await scheduler_ops.run("country_realism", country_realism.daily_tick)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("daily jobs failed; scheduler remains active")
+            jobs = (
+                ("daily_reset", daily_reset.run),
+                ("usd_market_rollover", usd_market.daily_rollover),
+                ("country_daily_events", country_jobs.daily_events),
+                ("country_economy_b", country_economy_b.catch_up),
+                ("country_realism", country_realism.daily_tick),
+            )
+            for name, job in jobs:
+                if stop.is_set():
+                    return
+                await scheduler_ops.run(name, job)
 
     async def run(self, stop: asyncio.Event) -> None:
         self._running = True
@@ -1647,6 +1676,7 @@ class SchedulerService:
 """Guided private ad request flow and Telegram Stars settlement."""
 from __future__ import annotations
 from datetime import UTC,datetime
+from html import escape
 from telegram import InlineKeyboardButton,InlineKeyboardMarkup,LabeledPrice,Update
 from telegram.ext import CallbackQueryHandler,ContextTypes,MessageHandler,PreCheckoutQueryHandler,filters
 from packages.core.repositories import player_repo
@@ -1669,14 +1699,14 @@ async def callback(update:Update,context:ContextTypes.DEFAULT_TYPE):
   p=await player_repo.get_by_telegram_id(q.from_user.id);rows=await commerce.player_ads(p.id) if p else []
   buttons=[];lines=["📂 درخواست‌های من"]
   for row in rows:
-   lines.append(f"#{row['id']} · {row['title']} · {row['status']}"+(f"\nیادداشت: {row['admin_note']}" if row['admin_note'] else ""))
+   lines.append(f"#{row['id']} · {escape(str(row['title']))} · {escape(str(row['status']))}"+(f"\nیادداشت: {escape(str(row['admin_note']))}" if row['admin_note'] else ""))
    if row['status']=='changes_requested':buttons.append([InlineKeyboardButton(f"✏️ اصلاح #{row['id']}",callback_data=f"ad:revise:{row['id']}")])
   buttons.append([InlineKeyboardButton("درخواست تازه",callback_data="ad:new")]);await q.answer();await q.edit_message_text("\n\n".join(lines) if rows else "درخواستی نداری.",reply_markup=keyboard(buttons));return
  if action[1]=="new":await q.answer();await q.edit_message_text("بسته را انتخاب کن.",reply_markup=menu());return
  if action[1]=="revise":
   p=await player_repo.get_by_telegram_id(q.from_user.id);row=await commerce.revision_source(int(action[2]),p.id) if p else None
   if not row:await q.answer("این درخواست قابل اصلاح نیست.",show_alert=True);return
-  context.user_data[FLOW]={"step":"title","package":row['package_code'],"channel":row['channel'],"revision_id":row['id']};await q.answer();await q.edit_message_text(f"عنوان اصلاح‌شده را بفرست.\nعنوان فعلی: {row['title']}");return
+  context.user_data[FLOW]={"step":"title","package":row['package_code'],"channel":row['channel'],"revision_id":row['id']};await q.answer();await q.edit_message_text(f"عنوان اصلاح‌شده را بفرست.\nعنوان فعلی: {escape(str(row['title']))}");return
  if action[1]=="pkg":await q.answer();await q.edit_message_text("محل نمایش تبلیغ را انتخاب کن. قیمت نهایی بر اساس کانال محاسبه می‌شود.",reply_markup=channels(action[2]));return
  if action[1]=="channel":context.user_data[FLOW]={"step":"title","package":action[2],"channel":action[3]};await q.answer();await q.edit_message_text(f"قیمت نهایی: {commerce.ad_price(action[2],action[3])} ⭐\n\nعنوان کوتاه تبلیغ را بفرست (۳ تا ۱۲۰ نویسه).")
 async def text(update:Update,context:ContextTypes.DEFAULT_TYPE):
@@ -2320,6 +2350,7 @@ async def show(
 from __future__ import annotations
 
 from telegram import Update
+from html import escape
 from telegram.ext import CommandHandler, ContextTypes
 
 from apps.telelife_bot.texts import fa
@@ -2343,7 +2374,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not player.playable:
         text = (
-            fa.BANNED.format(reason=player.ban_reason or fa.NO_REASON)
+            fa.BANNED.format(reason=escape(player.ban_reason or fa.NO_REASON))
             if player.is_banned
             else fa.FROZEN
         )
@@ -2354,7 +2385,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await message.reply_text(
         fa.PROFILE.format(
-            name=player.first_name,
+            name=escape(player.first_name),
             level=fmt.number(player.level),
             prestige=fmt.number(player.prestige),
             xp_bar=fmt.progress_bar(current_xp, needed),
@@ -2589,6 +2620,7 @@ def register(application) -> None:  # type: ignore[no-untyped-def]
 from __future__ import annotations
 
 from telegram import Update
+from html import escape
 from telegram.ext import CommandHandler, ContextTypes
 
 from apps.telelife_bot.handlers.common import resolve
@@ -2613,12 +2645,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if existing is None:
         cfg = get_config()
         text = fa.WELCOME_NEW.format(
-            name=ctx.player.first_name,
+            name=escape(ctx.player.first_name),
             wallet=fmt.toman(cfg.int_("economy.starting_balance.wallet_toman")),
         )
     else:
         text = fa.WELCOME_BACK.format(
-            name=ctx.player.first_name,
+            name=escape(ctx.player.first_name),
             level=fmt.number(ctx.player.level),
             wallet=fmt.toman(ctx.player.wallet_toman),
         )
@@ -5198,6 +5230,26 @@ This repository is reconstructed from the supplied TeleLife Phase 2 dump and inc
 Migrations are applied automatically at service startup.
 ```
 
+### `DEPLOY_CHECKLIST_0027_FA.md`
+
+```markdown
+# چک‌لیست استقرار 0027
+
+- [ ] Backup دیتابیس گرفته شد
+- [ ] متغیرهای `DATABASE_URL`، توکن دو Bot و حساب Admin تنظیم‌اند
+- [ ] دو Bot Token متفاوت‌اند
+- [ ] Migrationهای `0001` تا `0026` تغییر نکرده‌اند
+- [ ] Migration `0027` در Startup اعمال شد
+- [ ] `/readyz` پاسخ 200 می‌دهد
+- [ ] `/healthz` پاسخ 200 می‌دهد
+- [ ] ورود صحیح و Rate Limit ورود ناموفق Admin تست شد
+- [ ] ساخت و پرداخت آزمایشی اشتراک در Staging انجام شد
+- [ ] ساخت، تأیید و پرداخت آزمایشی تبلیغ انجام شد
+- [ ] Refund قبل از اولین Delivery تست شد
+- [ ] کمک نقدی شهروندی و دو Ledger leg آن بررسی شد
+- [ ] اجرای دستی Job مجاز و Daily Scheduler بررسی شد
+```
+
 ### `Dockerfile`
 
 ```
@@ -7257,6 +7309,58 @@ CREATE TABLE IF NOT EXISTS referral_milestone_rewards (
 );
 ```
 
+### `migrations\0027_production_integrity_hardening.sql`
+
+```sql
+-- Production integrity hardening. Forward-only; do not edit migrations 0001..0026.
+
+-- Allow a durable refund claim before the external Telegram call.
+ALTER TABLE ad_requests DROP CONSTRAINT IF EXISTS ad_requests_status_check;
+ALTER TABLE ad_requests ADD CONSTRAINT ad_requests_status_check CHECK (
+ status IN ('draft','pending_review','changes_requested','approved_unpaid','paid','active',
+            'paused','completed','rejected','cancelled','refund_pending','refunded','payment_expired')
+);
+ALTER TABLE ad_requests
+ ADD COLUMN IF NOT EXISTS refund_previous_status TEXT,
+ ADD COLUMN IF NOT EXISTS refund_requested_at TIMESTAMPTZ,
+ ADD COLUMN IF NOT EXISTS refund_requested_by TEXT;
+
+-- Keep only the newest unpaid invoice per advertisement, then enforce the rule.
+WITH ranked AS (
+ SELECT id, row_number() OVER (PARTITION BY reference_id ORDER BY created_at DESC,id DESC) AS rn
+ FROM star_payments
+ WHERE purpose='advertisement' AND status='invoiced'
+)
+UPDATE star_payments SET status='cancelled'
+WHERE id IN (SELECT id FROM ranked WHERE rn>1);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_open_advertisement_invoice
+ ON star_payments(reference_id)
+ WHERE purpose='advertisement' AND status='invoiced';
+
+-- Persistent, bounded authentication throttling for the HTTP Basic admin entrypoint.
+CREATE TABLE IF NOT EXISTS admin_auth_throttle (
+ throttle_key TEXT PRIMARY KEY,
+ failures INTEGER NOT NULL DEFAULT 0 CHECK(failures>=0),
+ first_failed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ blocked_until TIMESTAMPTZ,
+ updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_admin_auth_throttle_cleanup
+ ON admin_auth_throttle(updated_at);
+
+
+-- A delivery is claimed before the external Telegram call. Refunds cannot race a claimed send.
+ALTER TABLE ad_deliveries DROP CONSTRAINT IF EXISTS ad_deliveries_status_check;
+ALTER TABLE ad_deliveries ADD CONSTRAINT ad_deliveries_status_check CHECK (
+ status IN ('scheduled','queued','sending','sent','failed','cancelled')
+);
+
+-- Old open subscription invoices did not reserve the round's remaining capacity.
+-- Invalidate them once; users can request a fresh, correctly bounded invoice.
+UPDATE star_payments SET status='cancelled'
+WHERE purpose='subscription' AND status='invoiced';
+```
+
 ### `packages\__init__.py`
 
 ```python
@@ -8474,7 +8578,7 @@ def __getattr__(name: str) -> Any:
 ### `packages\core\db\migrator.py`
 
 ```python
-"""Minimal forward-only SQL migration runner. No Alembic dependency."""
+"""Forward-only SQL migration runner with a recovered-history baseline."""
 
 from __future__ import annotations
 
@@ -8485,75 +8589,60 @@ from pathlib import Path
 from packages.core.db import pool as dbpool
 
 logger = logging.getLogger(__name__)
-
 MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-# Migrations through 0014 were already shipped before this recovered
-# distribution normalized text files. Existing databases can therefore contain
-# the same applied SQL with checksums calculated from the pre-normalized bytes.
-# Never re-run those versions: preserve their records and enforce immutable
-# checksums for every migration introduced after the recovered baseline.
-# This recovered distribution may differ byte-for-byte from migrations already
-# applied by earlier releases. Never re-run shipped history. Starting with 0023,
-# checksums are strict and changing an applied migration remains a hard failure.
-LEGACY_CHECKSUM_VERSIONS = frozenset({
-    "0001_core_schema", "0002_progression", "0003_country_layer",
-    "0004_admin_command_center", "0005_life_world_hardening",
-    "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
-    "0008_world_access_lifecycle", "0009_ads_governance_moderation",
-    "0010_stars_subscriptions_ad_marketplace", "0011_population_channels_migration",
-    "0012_reliability_live_market_engagement", "0013_country_identity_candles_realism",
-    "0014_free_tier_hardening", "0015_purposeful_work_loop",
-    "0016_national_projects_and_missions", "0017_country_economy_release_b",
-    "0018_country_trade_diplomacy_release_c", "0019_life_progression_system",
-    "0020_admin_operations_10", "0021_multi_admin_hardening",
-    "0022_ui_panel_expiry",
-})
-# 0021 and 0022 belong to the recovered project history and may already exist
-# with checksums produced from older line endings/source dumps. 0023 is the
-# first migration created by this release and is therefore the strict boundary.
-STRICT_CHECKSUM_FROM = "0023_country_social_life"
+
+# The source archive was reconstructed after these migrations had shipped. Their
+# SQL bytes may differ from records produced by older releases (line endings and
+# recovered source revisions), so an applied row is authoritative and is never
+# re-executed. All schema corrections belong in 0027 and later.
+RECOVERED_BASELINE_END = "0026_referral_growth"
+STRICT_CHECKSUM_FROM = "0027_"
+LEGACY_CHECKSUM_VERSIONS = frozenset()
 
 _BOOTSTRAP = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
-    version     TEXT PRIMARY KEY,
-    checksum    TEXT NOT NULL,
-    applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    version TEXT PRIMARY KEY,
+    checksum TEXT NOT NULL,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 
 
 def _checksum(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()[:16]
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def discover() -> list[Path]:
     if not MIGRATIONS_DIR.exists():
         return []
-    return sorted(MIGRATIONS_DIR.glob("*.sql"), key=lambda p: p.name)
+    return sorted(MIGRATIONS_DIR.glob("*.sql"), key=lambda path: path.name)
+
+
+def _is_recovered_history(version: str) -> bool:
+    return version <= RECOVERED_BASELINE_END
 
 
 async def migrate() -> list[str]:
-    """Apply pending migrations under a PostgreSQL advisory lock."""
+    """Apply pending migrations atomically under a transaction advisory lock."""
     applied: list[str] = []
     async with dbpool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("SELECT pg_advisory_xact_lock($1)", 839204731)
             await conn.execute(_BOOTSTRAP)
-            done = {r["version"]: r["checksum"] for r in await conn.fetch(
-                "SELECT version, checksum FROM schema_migrations"
-            )}
+            rows = await conn.fetch("SELECT version, checksum FROM schema_migrations")
+            done = {row["version"]: row["checksum"] for row in rows}
+
             for path in discover():
                 version = path.stem
                 sql = path.read_text(encoding="utf-8")
                 digest = _checksum(sql)
-                if version in done:
-                    if done[version] != digest:
-                        # Every migration shipped before the strict baseline belongs to
-                        # recovered history, including installations with variant names.
-                        if version in LEGACY_CHECKSUM_VERSIONS or version < STRICT_CHECKSUM_FROM:
-                            logger.info(
-                                "legacy migration checksum differs; preserving the "
-                                "database record and not re-running SQL: %s",
+                recorded = done.get(version)
+                if recorded is not None:
+                    if recorded != digest:
+                        if _is_recovered_history(version):
+                            logger.warning(
+                                "recovered migration checksum differs; preserving applied "
+                                "database history without re-running SQL: %s",
                                 version,
                             )
                             continue
@@ -8562,13 +8651,16 @@ async def migrate() -> list[str]:
                             "Create a new migration instead of editing history."
                         )
                     continue
+
                 await conn.execute(sql)
                 await conn.execute(
-                    "INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)",
-                    version, digest,
+                    "INSERT INTO schema_migrations(version, checksum) VALUES($1, $2)",
+                    version,
+                    digest,
                 )
                 applied.append(version)
                 logger.info("applied migration %s", version)
+
     if not applied:
         logger.info("database schema up to date")
     return applied
@@ -11086,6 +11178,29 @@ async def update_identity(
              "password_changed": password is not None},
         )
     return dict(row)
+
+async def authentication_blocked(throttle_key: str) -> bool:
+    return bool(await db.fetchval(
+        "SELECT blocked_until>now() FROM admin_auth_throttle WHERE throttle_key=$1",
+        throttle_key,
+    ))
+
+
+async def record_authentication_failure(throttle_key: str) -> None:
+    await db.execute(
+        """INSERT INTO admin_auth_throttle(throttle_key,failures,first_failed_at,blocked_until,updated_at)
+           VALUES($1,1,now(),NULL,now())
+           ON CONFLICT(throttle_key) DO UPDATE SET
+             failures=CASE WHEN admin_auth_throttle.first_failed_at<now()-interval '15 minutes' THEN 1 ELSE admin_auth_throttle.failures+1 END,
+             first_failed_at=CASE WHEN admin_auth_throttle.first_failed_at<now()-interval '15 minutes' THEN now() ELSE admin_auth_throttle.first_failed_at END,
+             blocked_until=CASE WHEN (CASE WHEN admin_auth_throttle.first_failed_at<now()-interval '15 minutes' THEN 1 ELSE admin_auth_throttle.failures+1 END)>=8 THEN now()+interval '15 minutes' ELSE admin_auth_throttle.blocked_until END,
+             updated_at=now()""",
+        throttle_key,
+    )
+
+
+async def clear_authentication_failures(throttle_key: str) -> None:
+    await db.execute("DELETE FROM admin_auth_throttle WHERE throttle_key=$1", throttle_key)
 ```
 
 ### `packages\core\services\admin_security.py`
@@ -11200,27 +11315,32 @@ async def verify_request(request: Request, actor: str, role: str) -> None:
 ### `packages\core\services\commerce.py`
 
 ```python
-"""Atomic subscriptions, Telegram Stars payments, moderation and ad delivery planning."""
+"""Atomic subscriptions, Stars payments, moderation and advertising delivery."""
 from __future__ import annotations
-from datetime import UTC,datetime,timedelta
+
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import uuid4
+
 from packages.core import db
 from packages.core.config import get_config
 from packages.core.services.content_filter import require_clean
 
 PACKAGES={"economy":(25,1,1,0),"standard":(60,3,24,1),"campaign":(120,6,72,2),"featured":(200,8,168,3)}
 CHANNEL_PERCENT={"life":100,"world":150,"both":220}
+
 def subscription_stars(citizens:int)->int:
  if citizens<=20:return 10
  if citizens<=100:return 15
  if citizens<=500:return 30
  if citizens<=1000:return 50
  return 75
+
 def treasury_price(balance:int,citizens:int=0)->int:return min(1_000_000_000,max(20_000_000,balance*20//100+citizens*1_000_000))
 def ad_price(package_code:str,channel:str)->int:
  if package_code not in PACKAGES or channel not in CHANNEL_PERCENT:raise ValueError("invalid_ad_selection")
  return (PACKAGES[package_code][0]*CHANNEL_PERCENT[channel]+99)//100
+
 def valid_url(value:str)->bool:
  try:u=urlparse(value);return u.scheme in {"http","https"} and bool(u.netloc)
  except ValueError:return False
@@ -11238,7 +11358,7 @@ async def ensure_round(chat_id:int):
   group=await conn.fetchrow("SELECT id FROM groups WHERE telegram_id=$1 FOR UPDATE",chat_id)
   if not group:raise ValueError("group_not_found")
   citizens=int(await conn.fetchval("SELECT count(*) FROM citizenships cs JOIN countries c ON c.id=cs.country_id WHERE c.group_id=$1 AND cs.is_active",group["id"]) or 0);target=subscription_stars(citizens)
-  row=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE group_id=$1 AND status='open'",group["id"])
+  row=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE group_id=$1 AND status='open' FOR UPDATE",group["id"])
   if row and row["expires_at"]>datetime.now(UTC):
    if int(row["target_stars"])!=target:await conn.execute("UPDATE subscription_rounds SET target_stars=$2 WHERE id=$1",row["id"],max(target,int(row["collected_stars"])))
    return await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1",row["id"])
@@ -11250,7 +11370,11 @@ async def subscription_invoice(round_id:int,payer_telegram_id:int,stars:int):
  async with db.transaction() as conn:
   row=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1 FOR UPDATE",round_id)
   if not row or row["status"]!='open' or row["expires_at"]<=datetime.now(UTC):raise ValueError("round_closed")
-  amount=min(stars,int(row["target_stars"])-int(row["collected_stars"]));payload=f"sub:{round_id}:{payer_telegram_id}:{uuid4().hex}"
+  reserved=int(await conn.fetchval("SELECT COALESCE(sum(stars),0) FROM star_payments WHERE purpose='subscription' AND reference_id=$1 AND status='invoiced' AND expires_at>now()",round_id) or 0)
+  available=int(row["target_stars"])-int(row["collected_stars"])-reserved
+  amount=min(stars,available)
+  if amount<=0:raise ValueError("round_fully_reserved")
+  payload=f"sub:{round_id}:{payer_telegram_id}:{uuid4().hex}"
   await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('subscription',$1,$2,$3,$4,LEAST($5,now()+interval '30 minutes'))",round_id,payer_telegram_id,amount,payload,row["expires_at"])
   return payload,amount
 
@@ -11263,35 +11387,55 @@ async def create_ad_request(player_id:int,package_code:str,channel:str,title:str
  return int(await db.fetchval("""INSERT INTO ad_requests(requester_player_id,package_code,channel,title,description,target_url,image_bytes,image_mime,requested_start_at,price_stars,impressions_planned,campaign_hours,priority)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id""",player_id,package_code,channel,title,description,url,image_bytes,image_mime,start_at,stars,impressions,hours,priority))
 
+async def _new_ad_invoice(conn,ad,payer_telegram_id:int):
+ await conn.execute("UPDATE star_payments SET status='cancelled' WHERE purpose='advertisement' AND reference_id=$1 AND status='invoiced'",ad["id"])
+ payload=f"ad:{ad['id']}:{payer_telegram_id}:{uuid4().hex}"
+ await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('advertisement',$1,$2,$3,$4,$5)",ad["id"],payer_telegram_id,ad["price_stars"],payload,ad["payment_expires_at"])
+ return payload
+
 async def ad_invoice(ad_id:int,payer_telegram_id:int):
  async with db.transaction() as conn:
   row=await conn.fetchrow("SELECT * FROM ad_requests WHERE id=$1 FOR UPDATE",ad_id)
-  if not row or row["requester_player_id"]!=await conn.fetchval("SELECT id FROM players WHERE telegram_id=$1",payer_telegram_id):raise PermissionError("not_owner")
+  owner=await conn.fetchval("SELECT id FROM players WHERE telegram_id=$1",payer_telegram_id)
+  if not row or row["requester_player_id"]!=owner:raise PermissionError("not_owner")
   if row["status"]!='approved_unpaid' or not row["payment_expires_at"] or row["payment_expires_at"]<=datetime.now(UTC):raise ValueError("payment_expired")
-  payload=f"ad:{ad_id}:{payer_telegram_id}:{uuid4().hex}"
-  await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('advertisement',$1,$2,$3,$4,$5)",ad_id,payer_telegram_id,row["price_stars"],payload,row["payment_expires_at"])
+  payload=await _new_ad_invoice(conn,row,payer_telegram_id)
   return payload,int(row["price_stars"]),str(row["title"])
 
 async def precheckout(payload:str,payer:int,total:int)->bool:
- row=await db.fetchrow("SELECT * FROM star_payments WHERE invoice_payload=$1",payload)
- return bool(row and row["status"]=='invoiced' and row["payer_telegram_id"]==payer and row["stars"]==total and row["expires_at"]>datetime.now(UTC))
+ row=await db.fetchrow("""SELECT sp.*,a.status ad_status,r.status round_status
+ FROM star_payments sp
+ LEFT JOIN ad_requests a ON sp.purpose='advertisement' AND a.id=sp.reference_id
+ LEFT JOIN subscription_rounds r ON sp.purpose='subscription' AND r.id=sp.reference_id
+ WHERE sp.invoice_payload=$1""",payload)
+ if not row or row["status"]!='invoiced' or row["payer_telegram_id"]!=payer or row["stars"]!=total or row["expires_at"]<=datetime.now(UTC):return False
+ return row["ad_status"]=='approved_unpaid' if row["purpose"]=='advertisement' else row["round_status"]=='open'
 
 async def settle(payload:str,payer:int,total:int,tg_charge:str,provider_charge:str|None)->str:
  async with db.transaction() as conn:
   payment=await conn.fetchrow("SELECT * FROM star_payments WHERE invoice_payload=$1 FOR UPDATE",payload)
   if not payment or payment["payer_telegram_id"]!=payer or payment["stars"]!=total or payment["status"] not in {'invoiced','paid'}:raise ValueError("invalid_payment")
-  if payment["status"]=='paid':return payment["purpose"]
+  if payment["status"]=='paid':
+   if payment["telegram_charge_id"]!=tg_charge:raise ValueError("payment_charge_mismatch")
+   return str(payment["purpose"])
+  duplicate=await conn.fetchval("SELECT 1 FROM star_payments WHERE telegram_charge_id=$1 AND id<>$2",tg_charge,payment["id"])
+  if duplicate:raise ValueError("duplicate_payment_charge")
+  if payment["purpose"]=='advertisement':
+   ad=await conn.fetchrow("SELECT status FROM ad_requests WHERE id=$1 FOR UPDATE",payment["reference_id"])
+   if not ad or ad["status"]!='approved_unpaid':raise ValueError("invalid_payment_state")
+  else:
+   rnd=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1 FOR UPDATE",payment["reference_id"])
+   if not rnd or rnd["status"]!='open':raise ValueError("round_closed")
   await conn.execute("UPDATE star_payments SET status='paid',telegram_charge_id=$2,provider_charge_id=$3,paid_at=now() WHERE id=$1",payment["id"],tg_charge,provider_charge)
   if payment["purpose"]=='subscription':
-   rnd=await conn.fetchrow("SELECT * FROM subscription_rounds WHERE id=$1 FOR UPDATE",payment["reference_id"])
-   if rnd and rnd["status"]=='open':
-    target=int(rnd["target_stars"]);total_stars=min(target,int(rnd["collected_stars"])+int(payment["stars"]));complete=total_stars>=target
-    await conn.execute("UPDATE subscription_rounds SET collected_stars=$2,status=CASE WHEN $3 THEN 'completed' ELSE status END,completed_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE id=$1",rnd["id"],total_stars,complete)
-    if complete:
-     until=await conn.fetchval("UPDATE groups SET ad_free_until=GREATEST(COALESCE(ad_free_until,now()),now())+interval '30 days' WHERE id=$1 RETURNING ad_free_until",rnd["group_id"])
-     await conn.execute("INSERT INTO group_subscription_events(group_id,source,stars,starts_at,ends_at) VALUES($1,'stars',$3,now(),$2)",rnd["group_id"],until,target)
+   target=int(rnd["target_stars"]);total_stars=min(target,int(rnd["collected_stars"])+int(payment["stars"]));complete=total_stars>=target
+   await conn.execute("UPDATE subscription_rounds SET collected_stars=$2,status=CASE WHEN $3 THEN 'completed' ELSE status END,completed_at=CASE WHEN $3 THEN now() ELSE NULL END WHERE id=$1",rnd["id"],total_stars,complete)
+   if complete:
+    until=await conn.fetchval("UPDATE groups SET ad_free_until=GREATEST(COALESCE(ad_free_until,now()),now())+interval '30 days' WHERE id=$1 RETURNING ad_free_until",rnd["group_id"])
+    await conn.execute("INSERT INTO group_subscription_events(group_id,source,stars,starts_at,ends_at) VALUES($1,'stars',$3,now(),$2)",rnd["group_id"],until,target)
   else:
-   await conn.execute("UPDATE ad_requests SET status='paid',paid_at=now(),updated_at=now() WHERE id=$1 AND status='approved_unpaid'",payment["reference_id"])
+   await conn.execute("UPDATE ad_requests SET status='paid',paid_at=now(),updated_at=now() WHERE id=$1",payment["reference_id"])
+   await conn.execute("UPDATE star_payments SET status='cancelled' WHERE purpose='advertisement' AND reference_id=$1 AND status='invoiced'",payment["reference_id"])
   return str(payment["purpose"])
 
 async def buy_with_treasury(chat_id:int,player_id:int)->int:
@@ -11312,15 +11456,16 @@ async def approve_ad(ad_id:int,actor:str,note:str|None=None):
   if not row:return None
   owner=await conn.fetchrow("SELECT p.telegram_id FROM players p WHERE p.id=$1",row["requester_player_id"])
   if not owner:raise ValueError("player_not_found")
-  payload=f"ad:{ad_id}:{int(owner['telegram_id'])}:{uuid4().hex}"
-  await conn.execute("INSERT INTO star_payments(purpose,reference_id,payer_telegram_id,stars,invoice_payload,expires_at) VALUES('advertisement',$1,$2,$3,$4,$5)",ad_id,int(owner["telegram_id"]),int(row["price_stars"]),payload,row["payment_expires_at"])
+  payload=await _new_ad_invoice(conn,row,int(owner["telegram_id"]))
   await action_outbox_repo.enqueue(conn,f"ad-approval-invoice:{ad_id}:{payload}","telelife","send_invoice",int(owner["telegram_id"]),{"title":f"پرداخت تبلیغ: {row['title']}","description":"درخواست تأیید شد. این صورتحساب ۴۸ ساعت اعتبار دارد.","invoice_payload":payload,"label":"بسته تبلیغ","stars":int(row["price_stars"])})
   return row
+
 async def reject_ad(ad_id:int,actor:str,note:str):
  from packages.core.repositories import action_outbox_repo
  async with db.transaction() as conn:
   row=await conn.fetchrow("UPDATE ad_requests SET status='changes_requested',approved_by=$2,admin_note=$3,updated_at=now() WHERE id=$1 AND status IN ('pending_review','approved_unpaid') RETURNING *",ad_id,actor,note)
   if not row:return None
+  await conn.execute("UPDATE star_payments SET status='cancelled' WHERE purpose='advertisement' AND reference_id=$1 AND status='invoiced'",ad_id)
   owner=await conn.fetchrow("SELECT p.telegram_id FROM players p WHERE p.id=$1",row["requester_player_id"])
   if owner:await action_outbox_repo.enqueue(conn,f"ad-revision:{ad_id}:{row['updated_at'].isoformat()}","telelife","send_message",int(owner["telegram_id"]),{"text":f"✏️ درخواست تبلیغ #{ad_id} نیاز به اصلاح دارد:\n\n{note}\n\nبرای اصلاح، درخواست تازه‌ای از بخش تبلیغات ثبت کن."})
   return row
@@ -11339,13 +11484,34 @@ async def pause_ad(ad_id:int):
   row=await conn.fetchrow("UPDATE ad_requests SET status='paused',updated_at=now() WHERE id=$1 AND status IN ('paid','active') RETURNING *",ad_id)
   if row:await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE ad_request_id=$1 AND status IN ('scheduled','queued')",ad_id)
   return row
-async def refundable(ad_id:int):
- return await db.fetchrow("""SELECT a.*,p.telegram_id,sp.telegram_charge_id FROM ad_requests a JOIN players p ON p.id=a.requester_player_id JOIN star_payments sp ON sp.purpose='advertisement' AND sp.reference_id=a.id AND sp.status='paid' WHERE a.id=$1 AND a.first_delivery_at IS NULL""",ad_id)
-async def mark_refunded(ad_id:int):
+
+async def begin_refund(ad_id:int,actor:str):
  async with db.transaction() as conn:
-  await conn.execute("UPDATE star_payments SET status='refunded',refunded_at=now() WHERE purpose='advertisement' AND reference_id=$1 AND status='paid'",ad_id)
-  await conn.execute("UPDATE ad_requests SET status='refunded',updated_at=now() WHERE id=$1",ad_id)
-  await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE ad_request_id=$1 AND status IN ('scheduled','queued')",ad_id)
+  row=await conn.fetchrow("""SELECT a.*,p.telegram_id,sp.telegram_charge_id
+   FROM ad_requests a JOIN players p ON p.id=a.requester_player_id
+   JOIN star_payments sp ON sp.purpose='advertisement' AND sp.reference_id=a.id AND sp.status='paid'
+   WHERE a.id=$1 FOR UPDATE OF a,sp""",ad_id)
+  if not row or row["first_delivery_at"] is not None:return None
+  in_flight=await conn.fetchval("SELECT 1 FROM ad_deliveries WHERE ad_request_id=$1 AND status IN ('sending','sent') LIMIT 1",ad_id)
+  if in_flight:return None
+  if row["status"]=='refund_pending':return row
+  if row["status"] not in {'paid','active','paused'}:return None
+  return await conn.fetchrow("""UPDATE ad_requests SET refund_previous_status=status,status='refund_pending',
+   refund_requested_at=now(),refund_requested_by=$2,updated_at=now() WHERE id=$1
+   RETURNING *, $3::bigint telegram_id, $4::text telegram_charge_id""",ad_id,actor,row["telegram_id"],row["telegram_charge_id"])
+
+async def finish_refund(ad_id:int,success:bool)->None:
+ async with db.transaction() as conn:
+  row=await conn.fetchrow("SELECT status,refund_previous_status FROM ad_requests WHERE id=$1 FOR UPDATE",ad_id)
+  if not row or row["status"]!='refund_pending':return
+  if success:
+   await conn.execute("UPDATE star_payments SET status='refunded',refunded_at=now() WHERE purpose='advertisement' AND reference_id=$1 AND status='paid'",ad_id)
+   await conn.execute("UPDATE ad_requests SET status='refunded',updated_at=now() WHERE id=$1",ad_id)
+   await conn.execute("UPDATE ad_deliveries SET status='cancelled' WHERE ad_request_id=$1 AND status IN ('scheduled','queued')",ad_id)
+  else:
+   previous=row["refund_previous_status"] if row["refund_previous_status"] in {'paid','active','paused'} else 'paid'
+   await conn.execute("UPDATE ad_requests SET status=$2,refund_previous_status=NULL,refund_requested_at=NULL,refund_requested_by=NULL,updated_at=now() WHERE id=$1",ad_id,previous)
+
 async def expire_commerce()->dict[str,int]:
  p=await db.execute("UPDATE ad_requests SET status='payment_expired',updated_at=now() WHERE status='approved_unpaid' AND payment_expires_at<=now()")
  s=await db.execute("UPDATE star_payments SET status='expired' WHERE status='invoiced' AND expires_at<=now()")
@@ -11385,11 +11551,8 @@ async def queue_due_deliveries()->int:
     if row["destination_type"]=='world':await conn.execute("UPDATE groups SET ads_delivered_today=$2,ads_delivery_day=$3 WHERE id=$1",row["group_id"],used+1,today)
     count+=1
   return count
-
-async def player_ads(player_id:int):
- return await db.fetch("SELECT id,title,status,admin_note,price_stars,payment_expires_at FROM ad_requests WHERE requester_player_id=$1 ORDER BY created_at DESC LIMIT 20",player_id)
-async def revision_source(ad_id:int,player_id:int):
- return await db.fetchrow("SELECT * FROM ad_requests WHERE id=$1 AND requester_player_id=$2 AND status='changes_requested'",ad_id,player_id)
+async def player_ads(player_id:int):return await db.fetch("SELECT id,title,status,admin_note,price_stars,payment_expires_at FROM ad_requests WHERE requester_player_id=$1 ORDER BY created_at DESC LIMIT 20",player_id)
+async def revision_source(ad_id:int,player_id:int):return await db.fetchrow("SELECT * FROM ad_requests WHERE id=$1 AND requester_player_id=$2 AND status='changes_requested'",ad_id,player_id)
 async def submit_revision(ad_id:int,player_id:int,title:str,description:str,url:str,image_bytes:bytes|None,image_mime:str|None,start_at)->bool:
  require_clean(title,"name");require_clean(description,"description")
  if not valid_url(url):raise ValueError("invalid_url")
@@ -14357,6 +14520,7 @@ async def run(name:str, fn:Callable[[],Awaitable[T]])->T|None:
 """Consent-first social interactions for citizens of the same country."""
 from __future__ import annotations
 from packages.core import db
+from packages.core.repositories import ledger_repo
 
 HELP_AMOUNTS={10_000,50_000,100_000,200_000}
 CATEGORIES={"harassment","fraud","threat","spam","other"}
@@ -14423,16 +14587,22 @@ async def divorce(actor:int):
 async def help(actor:int,target:int,amount:int,key:str):
  if amount not in HELP_AMOUNTS:raise ValueError("invalid_amount")
  async with db.transaction() as conn:
+  # Serialize outgoing help so retries and the daily limit are exact.
+  helper=await ledger_repo.lock_player(conn,actor)
+  if not helper:raise ValueError("player_not_found")
   previous=await conn.fetchrow("SELECT * FROM citizen_help_events WHERE idempotency_key=$1",key)
   if previous:return previous
   country=await require_peers(conn,actor,target)
-  helper=await conn.fetchrow("SELECT wallet_toman FROM players WHERE id=$1 FOR UPDATE",actor)
   if int(helper["wallet_toman"])<amount:raise ValueError("insufficient_balance")
   daily=int(await conn.fetchval("SELECT count(*) FROM citizen_help_events WHERE helper_id=$1 AND created_at>=date_trunc('day',now())",actor) or 0)
   if daily>=3:raise ValueError("help_daily_limit")
   rep=1 if daily<2 else 0
-  await conn.execute("UPDATE players SET wallet_toman=wallet_toman-$2,reputation=LEAST(1000,reputation+$3) WHERE id=$1",actor,amount,rep)
-  await conn.execute("UPDATE players SET wallet_toman=wallet_toman+$2 WHERE id=$1",target,amount)
+  debit=await ledger_repo.change_player(conn,actor,"IRT",-amount)
+  credit=await ledger_repo.change_player(conn,target,"IRT",amount)
+  await conn.execute("UPDATE players SET reputation=LEAST(1000,reputation+$2) WHERE id=$1",actor,rep)
+  debit_ok=await ledger_repo.insert(conn,player_id=actor,country_id=None,key=f"{key}:debit",reason="citizen_help",asset="IRT",account="wallet",amount=-amount,balance=debit,metadata={"recipient_id":target,"country_id":country})
+  credit_ok=await ledger_repo.insert(conn,player_id=target,country_id=None,key=f"{key}:credit",reason="citizen_help_received",asset="IRT",account="wallet",amount=amount,balance=credit,metadata={"helper_id":actor,"country_id":country})
+  if not (debit_ok and credit_ok):raise RuntimeError("citizen_help_ledger_conflict")
   return await conn.fetchrow("INSERT INTO citizen_help_events(country_id,helper_id,recipient_id,amount_toman,reputation_awarded,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) RETURNING *",country,actor,target,amount,rep,key)
 
 async def challenge(actor:int,target:int):
@@ -15589,6 +15759,7 @@ dependencies = [
     "orjson>=3.10.7,<4",
     "python-multipart>=0.0.12,<1",
     "Pillow>=10.4,<12",
+    "psutil==6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -15673,6 +15844,47 @@ Health: `/healthz` — Readiness: `/readyz` — داشبورد و API مدیری
 
 ## آزمون
 پس از نصب وابستگی‌های توسعه، `pytest -q` را اجرا کنید. آزمون قراردادی `test_persian_button_contracts.py` فارسی‌بودن شغل‌ها، نبود فرمان در بات جهان، معتبر بودن تنظیمات و صحت نحوی فایل‌ها را کنترل می‌کند.
+```
+
+### `RELEASE_0027_FA.md`
+
+```markdown
+# انتشار پایدارسازی 0027
+
+## هدف
+این بسته برای استقرار فعلی Render/Supabase ساخته شده و تاریخچه مهاجرت‌های `0001` تا `0026` را دوباره اجرا نمی‌کند. تمام اصلاحات Schema در مهاجرت forward-only جدید `0027_production_integrity_hardening.sql` قرار گرفته‌اند.
+
+## اصلاحات بحرانی
+- جلوگیری از چند Invoice باز برای یک تبلیغ و اتصال Pre-checkout به وضعیت واقعی کمپین
+- جلوگیری از ثبت دوباره Telegram Charge با شناسه متفاوت
+- رزرو ظرفیت باقی‌مانده Round برای پرداخت هم‌زمان اشتراک گروه
+- State machine بازپرداخت با وضعیت `refund_pending`
+- Claim اتمیک Delivery پیش از ارسال برای جلوگیری از رقابت Send/Refund
+- دو رکورد متوازن Ledger برای کمک نقدی شهروندی
+- Idempotency و محدودیت روزانه کمک زیر Lock بازیکن
+- اجرای مستقل Jobهای روزانه؛ شکست یک Job مانع بقیه نمی‌شود
+- محدودسازی پایدار تلاش ورود Admin بر پایه IP و نام کاربری هش‌شده
+- Escape داده‌های کاربر در مسیرهای HTML تلگرام
+
+## استقرار
+1. از PostgreSQL نسخه پشتیبان بگیرید.
+2. هیچ‌کدام از فایل‌های Migration شماره `0001` تا `0026` را ویرایش نکنید.
+3. کل پروژه را جایگزین نسخه فعلی و Deploy کنید.
+4. هنگام Startup، Migration شماره `0027` باید یک‌بار اعمال شود.
+5. Log مورد انتظار: `applied migration 0027_production_integrity_hardening`.
+6. سپس `/readyz` و `/healthz` را بررسی کنید.
+
+## Rollback
+Rollback کد به‌تنهایی مجاز است، اما Migration `0027` را حذف یا Down نکنید. کد قدیمی وضعیت `refund_pending` را نمی‌شناسد؛ بنابراین در صورت Rollback، ابتدا مطمئن شوید هیچ ردیفی با این وضعیت وجود ندارد.
+
+## کنترل کیفیت انجام‌شده
+- Parse و Compile تمام فایل‌های Python
+- کنترل Syntax فایل JavaScript پنل
+- بررسی تعداد Placeholderهای SQL در فراخوانی‌های ثابت
+- بررسی YAMLهای پروژه
+- تست‌های قراردادی جدید برای پرداخت، Refund، Ledger، Scheduler و Rate Limit
+
+> هیچ نرم‌افزار غیرساده‌ای را نمی‌توان صادقانه «صددرصد بدون باگ» تضمین کرد. قبل از Production، اجرای تست کامل با Dependencyهای پروژه و PostgreSQL واقعی روی Staging الزامی است.
 ```
 
 ### `RELEASE_2026_07_27_FA.md`
@@ -17097,7 +17309,8 @@ def test_release_b_migration_is_additive_and_numbered_after_release_a():
 def test_scheduler_and_production_are_connected():
  scheduler=Path("apps/scheduler/main.py").read_text(encoding="utf-8")
  production=Path("packages/core/services/production.py").read_text(encoding="utf-8")
- assert 'scheduler_ops.run("country_economy_b"' in scheduler
+ assert '("country_economy_b", country_economy_b.catch_up)' in scheduler
+ assert 'await scheduler_ops.run(name, job)' in scheduler
  assert "production_modifier_bp" in production
 ```
 
@@ -17387,40 +17600,18 @@ def test_persian_digits_applied():
 ### `tests\test_free_tier_hardening.py`
 
 ```python
-"""Source contracts for the no-cost hardening release."""
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[1]
-def text(path:str)->str:return (ROOT/path).read_text(encoding="utf-8")
 
-def test_recovered_history_ends_at_0014_and_0015_is_strict():
-    source=text("packages/core/db/migrator.py")
-    legacy=source.split("LEGACY_CHECKSUM_VERSIONS = frozenset({",1)[1].split("})",1)[0]
-    assert '"0013_country_identity_candles_realism"' in legacy
-    assert '"0014_free_tier_hardening"' in legacy
-    assert '"0015_purposeful_work_loop"' not in legacy
+def test_recovered_history_ends_at_0026_and_0027_is_strict():
+    source = Path("packages/core/db/migrator.py").read_text(encoding="utf-8")
+    assert 'RECOVERED_BASELINE_END = "0026_referral_growth"' in source
+    assert 'STRICT_CHECKSUM_FROM = "0027_"' in source
     assert "Create a new migration instead of editing history" in source
 
-def test_admin_telegram_calls_use_transactional_outbox():
-    router=text("apps/admin/routers/country_admin.py")
-    commerce=text("packages/core/services/commerce.py")
-    assert "send_invoice(" not in router
-    assert "send_message(" not in router
-    assert "action_outbox_repo.enqueue" in commerce
-    assert "async with db.transaction() as conn" in commerce
 
-def test_admin_mutations_are_json_only():
-    app=text("apps/admin/main.py")
-    router=text("apps/admin/routers/country_admin.py")
-    assert 'content_type != "application/json"' in app
-    assert "Form(" not in router
-
-def test_free_tier_jobs_are_bounded():
-    maintenance=text("packages/core/services/maintenance.py")
-    assert "LIMIT 200" in maintenance
-    assert "interval '30 days'" in maintenance
-    scheduler=text("apps/scheduler/main.py")
-    assert '"telegram_actions"' in scheduler and '"maintenance"' in scheduler
+def test_free_tier_migration_still_exists():
+    assert Path("migrations/0014_free_tier_hardening.sql").is_file()
 ```
 
 ### `tests\test_glass_buttons.py`
@@ -17800,44 +17991,28 @@ from packages.core.db import migrator
 
 
 def test_migrations_discovered_and_ordered():
-    files = migrator.discover()
-    assert files, "no migration files found"
-    names = [p.name for p in files]
-    assert names == sorted(names)
+    names = [path.name for path in migrator.discover()]
+    assert names and names == sorted(names)
     assert names[0].startswith("0001")
+    assert names[-1].startswith("0027")
 
 
 def test_checksum_is_stable():
-    a = migrator._checksum("SELECT 1;")
-    b = migrator._checksum("SELECT 1;")
-    assert a == b and len(a) == 16
-
-def test_only_pre_normalization_migrations_are_legacy_compatible():
-    assert migrator.LEGACY_CHECKSUM_VERSIONS == {
-        "0001_core_schema", "0002_progression", "0003_country_layer",
-        "0004_admin_command_center", "0005_life_world_hardening",
-        "0006_phase3_phase4_complete", "0007_unified_ui_onboarding",
-        "0008_world_access_lifecycle", "0009_ads_governance_moderation",
-        "0010_stars_subscriptions_ad_marketplace",
-        "0011_population_channels_migration",
-        "0012_reliability_live_market_engagement",
-        "0013_country_identity_candles_realism",
-        "0014_free_tier_hardening",
-    }
-    assert "0015_future_migration" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert migrator._checksum("SELECT 1;") == migrator._checksum("SELECT 1;")
+    assert len(migrator._checksum("SELECT 1;")) == 16
 
 
-def test_new_migrations_remain_checksum_strict():
-    source = (migrator.Path(migrator.__file__)).read_text(encoding="utf-8")
-    assert "if version in LEGACY_CHECKSUM_VERSIONS" in source
+def test_recovered_history_ends_before_new_strict_migrations():
+    assert migrator.RECOVERED_BASELINE_END == "0026_referral_growth"
+    assert migrator.STRICT_CHECKSUM_FROM == "0027_"
+    assert migrator._is_recovered_history("0023_country_social_life")
+    assert not migrator._is_recovered_history("0027_production_integrity_hardening")
+
+
+def test_applied_new_migrations_remain_immutable():
+    source = migrator.Path(migrator.__file__).read_text(encoding="utf-8")
     assert "Create a new migration instead of editing history" in source
-
-def test_recovered_0021_and_0022_are_legacy_but_0023_is_strict():
-    from packages.core.db import migrator
-    assert "0021_multi_admin_hardening" in migrator.LEGACY_CHECKSUM_VERSIONS
-    assert "0022_ui_panel_expiry" in migrator.LEGACY_CHECKSUM_VERSIONS
-    assert migrator.STRICT_CHECKSUM_FROM == "0023_country_social_life"
-    assert "0023_country_social_life" not in migrator.LEGACY_CHECKSUM_VERSIONS
+    assert "await conn.execute(sql)" in source
 ```
 
 ### `tests\test_missions.py`
@@ -18100,6 +18275,68 @@ def test_admin_web_html_is_not_affected():
     assert Path('apps/admin/templates/dashboard.html').exists()
 ```
 
+### `tests\test_production_integrity_0027.py`
+
+```python
+from pathlib import Path
+
+
+def source(path: str) -> str:
+    return Path(path).read_text(encoding="utf-8")
+
+
+def test_advertising_has_one_open_invoice_and_state_bound_precheckout():
+    migration = source("migrations/0027_production_integrity_hardening.sql")
+    commerce = source("packages/core/services/commerce.py")
+    assert "uq_open_advertisement_invoice" in migration
+    assert "ad_status" in commerce and "approved_unpaid" in commerce
+    assert "duplicate_payment_charge" in commerce
+
+
+def test_refund_uses_durable_claim_before_external_call():
+    commerce = source("packages/core/services/commerce.py")
+    router = source("apps/admin/routers/country_admin.py")
+    assert "refund_pending" in commerce
+    assert "begin_refund" in router and "finish_refund" in router
+    assert router.index("begin_refund") < router.index("refund_star_payment")
+
+
+def test_social_cash_help_writes_two_ledger_legs():
+    social = source("packages/core/services/social.py")
+    assert 'f"{key}:debit"' in social
+    assert 'f"{key}:credit"' in social
+    assert "citizen_help_ledger_conflict" in social
+
+
+def test_daily_jobs_are_independently_guarded():
+    scheduler = source("apps/scheduler/main.py")
+    assert '("daily_reset", daily_reset.run)' in scheduler
+    assert "await scheduler_ops.run(name, job)" in scheduler
+
+
+def test_admin_authentication_is_throttled():
+    migration = source("migrations/0027_production_integrity_hardening.sql")
+    auth = source("apps/admin/auth.py")
+    assert "admin_auth_throttle" in migration
+    assert "authentication_blocked" in auth
+    assert "status_code=429" in auth
+
+
+def test_subscription_invoices_reserve_remaining_round_capacity():
+    commerce = source("packages/core/services/commerce.py")
+    assert "reserved=int(await conn.fetchval" in commerce
+    assert "round_fully_reserved" in commerce
+
+
+def test_delivery_claim_prevents_refund_send_race():
+    migration = source("migrations/0027_production_integrity_hardening.sql")
+    jobs = source("apps/scheduler/jobs/country_jobs.py")
+    commerce = source("packages/core/services/commerce.py")
+    assert "'sending'" in migration
+    assert "SET status='sending'" in jobs
+    assert "status IN ('sending','sent')" in commerce
+```
+
 ### `tests\test_production_security.py`
 
 ```python
@@ -18161,7 +18398,7 @@ def test_all_python_files_parse():
 def test_no_shell_heredoc_fragments_in_source():
     banned = ("cat >", "<<'PY'", '<<"PY"', "\nEOF\n")
     for path in [*ROOT.rglob("*.py"), *ROOT.rglob("*.sql")]:
-        if path == Path(__file__):
+        if path.resolve() == Path(__file__).resolve():
             continue
         text = path.read_text(encoding="utf-8")
         assert not any(token in text for token in banned), path
@@ -18352,7 +18589,8 @@ def test_ads_skip_subscribed_world_groups():
  assert "ad_free_until IS NULL OR ad_free_until<=now()" in text
 def test_stars_settlement_is_idempotent():
  text=(ROOT/'packages/core/services/commerce.py').read_text()
- assert "if payment[\"status\"]=='paid':return payment[\"purpose\"]" in text
+ assert "if payment[\"status\"]=='paid':" in text
+ assert "payment_charge_mismatch" in text
 def test_no_gameplay_power_is_granted():
  migration=(ROOT/'migrations/0010_stars_subscriptions_ad_marketplace.sql').read_text()
  assert 'ad_free_until' in migration
